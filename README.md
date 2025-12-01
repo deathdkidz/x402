@@ -48,10 +48,39 @@ Next.js demo application showing merchant integration.
 
 ### 1. Start Facilitator
 
+**Ubuntu/Linux:**
 ```bash
+# Install dependencies
 cd x402-facilitator
 npm install
+
+# Configure environment
 cp .env.example .env
+nano .env  # Edit with your configuration
+
+# Install and start MySQL
+sudo apt install mysql-server -y
+sudo systemctl start mysql
+
+# Install and start Redis
+sudo apt install redis-server -y
+sudo systemctl start redis-server
+
+# Or use Docker for MySQL + Redis
+docker-compose up -d
+
+# Run migrations
+mysql -u root -p x402_facilitator < migrations/*.sql
+
+# Start facilitator
+npm run dev
+```
+
+**Windows:**
+```powershell
+cd x402-facilitator
+npm install
+copy .env.example .env
 # Edit .env with your configuration
 docker-compose up -d  # Start MySQL + Redis
 npm run dev

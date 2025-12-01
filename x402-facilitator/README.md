@@ -52,10 +52,19 @@ A secure, production-ready x402 payment facilitator service with multi-layer ver
 ### Option 1: Docker (Recommended)
 
 1. **Clone and configure**
-   ```powershell
-   git clone <your-repo>
-   cd x402-facilitator
+   
+   **Ubuntu/Linux:**
+   ```bash
+   git clone https://github.com/deathdkidz/x402.git
+   cd x402/x402-facilitator
    cp .env.example .env
+   ```
+   
+   **Windows (PowerShell):**
+   ```powershell
+   git clone https://github.com/deathdkidz/x402.git
+   cd x402\x402-facilitator
+   copy .env.example .env
    ```
 
 2. **Edit `.env` file with your configuration**
@@ -66,36 +75,59 @@ A secure, production-ready x402 payment facilitator service with multi-layer ver
    NETWORK=base-sepolia
    ```
 
-3. **Build and run**
-   ```powershell
+3. **Install Docker (Ubuntu/Linux)**
+   ```bash
+   # Install Docker
+   sudo apt update
+   sudo apt install docker.io docker-compose -y
+   sudo systemctl start docker
+   sudo systemctl enable docker
+   sudo usermod -aG docker $USER
+   # Logout and login for group changes to take effect
+   ```
+
+4. **Build and run**
+   ```bash
    docker-compose up -d
    ```
 
-4. **Check health**
-   ```powershell
+5. **Check health**
+   ```bash
    curl http://localhost:8080/health
    ```
 
 ### Option 2: Local Development
 
-1. **Install dependencies**
-   ```powershell
+1. **Install Node.js (Ubuntu/Linux)**
+   ```bash
+   # Install Node.js 18.x
+   curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+   sudo apt install -y nodejs
+   
+   # Verify installation
+   node --version
+   npm --version
+   ```
+
+2. **Install dependencies**
+   ```bash
    npm install
    ```
 
-2. **Configure environment**
-   ```powershell
+3. **Configure environment**
+   ```bash
    cp .env.example .env
    # Edit .env with your configuration
+   nano .env  # or use vim, vi, etc.
    ```
 
-3. **Run in development mode**
-   ```powershell
+4. **Run in development mode**
+   ```bash
    npm run dev
    ```
 
-4. **Build for production**
-   ```powershell
+5. **Build for production**
+   ```bash
    npm run build
    npm start
    ```

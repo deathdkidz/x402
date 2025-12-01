@@ -37,14 +37,36 @@ CREATE TABLE merchants (
 
 ## 🚀 Quick Start
 
-### 1. Database Setup (✅ Complete)
+### 1. Database Setup
 
+**Install MySQL (Ubuntu/Linux):**
 ```bash
-# Database created
+# Update package list
+sudo apt update
+
+# Install MySQL
+sudo apt install mysql-server -y
+
+# Secure installation
+sudo mysql_secure_installation
+
+# Start MySQL service
+sudo systemctl start mysql
+sudo systemctl enable mysql
+```
+
+**Create Database:**
+```bash
+# Create database
 mysql -u root -p -e "CREATE DATABASE x402_facilitator;"
 
-# Migration run
+# Run migrations
 mysql -u root -p x402_facilitator < migrations/001_create_merchants_table.sql
+mysql -u root -p x402_facilitator < migrations/002_add_merchant_tiers.sql
+mysql -u root -p x402_facilitator < migrations/003_add_transactions_table.sql
+mysql -u root -p x402_facilitator < migrations/004_add_transaction_status_cache.sql
+mysql -u root -p x402_facilitator < migrations/005_add_token_support.sql
+mysql -u root -p x402_facilitator < migrations/006_create_gas_tracking_table.sql
 
 # Verify
 mysql -u root -p x402_facilitator -e "SHOW TABLES;"

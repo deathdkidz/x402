@@ -4,6 +4,12 @@
 
 ### Step 1: Install Dependencies
 
+**Ubuntu/Linux:**
+```bash
+npm install
+```
+
+**Windows (PowerShell):**
 ```powershell
 npm install
 ```
@@ -11,8 +17,15 @@ npm install
 ### Step 2: Configure Environment
 
 Copy the example environment file:
-```powershell
+
+**Ubuntu/Linux:**
+```bash
 cp .env.example .env
+```
+
+**Windows (PowerShell):**
+```powershell
+copy .env.example .env
 ```
 
 Edit `.env` and set these required values:
@@ -27,24 +40,24 @@ MERCHANT_PRIVATE_KEY=your-wallet-private-key
 ### Step 3: Start the Service
 
 **Development mode** (with hot reload):
-```powershell
+```bash
 npm run dev
 ```
 
 **Production mode**:
-```powershell
+```bash
 npm run build
 npm start
 ```
 
 **Docker** (recommended for production):
-```powershell
+```bash
 docker-compose up -d
 ```
 
 ### Step 4: Test It Works
 
-```powershell
+```bash
 curl http://localhost:8080/health
 ```
 
@@ -67,8 +80,15 @@ You should see:
 5. Paste into `RPC_URL` in your `.env`
 
 ### Generate API Key
+
+**Ubuntu/Linux:**
+```bash
+# Generate 32-character random API key
+openssl rand -hex 32
+```
+
+**Windows (PowerShell):**
 ```powershell
-# PowerShell
 -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | % {[char]$_})
 ```
 
@@ -84,20 +104,33 @@ For Base Sepolia testing:
 
 ### Test Verification
 
+**Ubuntu/Linux:**
+```bash
+curl -X POST http://localhost:8080/verify \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "x402Version": 1,
+    "paymentPayload": {},
+    "paymentRequirements": {}
+  }'
+```
+
+**Windows (PowerShell):**
 ```powershell
 curl -X POST http://localhost:8080/verify `
   -H "Content-Type: application/json" `
   -H "Authorization: Bearer YOUR_API_KEY" `
   -d '{
     "x402Version": 1,
-    "paymentPayload": { ... },
-    "paymentRequirements": { ... }
+    "paymentPayload": {},
+    "paymentRequirements": {}
   }'
 ```
 
 ### Test Settlement
 
-```powershell
+```bash
 curl -X POST http://localhost:8080/settle `
   -H "Content-Type: application/json" `
   -H "Authorization: Bearer YOUR_API_KEY" `

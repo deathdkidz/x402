@@ -45,13 +45,33 @@ docker-compose down
 
 ### Option 2: Local Redis
 
-**Windows (PowerShell script):**
+**Ubuntu/Linux (Native Installation):**
 ```bash
+# Install Redis
+sudo apt update
+sudo apt install redis-server -y
+
+# Start Redis service
+sudo systemctl start redis-server
+sudo systemctl enable redis-server
+
+# Test connection
+redis-cli ping
+# Should return: PONG
+```
+
+**Ubuntu/Linux (Docker):**
+```bash
+docker run -d --name x402-redis -p 6379:6379 redis:7-alpine
+```
+
+**Windows (PowerShell script):**
+```powershell
 .\setup-redis.ps1
 ```
 
-**Or manually with Docker:**
-```bash
+**Windows (Docker):**
+```powershell
 docker run -d --name x402-redis -p 6379:6379 redis:7-alpine
 ```
 
