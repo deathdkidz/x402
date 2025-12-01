@@ -1,0 +1,59 @@
+{
+  "name": "x402-facilitator",
+  "version": "1.0.0",
+  "description": "Secure x402 facilitator service with multi-layer verification and security checks",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "echo \"Tests not yet implemented\" && exit 0",
+    "lint": "eslint src --ext .ts",
+    "generate:merchant": "node scripts/generate-merchant.mjs",
+    "update:tier": "node scripts/update-merchant-tier.mjs"
+  },
+  "keywords": [
+    "x402",
+    "facilitator",
+    "payment",
+    "blockchain",
+    "crypto",
+    "security"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.11",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.9.0",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.8.2",
+    "joi": "^17.11.0",
+    "mysql2": "^3.15.3",
+    "next": "^16.0.5",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "viem": "^2.40.3",
+    "wagmi": "^3.0.2",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/ioredis": "^4.28.10",
+    "@types/node": "^20.10.5",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
