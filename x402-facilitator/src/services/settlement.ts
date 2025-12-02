@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { PaymentPayload, PaymentRequirements, SettleResponse, ExactPaymentPayload } from '../types/index.js';
-import config, { getRpcUrl } from '../config/index.js';
+import config, { getRpcUrl, getEIP712Domain } from '../config/index.js';
 import logger from '../utils/logger.js';
 import db from './database.js';
 import redis from './redis.js';
@@ -17,12 +17,19 @@ const ERC3009_ABI = [
 /**
  * Settlement service with multi-layer safety checks
  * Implements:
- * 1. Pre-settlement validation
- * 2. Gas estimation
- * 3. Transaction simulation (where possible)
- * 4. Nonce management
- * 5. Transaction monitoring
- * 6. Retry logic with exponential backoff
+ * 1. Network validation (supported networks)
+ * 2. Payer extraction
+ * 3. Merchant authorization validation
+ * 4. Authorization and signature extraction
+ * 5. Signature verification (EIP-712)
+ * 6. Time window validation (validAfter/validBefore)
+ * 7. Amount matching validation
+ * 8. Duplicate transaction detection
+ * 9. Pre-settlement balance verification
+ * 10. Replay attack protection (nonce checking)
+ * 11. Gas estimation
+ * 12. Transaction execution
+ * 13. Transaction monitoring
  */
 export class SettlementService {
   private pendingTransactions: Map<string, string> = new Map();
@@ -79,33 +86,65 @@ export class SettlementService {
     let transactionId: number | null = null;
 
     try {
-      // Safety Check 1: Extract payer information
+      // Safety Check 1: Validate network is supported
+      const networkCheck = this.validateNetwork(requirements.network);
+      if (!networkCheck.success) {
+        return networkCheck.response;
+      }
+
+      // Safety Check 2: Extract payer information
       const payerResult = this.extractPayer(payload);
       if (!payerResult.success) {
         return payerResult.response;
       }
       const payer = payerResult.payer!;
 
-      // Safety Check 2: Validate merchant is authorized
+      // Safety Check 3: Validate merchant is authorized
       const authCheck = this.validateMerchantAuth(requirements.payTo, merchantAddress);
       if (!authCheck.success) {
         return authCheck.response;
       }
 
-      // Safety Check 3: Extract authorization and signature
+      // Safety Check 4: Extract authorization and signature
       const authResult = this.extractAuthorization(payload);
       if (!authResult.success) {
         return authResult.response;
       }
       const { authorization, signature } = authResult;
 
-      // Safety Check 4: Check for duplicate transactions
+      // Safety Check 5: Verify signature matches payer
+      const sigCheck = await this.verifySignature(
+        payer,
+        signature!,
+        authorization!,
+        requirements
+      );
+      if (!sigCheck.success) {
+        return sigCheck.response;
+      }
+
+      // Safety Check 6: Verify time window (validAfter/validBefore)
+      const timeCheck = this.verifyTimeWindow(authorization!);
+      if (!timeCheck.success) {
+        return timeCheck.response;
+      }
+
+      // Safety Check 7: Verify amount matches
+      const amountCheck = this.verifyAmountMatch(
+        authorization!.value,
+        requirements.maxAmountRequired
+      );
+      if (!amountCheck.success) {
+        return amountCheck.response;
+      }
+
+      // Safety Check 8: Check for duplicate transactions
       const dupCheck = this.checkDuplicateTransaction(payload, requirements);
       if (!dupCheck.success) {
         return dupCheck.response;
       }
 
-      // Safety Check 5: Pre-settlement balance verification
+      // Safety Check 9: Pre-settlement balance verification
       const preCheck = await this.preSettlementBalanceCheck(
         payer,
         requirements.asset,
@@ -129,19 +168,37 @@ export class SettlementService {
       const nonce = authorization!.nonce.trim();
       const payTo = requirements.payTo.trim();
 
-      // Safety Check 6: Replay attack protection - check cache first, then on-chain
+      // Safety Check 10: Replay attack protection - check cache first, then on-chain
       // Check Redis cache for used nonce (fast path)
       const cachedTx = await redis.getNonceTransaction(payer, nonce);
       if (cachedTx) {
         logger.warn(`⛔ Nonce found in cache (already used): ${nonce} for payer: ${payer}`);
         logger.info(`   Cached transaction: ${cachedTx.transactionHash} (${cachedTx.status})`);
+        
+        // If transaction was completed, return success
+        if (cachedTx.status === 'completed') {
+          return {
+            success: true,
+            transaction: cachedTx.transactionHash,
+            transactionHash: cachedTx.transactionHash,
+            network: requirements.network,
+            payer,
+            status: 'completed',
+            message: 'This payment was already settled successfully',
+          };
+        }
+        
+        // If pending or failed, return error
         return {
           success: false,
           network: requirements.network,
-          errorReason: 'Nonce already used - transaction previously executed',
+          errorReason: cachedTx.status === 'pending'
+            ? 'Transaction with this nonce is still pending'
+            : 'Nonce already used - transaction previously failed',
           transactionHash: cachedTx.transactionHash,
           transactionStatus: cachedTx.status,
-          cached: true,
+          status: cachedTx.status as 'pending' | 'failed',
+          payer,
         };
       }
 
@@ -181,15 +238,31 @@ export class SettlementService {
         const existingTx = await db.getTransactionByNonce(payer, nonce);
         if (existingTx) {
           logger.warn(`⛔ Transaction with nonce ${nonce} already exists in database (ID: ${existingTx.id}, Status: ${existingTx.status})`);
+          
+          // If transaction was completed successfully, return success with transaction hash
+          if (existingTx.status === 'completed') {
+            return {
+              success: true,
+              transaction: existingTx.transaction_hash,
+              transactionHash: existingTx.transaction_hash,
+              network: requirements.network,
+              payer,
+              status: 'completed',
+              message: 'This payment was already settled successfully',
+            };
+          }
+          
+          // If transaction is pending or failed, return error
           return {
-            success: existingTx.status === 'completed',
+            success: false,
             network: requirements.network,
             errorReason: existingTx.status === 'pending' 
               ? 'Transaction with this nonce is still pending'
-              : 'Nonce already used - transaction previously executed',
+              : 'Nonce already used - transaction previously failed',
             transactionHash: existingTx.transaction_hash,
             transactionStatus: existingTx.status,
-            cached: false,
+            status: existingTx.status,
+            payer,
           };
         }
 
@@ -650,6 +723,160 @@ export class SettlementService {
   ): Promise<string | undefined> {
     const txKey = this.getTransactionKey(payload, requirements);
     return this.pendingTransactions.get(txKey);
+  }
+
+  /**
+   * Validate network is supported
+   */
+  private validateNetwork(network: string): { success: boolean; response: SettleResponse } {
+    if (!config.supportedNetworks.includes(network)) {
+      logger.warn(`❌ Unsupported network in settlement: ${network}`);
+      return {
+        success: false,
+        response: {
+          success: false,
+          network,
+          errorReason: `Network '${network}' is not supported. Supported networks: ${config.supportedNetworks.join(', ')}`,
+        },
+      };
+    }
+    logger.info(`✓ Network validation passed: ${network}`);
+    return { success: true, response: { success: true, network } };
+  }
+
+  /**
+   * Verify signature matches payer (EIP-712 for ERC-3009)
+   */
+  private async verifySignature(
+    payer: string,
+    signature: string,
+    authorization: any,
+    requirements: PaymentRequirements
+  ): Promise<{ success: boolean; response: SettleResponse }> {
+    try {
+      // Get EIP-712 domain for this network and token
+      const domain = getEIP712Domain(requirements.network, requirements.asset);
+      
+      if (!domain) {
+        logger.warn(`No EIP-712 domain config for ${requirements.network}/${requirements.asset}`);
+        return {
+          success: false,
+          response: {
+            success: false,
+            network: requirements.network,
+            errorReason: 'Token does not support ERC-3009 transferWithAuthorization',
+          },
+        };
+      }
+
+      // Verify EIP-712 typed data signature
+      const types = {
+        TransferWithAuthorization: [
+          { name: 'from', type: 'address' },
+          { name: 'to', type: 'address' },
+          { name: 'value', type: 'uint256' },
+          { name: 'validAfter', type: 'uint256' },
+          { name: 'validBefore', type: 'uint256' },
+          { name: 'nonce', type: 'bytes32' },
+        ],
+      };
+
+      const value = {
+        from: authorization.from,
+        to: authorization.to,
+        value: authorization.value,
+        validAfter: parseInt(authorization.validAfter),
+        validBefore: parseInt(authorization.validBefore),
+        nonce: authorization.nonce,
+      };
+
+      const recoveredAddress = ethers.verifyTypedData(domain, types, value, signature);
+
+      if (recoveredAddress.toLowerCase() !== payer.toLowerCase()) {
+        logger.warn(`Signature verification failed. Expected ${payer}, got ${recoveredAddress}`);
+        return {
+          success: false,
+          response: {
+            success: false,
+            network: requirements.network,
+            errorReason: `Invalid signature. Expected signer: ${payer}, got: ${recoveredAddress}`,
+          },
+        };
+      }
+
+      logger.info(`✓ Signature verification passed`);
+      return { success: true, response: { success: true, network: requirements.network } };
+
+    } catch (error) {
+      logger.error('Signature verification error:', error);
+      return {
+        success: false,
+        response: {
+          success: false,
+          network: requirements.network,
+          errorReason: `Signature verification failed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      };
+    }
+  }
+
+  /**
+   * Verify time window (validAfter/validBefore)
+   */
+  private verifyTimeWindow(authorization: any): { success: boolean; response: SettleResponse } {
+    const now = Math.floor(Date.now() / 1000);
+    const validAfter = parseInt(authorization.validAfter, 10);
+    const validBefore = parseInt(authorization.validBefore, 10);
+
+    if (now < validAfter) {
+      logger.warn(`Payment not yet valid. Current: ${now}, Valid after: ${validAfter}`);
+      return {
+        success: false,
+        response: {
+          success: false,
+          network: 'unknown',
+          errorReason: 'Payment authorization not yet valid',
+        },
+      };
+    }
+
+    if (now > validBefore) {
+      logger.warn(`Payment expired. Current: ${now}, Valid before: ${validBefore}`);
+      return {
+        success: false,
+        response: {
+          success: false,
+          network: 'unknown',
+          errorReason: 'Payment authorization expired',
+        },
+      };
+    }
+
+    logger.info(`✓ Time window validation passed`);
+    return { success: true, response: { success: true, network: 'unknown' } };
+  }
+
+  /**
+   * Verify amount matches between authorization and requirements
+   */
+  private verifyAmountMatch(authAmount: string, requiredAmount: string): { success: boolean; response: SettleResponse } {
+    const auth = BigInt(authAmount);
+    const required = BigInt(requiredAmount);
+
+    if (auth !== required) {
+      logger.warn(`Amount mismatch. Authorization: ${auth.toString()}, Required: ${required.toString()}`);
+      return {
+        success: false,
+        response: {
+          success: false,
+          network: 'unknown',
+          errorReason: `Amount mismatch. Authorization amount (${auth.toString()}) doesn't match required amount (${required.toString()})`,
+        },
+      };
+    }
+
+    logger.info(`✓ Amount verification passed`);
+    return { success: true, response: { success: true, network: 'unknown' } };
   }
 }
 

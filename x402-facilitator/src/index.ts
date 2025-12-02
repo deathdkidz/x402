@@ -4,10 +4,13 @@ import helmet from 'helmet';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
+import https from 'https';
 import config from './config/index.js';
 import logger from './utils/logger.js';
 import routes from './routes/index.js';
 import { generalRateLimiter } from './middleware/rateLimit.js';
+import { securityMiddleware } from './middleware/security.js';
 import db from './services/database.js';
 import redis from './services/redis.js';
 import transactionMonitor from './services/transactionMonitor.js';
@@ -23,6 +26,10 @@ if (!fs.existsSync(logsDir)) {
 
 const app: Application = express();
 
+// Trust proxy - Disabled since Cloudflare proxy is off
+// Direct connections for lower latency
+app.set('trust proxy', false);
+
 // Security middleware
 app.use(helmet());
 app.use(cors({
@@ -34,6 +41,9 @@ app.use(cors({
 // Body parsing middleware
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// Security middleware - block attacks
+app.use(securityMiddleware);
 
 // Rate limiting
 app.use(generalRateLimiter);
@@ -67,14 +77,21 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-// Start server
+// Start server with both HTTP and HTTPS
 const PORT = config.port;
-app.listen(PORT, async () => {
+const HTTPS_PORT = config.httpsPort;
+const USE_HTTPS = config.useHttps;
+
+// Function to start the server
+const startServer = async () => {
   logger.info('='.repeat(60));
   logger.info('🚀 x402 Facilitator Service Started');
   logger.info('='.repeat(60));
   logger.info(`Environment: ${config.nodeEnv}`);
-  logger.info(`Port: ${PORT}`);
+  logger.info(`HTTP Port: ${PORT}`);
+  if (USE_HTTPS) {
+    logger.info(`HTTPS Port: ${HTTPS_PORT} (⭐ preferred)`);
+  }
   logger.info(`Network: ${config.network}`);
   logger.info(`Supported Networks: ${config.supportedNetworks.join(', ')}`);
   logger.info(`Database: ${config.database.database}@${config.database.host}:${config.database.port}`);
@@ -105,7 +122,42 @@ app.listen(PORT, async () => {
   } catch (error) {
     logger.warn('⚠️ Transaction monitor failed to start:', error);
   }
+};
+
+// Start HTTP server
+const httpServer = http.createServer(app);
+httpServer.listen(PORT, () => {
+  logger.info(`✅ HTTP Server listening on port ${PORT}`);
+  startServer();
 });
+
+// Start HTTPS server if enabled
+if (USE_HTTPS) {
+  try {
+    const certPath = config.sslCertPath || path.join(process.cwd(), 'ssl', 'cert.pem');
+    const keyPath = config.sslKeyPath || path.join(process.cwd(), 'ssl', 'key.pem');
+    
+    // Check if certificates exist
+    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+      const httpsOptions = {
+        cert: fs.readFileSync(certPath),
+        key: fs.readFileSync(keyPath)
+      };
+      
+      const httpsServer = https.createServer(httpsOptions, app);
+      httpsServer.listen(HTTPS_PORT, () => {
+        logger.info(`✅ HTTPS Server listening on port ${HTTPS_PORT} (⭐ use this)`);
+      });
+    } else {
+      logger.warn(`⚠️ SSL certificates not found at ${certPath} and ${keyPath}`);
+      logger.warn('⚠️ HTTPS server not started. HTTP only available.');
+      logger.info('💡 To generate self-signed certificates, run: ./setup-ssl.sh');
+    }
+  } catch (error) {
+    logger.error('❌ Failed to start HTTPS server:', error);
+    logger.warn('⚠️ Continuing with HTTP only');
+  }
+}
 
 // Graceful shutdown
 const shutdown = async () => {

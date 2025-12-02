@@ -157,24 +157,6 @@ class DatabaseService {
   /**
    * Get transactions for a merchant
    */
-  async getMerchantTransactions(merchantAddress: string): Promise<any[]> {
-    try {
-      const [rows] = await this.pool.execute<mysql.RowDataPacket[]>(
-        `SELECT * FROM transactions 
-         WHERE merchant_address = ? 
-         ORDER BY created_at DESC 
-         LIMIT 100`,
-        [merchantAddress.toLowerCase()]
-      );
-
-      return rows;
-    } catch (error) {
-      logger.error('Database error getting merchant transactions:', error);
-      // Return empty array if table doesn't exist yet
-      return [];
-    }
-  }
-
   /**
    * Save a new transaction
    */

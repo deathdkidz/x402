@@ -60,13 +60,8 @@ sudo systemctl enable mysql
 # Create database
 mysql -u root -p -e "CREATE DATABASE x402_facilitator;"
 
-# Run migrations
-mysql -u root -p x402_facilitator < migrations/001_create_merchants_table.sql
-mysql -u root -p x402_facilitator < migrations/002_add_merchant_tiers.sql
-mysql -u root -p x402_facilitator < migrations/003_add_transactions_table.sql
-mysql -u root -p x402_facilitator < migrations/004_add_transaction_status_cache.sql
-mysql -u root -p x402_facilitator < migrations/005_add_token_support.sql
-mysql -u root -p x402_facilitator < migrations/006_create_gas_tracking_table.sql
+# Run consolidated migration (all-in-one)
+mysql -u root -p x402_facilitator < migrations/consolidated_migration.sql
 
 # Verify
 mysql -u root -p x402_facilitator -e "SHOW TABLES;"

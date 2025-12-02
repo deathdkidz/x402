@@ -1,11 +1,10 @@
 import express, { Router, Request, Response } from 'express';
 import { validateVerifyRequest, validateSettleRequest } from '../middleware/validation.js';
 import { verifyRateLimiter, settleRateLimiter, merchantRateLimiter } from '../middleware/rateLimit.js';
-import { optionalApiKeyAuth, apiKeyAuth } from '../middleware/auth.js';
+import { apiKeyAuth } from '../middleware/auth.js';
 import verificationService from '../services/verification.js';
 import settlementService from '../services/settlement.js';
 import merchantRoutes from './merchants.js';
-import merchantAuthRoutes from './merchant-auth.js';
 import logger from '../utils/logger.js';
 import config from '../config/index.js';
 
@@ -20,7 +19,6 @@ router.get('/health', (req: Request, res: Response) => {
     service: 'x402-facilitator',
     timestamp: Date.now(),
     uptime: process.uptime(),
-    network: config.network,
     supportedNetworks: config.supportedNetworks,
   });
 });
@@ -78,30 +76,9 @@ router.get('/', (req: Request, res: Response) => {
       settle: 'POST /settle',
       health: 'GET /health',
       networks: 'GET /networks',
+      merchantInfo: 'GET /merchant/me',
     },
-    network: config.network,
     supportedNetworks: config.supportedNetworks,
-  });
-});
-
-/**
- * Get merchant wallet address by API key
- * GET /merchant/wallet
- */
-router.get('/merchant/wallet', apiKeyAuth, (req: Request, res: Response) => {
-  if (!req.merchant) {
-    res.status(401).json({
-      error: 'Unauthorized',
-      message: 'Authentication required',
-    });
-    return;
-  }
-
-  res.status(200).json({
-    success: true,
-    merchant: {
-      merchant_address: req.merchant.merchant_address,
-    },
   });
 });
 
@@ -174,11 +151,16 @@ router.post(
  * POST /settle
  * 
  * Multi-layer settlement with safety checks:
- * 1. Pre-settlement validation
- * 2. Gas estimation
- * 3. Duplicate transaction check
- * 4. Transaction execution
- * 5. Transaction monitoring
+ * 1. Network validation
+ * 2. Signature verification (EIP-712)
+ * 3. Time window validation
+ * 4. Amount matching validation
+ * 5. Pre-settlement balance check
+ * 6. Duplicate transaction detection
+ * 7. Replay attack protection (nonce)
+ * 8. Gas estimation
+ * 9. Transaction execution
+ * 10. Transaction monitoring
  */
 router.post(
   '/settle',
@@ -251,6 +233,5 @@ router.post(
 
 // Mount merchant management routes
 router.use('/', merchantRoutes);
-router.use('/merchants', merchantAuthRoutes);
 
 export default router;

@@ -27,6 +27,10 @@ interface NetworkConfig {
 
 interface Config {
   port: number;
+  httpsPort: number;
+  useHttps: boolean;
+  sslCertPath?: string;
+  sslKeyPath?: string;
   nodeEnv: string;
   facilitatorPrivateKey: string;
   network: string;
@@ -113,6 +117,10 @@ const config: Config = {
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
   logLevel: process.env.LOG_LEVEL || 'info',
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+  httpsPort: parseInt(process.env.HTTPS_PORT || '8443', 10),
+  useHttps: process.env.USE_HTTPS === 'true',
+  sslCertPath: process.env.SSL_CERT_PATH,
+  sslKeyPath: process.env.SSL_KEY_PATH,
   database: {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '3306', 10),
