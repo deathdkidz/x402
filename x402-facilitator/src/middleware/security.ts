@@ -25,7 +25,7 @@ const allowedPaths = [
   /^\/networks$/,           // Networks info
   /^\/verify$/,             // Verify payment
   /^\/settle$/,             // Settle payment
-  /^\/merchant\/me$/,       // Get current merchant
+  /^\/merchant$/,           // Get current merchant
 ];
 
 // Track suspicious IPs

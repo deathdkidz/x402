@@ -214,7 +214,7 @@ export class SettlementService {
             errorReason: 'Nonce already used - transaction previously executed (found on-chain)',
           };
         }
-        logger.info(`✓ Nonce ${nonce} not yet used (cache miss, checked on-chain)`);
+        logger.debug(`✓ Nonce ${nonce} not yet used (cache miss, checked on-chain)`);
       } catch (error) {
         logger.error('Failed to check nonce state:', error);
         return {
@@ -548,7 +548,7 @@ export class SettlementService {
       };
     }
 
-    logger.info(`✓ Payer extracted: ${payer}`);
+    logger.debug(`✓ Payer extracted: ${payer}`);
     return { success: true, payer, response: { success: true, network: 'unknown' } };
   }
 
@@ -582,7 +582,7 @@ export class SettlementService {
       };
     }
 
-    logger.info(`✓ Authorization extracted with signature`);
+    logger.debug(`✓ Authorization extracted with signature`);
     return { success: true, authorization, signature, response: { success: true, network: 'unknown' } };
   }
 
@@ -602,7 +602,7 @@ export class SettlementService {
       };
     }
 
-    logger.info(`✓ Merchant authorization validated`);
+    logger.debug(`✓ Merchant authorization validated`);
     return { success: true, response: { success: true, network: 'unknown' } };
   }
 
@@ -628,7 +628,7 @@ export class SettlementService {
       };
     }
 
-    logger.info(`✓ No duplicate transaction found`);
+    logger.debug(`✓ No duplicate transaction found`);
     return { success: true, response: { success: true, network: requirements.network } };
   }
 
@@ -660,7 +660,7 @@ export class SettlementService {
         };
       }
 
-      logger.info(`✓ Pre-settlement balance check passed: ${balance.toString()}`);
+      logger.debug(`✓ Pre-settlement balance check passed: ${balance.toString()}`);
       return { success: true, response: { success: true, network: 'unknown' } };
 
     } catch (error) {
@@ -740,7 +740,7 @@ export class SettlementService {
         },
       };
     }
-    logger.info(`✓ Network validation passed: ${network}`);
+    logger.debug(`✓ Network validation passed: ${network}`);
     return { success: true, response: { success: true, network } };
   }
 
@@ -804,7 +804,7 @@ export class SettlementService {
         };
       }
 
-      logger.info(`✓ Signature verification passed`);
+      logger.debug(`✓ Signature verification passed`);
       return { success: true, response: { success: true, network: requirements.network } };
 
     } catch (error) {
@@ -852,7 +852,7 @@ export class SettlementService {
       };
     }
 
-    logger.info(`✓ Time window validation passed`);
+    logger.debug(`✓ Time window validation passed`);
     return { success: true, response: { success: true, network: 'unknown' } };
   }
 
@@ -875,7 +875,7 @@ export class SettlementService {
       };
     }
 
-    logger.info(`✓ Amount verification passed`);
+    logger.debug(`✓ Amount verification passed`);
     return { success: true, response: { success: true, network: 'unknown' } };
   }
 }

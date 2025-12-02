@@ -4,10 +4,10 @@ import { apiKeyAuth } from '../middleware/auth.js';
 const router = Router();
 
 /**
- * GET /api/merchant/me
+ * GET /merchant
  * Get current authenticated merchant info
  */
-router.get('/merchant/me', apiKeyAuth, async (req: Request, res: Response) => {
+router.get('/merchant', apiKeyAuth, async (req: Request, res: Response) => {
   if (!req.merchant) {
     res.status(401).json({
       error: 'Unauthorized',

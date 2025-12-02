@@ -118,7 +118,7 @@ export class VerificationService {
         invalidReason: `Network '${network}' is not supported. Supported networks: ${config.supportedNetworks.join(', ')}`,
       };
     }
-    logger.info(`✓ Network validation passed: ${network}`);
+    logger.debug(`✓ Network validation passed: ${network}`);
     return { isValid: true };
   }
 
@@ -149,7 +149,7 @@ export class VerificationService {
       };
     }
 
-    logger.info(`✓ Payload extraction passed: Payer=${payer}`);
+    logger.debug(`✓ Payload extraction passed: Payer=${payer}`);
     return {
       isValid: true,
       payer,
@@ -198,7 +198,7 @@ export class VerificationService {
 
         try {
           recoveredAddress = ethers.verifyTypedData(domain, types, value, signature);
-          logger.info(`✓ EIP-712 typed data signature verification succeeded`);
+          logger.debug(`✓ EIP-712 typed data signature verification succeeded`);
         } catch (eip712Error) {
           logger.warn(`EIP-712 verification failed, trying EIP-191: ${eip712Error}`);
           // Fall through to EIP-191 verification
@@ -214,14 +214,12 @@ export class VerificationService {
         return {
           isValid: false,
           invalidReason: `Invalid signature. Expected signer: ${payer}, got: ${recoveredAddress}`,
-          payer,
-        };
-      }
+        payer,
+      };
+    }
 
-      logger.info(`✓ Signature verification passed`);
-      return { isValid: true, payer };
-
-    } catch (error) {
+    logger.debug(`✓ Signature verification passed`);
+    return { isValid: true, payer };    } catch (error) {
       logger.error('Signature verification error:', error);
       return {
         isValid: false,
@@ -244,7 +242,7 @@ export class VerificationService {
 
     if (authorization.extra && typeof authorization.extra === 'object' && 'message' in authorization.extra) {
       messageToVerify = authorization.extra.message as string;
-      logger.info(`✓ Using custom EIP-191 message from payload`);
+      logger.debug(`✓ Using custom EIP-191 message from payload`);
     } else {
       // Default message format
       messageToVerify = `Chain ID: ${requirements.network}
@@ -253,7 +251,7 @@ User: ${payer}
 Receiver: ${requirements.payTo}
 Amount: ${requirements.maxAmountRequired}
 `;
-      logger.info(`✓ Using default EIP-191 message format`);
+      logger.debug(`✓ Using default EIP-191 message format`);
     }
 
     return ethers.verifyMessage(messageToVerify, signature);
@@ -283,7 +281,7 @@ Amount: ${requirements.maxAmountRequired}
       };
     }
 
-    logger.info(`✓ Time window validation passed`);
+    logger.debug(`✓ Time window validation passed`);
     return { isValid: true };
   }
 
@@ -307,14 +305,12 @@ Amount: ${requirements.maxAmountRequired}
         return {
           isValid: false,
           invalidReason: `Insufficient balance. Has ${balance.toString()}, needs ${required.toString()}`,
-          payer,
-        };
-      }
+        payer,
+      };
+    }
 
-      logger.info(`✓ Balance verification passed: ${balance.toString()}`);
-      return { isValid: true, payer };
-
-    } catch (error) {
+    logger.debug(`✓ Balance verification passed: ${balance.toString()}`);
+    return { isValid: true, payer };    } catch (error) {
       logger.error('Balance check error:', error);
       return {
         isValid: false,
@@ -339,7 +335,7 @@ Amount: ${requirements.maxAmountRequired}
       };
     }
 
-    logger.info(`✓ Amount verification passed`);
+    logger.debug(`✓ Amount verification passed`);
     return { isValid: true };
   }
 }

@@ -26,6 +26,8 @@ interface NetworkConfig {
 }
 
 interface Config {
+  serviceName: string;
+  serviceDescription: string;
   port: number;
   httpsPort: number;
   useHttps: boolean;
@@ -58,6 +60,8 @@ if (missingEnvVars.length > 0) {
 }
 
 const config: Config = {
+  serviceName: process.env.SERVICE_NAME || 'x402 Facilitator',
+  serviceDescription: process.env.SERVICE_DESCRIPTION || 'Secure x402 payment facilitator',
   port: parseInt(process.env.PORT || '8080', 10),
   nodeEnv: process.env.NODE_ENV || 'production',
   facilitatorPrivateKey: process.env.FACILITATOR_PRIVATE_KEY!,

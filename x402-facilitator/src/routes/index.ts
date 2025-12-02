@@ -68,15 +68,14 @@ router.get('/networks', (req: Request, res: Response) => {
  */
 router.get('/', (req: Request, res: Response) => {
   res.json({
-    name: 'x402 Facilitator Service',
-    version: '1.0.0',
-    description: 'Secure x402 payment facilitator with multi-layer verification',
+    name: config.serviceName,
+    description: config.serviceDescription,
     endpoints: {
-      verify: 'POST /verify',
-      settle: 'POST /settle',
       health: 'GET /health',
       networks: 'GET /networks',
-      merchantInfo: 'GET /merchant/me',
+      verify: 'POST /verify',
+      settle: 'POST /settle',
+      merchant: 'GET /merchant',
     },
     supportedNetworks: config.supportedNetworks,
   });
