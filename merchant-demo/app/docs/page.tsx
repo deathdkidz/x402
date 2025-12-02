@@ -206,13 +206,14 @@ export default function DocsPage() {
               </div>
 
               <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
-                <h3 className="text-lg font-bold text-slate-100 mb-3">Error Response (400/500)</h3>
+                <h3 className="text-lg font-bold text-slate-100 mb-3">Error Response (200/500)</h3>
                 <pre className="bg-slate-800/60 p-4 rounded-lg overflow-x-auto text-xs">
                   <code className="text-red-400 font-mono">{`{
   "isValid": false,
   "is_valid": false,
-  "error": "Error description",
-  "details": "Detailed error information"
+  "invalidReason": "Error description",
+  "invalid_reason": "Error description",
+  "payer": "0x1234...5678"
 }`}</code>
                 </pre>
               </div>
@@ -306,19 +307,25 @@ export default function DocsPage() {
                   <code className="text-green-400 font-mono">{`{
   "success": true,
   "transaction": "0xTRANSACTION_HASH",
+  "transactionHash": "0xTRANSACTION_HASH",
   "network": "Base Sepolia",
-  "payer": "0x1234...5678"
+  "payer": "0x1234...5678",
+  "status": "completed",
+  "message": "Settlement successful"
 }`}</code>
                 </pre>
               </div>
 
               <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
-                <h3 className="text-lg font-bold text-slate-100 mb-3">Error Response (400/500)</h3>
+                <h3 className="text-lg font-bold text-slate-100 mb-3">Error Response (200/500)</h3>
                 <pre className="bg-slate-800/60 p-4 rounded-lg overflow-x-auto text-xs">
                   <code className="text-red-400 font-mono">{`{
   "success": false,
-  "error": "Error description",
-  "details": "Detailed error information"
+  "errorReason": "Error description",
+  "error_reason": "Error description",
+  "network": "Base Sepolia",
+  "payer": "0x1234...5678",
+  "status": "failed"
 }`}</code>
                 </pre>
               </div>
@@ -448,7 +455,6 @@ export default function DocsPage() {
   "service": "x402-facilitator",
   "timestamp": 1701450000000,
   "uptime": 3600,
-  "network": "Base Sepolia",
   "supportedNetworks": [
     "Base Sepolia",
     "Ethereum Sepolia",
@@ -479,12 +485,8 @@ export default function DocsPage() {
                     <span className="text-slate-400 ml-2">- Service uptime in seconds</span>
                   </div>
                   <div>
-                    <span className="text-cyan-400 font-mono">network</span>
-                    <span className="text-slate-400 ml-2">- Default network</span>
-                  </div>
-                  <div>
                     <span className="text-cyan-400 font-mono">supportedNetworks</span>
-                    <span className="text-slate-400 ml-2">- List of supported networks</span>
+                    <span className="text-slate-400 ml-2">- List of all supported blockchain networks</span>
                   </div>
                 </div>
               </div>
@@ -524,9 +526,9 @@ export default function DocsPage() {
           {activeTab === 'merchant' && (
             <div className="space-y-6">
               <div>
-                <h2 className="text-2xl font-bold text-slate-100 mb-2">GET /merchant/wallet</h2>
+                <h2 className="text-2xl font-bold text-slate-100 mb-2">GET /merchant</h2>
                 <p className="text-slate-300">
-                  Get the merchant wallet address associated with your API key
+                  Get the merchant information associated with your API key
                 </p>
               </div>
 
@@ -546,7 +548,11 @@ export default function DocsPage() {
                   <code className="text-green-400 font-mono">{`{
   "success": true,
   "merchant": {
-    "merchant_address": "0x1234...5678"
+    "id": 1,
+    "merchant_address": "0x1234...5678",
+    "created_at": "2025-01-01T00:00:00.000Z",
+    "updated_at": "2025-01-01T00:00:00.000Z",
+    "is_active": true
   }
 }`}</code>
                 </pre>
@@ -565,7 +571,7 @@ export default function DocsPage() {
               <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
                 <h3 className="text-lg font-bold text-slate-100 mb-3">Example cURL</h3>
                 <pre className="bg-slate-800/60 p-4 rounded-lg overflow-x-auto text-xs">
-                  <code className="text-slate-300 font-mono">{`curl ${process.env.NEXT_PUBLIC_FACILITATOR_URL || 'http://localhost:8080'}/merchant/wallet \\
+                  <code className="text-slate-300 font-mono">{`curl ${process.env.NEXT_PUBLIC_FACILITATOR_URL || 'http://localhost:8080'}/merchant \\
   -H "Authorization: Bearer YOUR_API_KEY"`}</code>
                 </pre>
               </div>
@@ -583,6 +589,10 @@ export default function DocsPage() {
                   </li>
                   <li className="flex items-start gap-2 text-slate-300">
                     <span className="text-cyan-400 mt-1">•</span>
+                    <span>Get merchant account details including ID and timestamps</span>
+                  </li>
+                  <li className="flex items-start gap-2 text-slate-300">
+                    <span className="text-cyan-400 mt-1">•</span>
                     <span>Display merchant information in admin dashboards</span>
                   </li>
                 </ul>
@@ -592,11 +602,13 @@ export default function DocsPage() {
                 <div className="flex gap-2">
                   <span className="text-blue-400">ℹ️</span>
                   <div>
-                    <h4 className="text-blue-300 font-medium mb-2">Additional Merchant Endpoints</h4>
+                    <h4 className="text-blue-300 font-medium mb-2">Response Fields</h4>
                     <div className="text-blue-300/80 text-sm space-y-1">
-                      <p><strong>POST /merchants</strong> - Register a new merchant account</p>
-                      <p><strong>GET /merchants/me</strong> - Get full merchant profile information</p>
-                      <p><strong>POST /merchants/regenerate-key</strong> - Generate a new API key</p>
+                      <p><strong>id</strong> - Unique merchant identifier</p>
+                      <p><strong>merchant_address</strong> - Wallet address for receiving payments</p>
+                      <p><strong>created_at</strong> - Account creation timestamp</p>
+                      <p><strong>updated_at</strong> - Last update timestamp</p>
+                      <p><strong>is_active</strong> - Account active status</p>
                     </div>
                   </div>
                 </div>

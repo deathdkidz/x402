@@ -83,7 +83,7 @@ export default function TestPage() {
       if (!apiKey) return;
       
       try {
-        const response = await fetch(`${facilitatorUrl}/merchant/wallet`, {
+        const response = await fetch(`${facilitatorUrl}/merchant`, {
           headers: {
             'Authorization': `Bearer ${apiKey}`
           }
