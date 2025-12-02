@@ -39,7 +39,7 @@ export default function DemoPage() {
   const [txHash, setTxHash] = useState('');
   const [loadingNetworks, setLoadingNetworks] = useState(true);
 
-  const facilitatorUrl = 'http://localhost:8080';
+  const facilitatorUrl = process.env.NEXT_PUBLIC_FACILITATOR_URL || 'http://localhost:8080';
 
   useEffect(() => {
     const stored = localStorage.getItem('x402_api_key');

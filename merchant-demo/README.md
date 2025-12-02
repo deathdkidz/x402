@@ -23,6 +23,20 @@ A demonstration merchant store application showcasing the x402 payment protocol 
 npm install
 ```
 
+### Configuration
+
+Create a `.env.local` file in the root directory (or copy from `.env.example`):
+
+```bash
+cp .env.example .env.local
+```
+
+Configure the facilitator URL:
+
+```env
+NEXT_PUBLIC_FACILITATOR_URL=http://localhost:8080
+```
+
 ### Development
 
 ```bash
@@ -30,6 +44,13 @@ npm run dev
 ```
 
 Open [http://localhost:3003](http://localhost:3003) to view the demo store.
+
+## Features & Pages
+
+- **Home** (`/`) - API key configuration and navigation
+- **Payment Demo** (`/demo`) - Interactive demo showing x402 payment flow with locked content
+- **API Testing** (`/test`) - Test all facilitator endpoints (health, verify, settle, networks)
+- **API Documentation** (`/docs`) - Complete API reference with examples and use cases
 
 ### Building for Production
 

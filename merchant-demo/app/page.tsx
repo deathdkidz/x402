@@ -185,6 +185,35 @@ export default function HomePage() {
           </div>
         )}
 
+        {/* Documentation Link - Always Visible */}
+        <div className={savedApiKey ? 'mt-6' : ''}>
+          <Link
+            href="/docs"
+            className="group relative bg-gradient-to-br from-slate-800/80 via-slate-800/60 to-slate-900/80 backdrop-blur-xl border border-purple-500/20 rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:scale-[1.02] hover:border-purple-500/40 block"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent pointer-events-none"></div>
+            
+            <div className="relative p-6">
+              <div className="flex items-center gap-4">
+                <div className="text-5xl">📚</div>
+                
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-slate-100 mb-1">
+                    API Documentation
+                  </h3>
+                  <p className="text-sm text-slate-400">
+                    Complete guide to all x402 facilitator endpoints with examples and use cases
+                  </p>
+                </div>
+                
+                <div className="text-purple-400 text-sm font-medium group-hover:translate-x-1 transition-transform">
+                  View Docs →
+                </div>
+              </div>
+            </div>
+          </Link>
+        </div>
+
         {/* Info Section */}
         {!savedApiKey && (
           <div className="mt-8 bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">

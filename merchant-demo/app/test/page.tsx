@@ -41,7 +41,7 @@ export default function TestPage() {
     settle?: any;
   }>({});
 
-  const [facilitatorUrl, setFacilitatorUrl] = useState('http://localhost:8080');
+  const [facilitatorUrl, setFacilitatorUrl] = useState(process.env.NEXT_PUBLIC_FACILITATOR_URL || 'http://localhost:8080');
   const [network, setNetwork] = useState('');
   const [selectedToken, setSelectedToken] = useState('');
   const [amount, setAmount] = useState('1');
