@@ -14,7 +14,8 @@ const ERC20_ABI = [
  * Implements multiple security checks:
  * 1. Network validation
  * 2. Payload extraction and structure validation
- * 3. Signature verification (EIP-191)
+ * 3. Signature verification (EIP-712/EIP-191)
+ * 3.5. Recipient address validation (prevents payment redirection)
  * 4. Time window validation
  * 5. Balance verification
  * 6. Amount validation
@@ -64,6 +65,12 @@ export class VerificationService {
       );
       if (!signatureCheck.isValid) {
         return signatureCheck;
+      }
+
+      // Layer 3.5: Verify recipient matches (CRITICAL SECURITY)
+      const recipientCheck = this.verifyRecipient(authorization!, requirements);
+      if (!recipientCheck.isValid) {
+        return recipientCheck;
       }
 
       // Layer 4: Verify time window
@@ -255,6 +262,27 @@ Amount: ${requirements.maxAmountRequired}
     }
 
     return ethers.verifyMessage(messageToVerify, signature);
+  }
+
+  /**
+   * Layer 3.5: Verify recipient matches (CRITICAL SECURITY CHECK)
+   * Prevents payment redirection attacks where attacker uses valid signature
+   * but changes the recipient in paymentRequirements
+   */
+  private verifyRecipient(authorization: any, requirements: PaymentRequirements): VerifyResponse {
+    const authTo = authorization.to.toLowerCase();
+    const reqTo = requirements.payTo.toLowerCase();
+    
+    if (authTo !== reqTo) {
+      logger.warn(`⚠️ SECURITY: Recipient mismatch! Signed for: ${authTo}, Required: ${reqTo}`);
+      return {
+        isValid: false,
+        invalidReason: `Recipient mismatch. Payment authorized for ${authTo}, but requirements specify ${reqTo}. Possible attack attempt.`,
+      };
+    }
+    
+    logger.debug(`✓ Recipient verification passed: ${reqTo}`);
+    return { isValid: true };
   }
 
   /**

@@ -123,6 +123,12 @@ export class SettlementService {
         return sigCheck.response;
       }
 
+      // Safety Check 5.5: Verify recipient matches (CRITICAL SECURITY)
+      const recipientCheck = this.verifyRecipient(authorization!, requirements);
+      if (!recipientCheck.success) {
+        return recipientCheck.response;
+      }
+
       // Safety Check 6: Verify time window (validAfter/validBefore)
       const timeCheck = this.verifyTimeWindow(authorization!);
       if (!timeCheck.success) {
@@ -276,6 +282,9 @@ export class SettlementService {
           amount: requirements.maxAmountRequired,
           asset: requirements.asset,
           network: requirements.network,
+          resource: requirements.resource,
+          description: requirements.description,
+          mimeType: requirements.mimeType,
           status: 'pending',
           timeoutSeconds: requirements.maxTimeoutSeconds || 3600,
         });
@@ -818,6 +827,29 @@ export class SettlementService {
         },
       };
     }
+  }
+
+  /**
+   * Verify recipient matches (CRITICAL SECURITY CHECK)
+   */
+  private verifyRecipient(authorization: any, requirements: PaymentRequirements): { success: boolean; response: SettleResponse } {
+    const authTo = authorization.to.toLowerCase();
+    const reqTo = requirements.payTo.toLowerCase();
+    
+    if (authTo !== reqTo) {
+      logger.warn(`⚠️ SECURITY: Recipient mismatch! Signed for: ${authTo}, Required: ${reqTo}`);
+      return {
+        success: false,
+        response: {
+          success: false,
+          network: requirements.network,
+          errorReason: `Recipient mismatch. Payment authorized for ${authTo}, but requirements specify ${reqTo}. Possible attack attempt.`,
+        },
+      };
+    }
+    
+    logger.debug(`✓ Recipient verification passed: ${reqTo}`);
+    return { success: true, response: { success: true, network: requirements.network } };
   }
 
   /**

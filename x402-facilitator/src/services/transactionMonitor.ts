@@ -168,6 +168,9 @@ export class TransactionMonitor {
           amount: tx.amount,
           asset: tx.asset,
           network: tx.network,
+          resource: tx.resource,
+          description: tx.description,
+          mimeType: tx.mime_type,
           status,
           timestamp: Date.now(),
         }

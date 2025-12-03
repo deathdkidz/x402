@@ -10,6 +10,9 @@ interface WebhookPayload {
   amount: string;
   asset: string;
   network: string;
+  resource?: string;
+  description?: string;
+  mimeType?: string;
   status: 'pending' | 'completed' | 'failed';
   timestamp: number;
 }

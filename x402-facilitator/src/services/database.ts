@@ -170,6 +170,9 @@ class DatabaseService {
     validAfter: string;
     validBefore: string;
     signature: string;
+    resource?: string;
+    description?: string;
+    mimeType?: string;
     transactionHash?: string;
     status: 'pending' | 'completed' | 'failed';
     timeoutSeconds?: number;
@@ -181,8 +184,8 @@ class DatabaseService {
 
       const [result] = await this.pool.execute<mysql.ResultSetHeader>(
         `INSERT INTO transactions (merchant_address, payer_address, nonce, valid_after, valid_before, 
-         signature, amount, asset, network, transaction_hash, status, timeout_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         signature, amount, asset, network, resource, description, mime_type, transaction_hash, status, timeout_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           data.merchantAddress.toLowerCase(),
           data.payerAddress.toLowerCase(),
@@ -193,6 +196,9 @@ class DatabaseService {
           data.amount,
           data.asset.toLowerCase(),
           data.network,
+          data.resource || null,
+          data.description || null,
+          data.mimeType || null,
           data.transactionHash || null,
           data.status,
           timeoutAt
