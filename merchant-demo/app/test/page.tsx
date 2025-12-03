@@ -273,7 +273,7 @@ export default function TestPage() {
       if (!networkConfig || !tokenConfig) throw new Error('Network or token not found');
       
       const startTime = Date.now();
-      const payloads = [];
+      const payloads: any[] = [];
       
       console.log(`🚀 Generating ${batchCount} payment payloads...`);
       
