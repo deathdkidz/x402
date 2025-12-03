@@ -4,11 +4,96 @@
  * Implements the X-402 payment protocol using X-PAYMENT headers
  * This middleware sits between client and content APIs to handle payments
  * 
- * Flow:
- * 1. Client sends request with X-PAYMENT header (base64 encoded)
- * 2. Server decodes and verifies with facilitator
- * 3. Server settles payment if valid
- * 4. Server returns content with X-PAYMENT-RESPONSE header
+ * Complete Flow with Raw Data:
+ * 
+ * 1. CLIENT → SERVER
+ *    GET /api/premium/cat HTTP/1.1
+ *    X-PAYMENT: eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweDc0MmQu...
+ *    
+ *    Decoded X-PAYMENT:
+ *    {
+ *      "authorization": {
+ *        "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+ *        "to": "0xMerchantAddress...",
+ *        "value": "10000",
+ *        "validAfter": "1701619200",
+ *        "validBefore": "1701622800",
+ *        "nonce": "0x1234..."
+ *      },
+ *      "signature": "0xabcd1234..."
+ *    }
+ * 
+ * 2. SERVER → FACILITATOR (Verify)
+ *    POST http://localhost/verify
+ *    Authorization: Bearer merchant_api_key_123
+ *    Content-Type: application/json
+ *    
+ *    Body:
+ *    {
+ *      "x402Version": 1,
+ *      "paymentPayload": {
+ *        "x402Version": 1,
+ *        "payload": { ...decoded X-PAYMENT... }
+ *      },
+ *      "paymentRequirements": {
+ *        "scheme": "erc3009",
+ *        "network": "base-sepolia",
+ *        "asset": "USDC",
+ *        "payTo": "0xMerchantAddress...",
+ *        "maxAmountRequired": "10000",
+ *        "resource": "/api/premium/cat",
+ *        "description": "Premium Cat Image",
+ *        "mimeType": "image/jpeg",
+ *        "maxTimeoutSeconds": 300
+ *      }
+ *    }
+ * 
+ * 3. FACILITATOR → SERVER (Verify Response)
+ *    HTTP/1.1 200 OK
+ *    Content-Type: application/json
+ *    
+ *    Body:
+ *    {
+ *      "isValid": true,
+ *      "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *    }
+ * 
+ * 4. SERVER → FACILITATOR (Settle)
+ *    POST http://localhost:8080/settle
+ *    Authorization: Bearer merchant_api_key_123
+ *    Content-Type: application/json
+ *    
+ *    Body: (same as verify)
+ * 
+ * 5. FACILITATOR → SERVER (Settle Response)
+ *    HTTP/1.1 200 OK
+ *    Content-Type: application/json
+ *    
+ *    Body:
+ *    {
+ *      "success": true,
+ *      "transaction": "0xabcdef1234567890...",
+ *      "status": "completed"
+ *    }
+ * 
+ * 6. SERVER → CLIENT (Success)
+ *    HTTP/1.1 200 OK
+ *    Content-Type: application/json
+ *    X-PAYMENT-RESPONSE: eyJzdGF0dXMiOiJjb21wbGV0ZWQiLCJ0cmFuc2FjdGlvbkhhc2giOiIweDEyMyJ9
+ *    
+ *    Decoded X-PAYMENT-RESPONSE:
+ *    {
+ *      "status": "completed",
+ *      "transactionHash": "0xabcdef1234567890...",
+ *      "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *    }
+ *    
+ *    Body:
+ *    {
+ *      "success": true,
+ *      "imageUrl": "https://...",
+ *      "description": "Premium content"
+ *    }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
