@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { PaymentPayload, PaymentRequirements, SettleResponse, ExactPaymentPayload } from '../types/index.js';
-import config, { getRpcUrl, getEIP712Domain } from '../config/index.js';
+import config, { getRpcUrl, getEIP712Domain, getTokenByAddress } from '../config/index.js';
 import logger from '../utils/logger.js';
 import db from './database.js';
 import redis from './redis.js';
@@ -90,6 +90,12 @@ export class SettlementService {
       const networkCheck = this.validateNetwork(requirements.network);
       if (!networkCheck.success) {
         return networkCheck.response;
+      }
+
+      // Safety Check 1.5: Validate token is supported on the network
+      const tokenCheck = this.validateToken(requirements.network, requirements.asset);
+      if (!tokenCheck.success) {
+        return tokenCheck.response;
       }
 
       // Safety Check 2: Extract payer information
@@ -750,6 +756,28 @@ export class SettlementService {
       };
     }
     logger.debug(`✓ Network validation passed: ${network}`);
+    return { success: true, response: { success: true, network } };
+  }
+
+  /**
+   * Validate token is supported on the network
+   */
+  private validateToken(network: string, tokenAddress: string): { success: boolean; response: SettleResponse } {
+    const token = getTokenByAddress(network, tokenAddress);
+    if (!token) {
+      logger.warn(`❌ Unsupported token in settlement: ${tokenAddress} on network: ${network}`);
+      const networkConfig = config.networks[network];
+      const supportedTokens = networkConfig?.tokens.map(t => `${t.symbol} (${t.address})`).join(', ') || 'none';
+      return {
+        success: false,
+        response: {
+          success: false,
+          network,
+          errorReason: `Token '${tokenAddress}' is not supported on network '${network}'. Supported tokens: ${supportedTokens}`,
+        },
+      };
+    }
+    logger.debug(`✓ Token validation passed: ${token.symbol} (${token.address})`);
     return { success: true, response: { success: true, network } };
   }
 

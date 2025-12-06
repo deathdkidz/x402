@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { PaymentPayload, PaymentRequirements, VerifyResponse, ExactPaymentPayload } from '../types/index.js';
-import config, { getRpcUrl, getEIP712Domain } from '../config/index.js';
+import config, { getRpcUrl, getEIP712Domain, getTokenByAddress } from '../config/index.js';
 import logger from '../utils/logger.js';
 
 // Standard ERC20 ABI for balance checking
@@ -13,6 +13,7 @@ const ERC20_ABI = [
  * Multi-layer payment verification service
  * Implements multiple security checks:
  * 1. Network validation
+ * 1.5. Token validation
  * 2. Payload extraction and structure validation
  * 3. Signature verification (EIP-712/EIP-191)
  * 3.5. Recipient address validation (prevents payment redirection)
@@ -46,6 +47,12 @@ export class VerificationService {
       const networkCheck = this.validateNetwork(requirements.network);
       if (!networkCheck.isValid) {
         return networkCheck;
+      }
+
+      // Layer 1.5: Validate token is supported on the network
+      const tokenCheck = this.validateToken(requirements.network, requirements.asset);
+      if (!tokenCheck.isValid) {
+        return tokenCheck;
       }
 
       // Layer 2: Extract and validate payload structure
@@ -126,6 +133,24 @@ export class VerificationService {
       };
     }
     logger.debug(`✓ Network validation passed: ${network}`);
+    return { isValid: true };
+  }
+
+  /**
+   * Layer 1.5: Validate token is supported on the network
+   */
+  private validateToken(network: string, tokenAddress: string): VerifyResponse {
+    const token = getTokenByAddress(network, tokenAddress);
+    if (!token) {
+      logger.warn(`Unsupported token: ${tokenAddress} on network: ${network}`);
+      const networkConfig = config.networks[network];
+      const supportedTokens = networkConfig?.tokens.map(t => `${t.symbol} (${t.address})`).join(', ') || 'none';
+      return {
+        isValid: false,
+        invalidReason: `Token '${tokenAddress}' is not supported on network '${network}'. Supported tokens: ${supportedTokens}`,
+      };
+    }
+    logger.debug(`✓ Token validation passed: ${token.symbol} (${token.address})`);
     return { isValid: true };
   }
 
