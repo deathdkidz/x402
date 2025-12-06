@@ -152,15 +152,22 @@ export class TransactionMonitor {
         return; // No webhook configured
       }
 
+      // Check if merchant wants this event type
+      const wantedEvents = merchant.webhook_events.split(',');
       const event = status === 'completed' 
         ? 'transaction.completed' 
         : 'transaction.failed';
+      
+      if (!wantedEvents.includes(event)) {
+        logger.debug(`Merchant does not subscribe to ${event} events`);
+        return;
+      }
 
       await webhookService.sendWebhook(
         merchant.webhook_url,
         merchant.webhook_secret,
         {
-          event,
+          event: event as 'transaction.completed' | 'transaction.failed',
           transactionId: tx.id,
           transactionHash: tx.transaction_hash,
           merchantAddress: tx.merchant_address,
@@ -172,7 +179,7 @@ export class TransactionMonitor {
           description: tx.description,
           mimeType: tx.mime_type,
           status,
-          timestamp: Date.now(),
+          timestamp: Math.floor(Date.now() / 1000),
         }
       );
     } catch (error) {

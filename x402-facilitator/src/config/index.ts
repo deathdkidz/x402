@@ -34,7 +34,7 @@ interface Config {
   sslCertPath?: string;
   sslKeyPath?: string;
   nodeEnv: string;
-  facilitatorPrivateKey: string;
+  paymasterPrivateKeys: string[];
   network: string;
   supportedNetworks: string[];
   networks: { [network: string]: NetworkConfig };
@@ -52,19 +52,29 @@ interface Config {
 }
 
 // Validate required environment variables
-const requiredEnvVars = ['FACILITATOR_PRIVATE_KEY', 'SUPPORTED_NETWORKS'];
+const requiredEnvVars = ['PAYMASTER_PRIVATE_KEYS', 'SUPPORTED_NETWORKS'];
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingEnvVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
 }
 
+// Load paymaster private keys (supports multiple wallets)
+// Format: PAYMASTER_PRIVATE_KEYS=key1,key2,key3
+const loadPaymasterKeys = (): string[] => {
+  const keys = process.env.PAYMASTER_PRIVATE_KEYS!.split(',').map(k => k.trim()).filter(k => k.length > 0);
+  if (keys.length === 0) {
+    throw new Error('PAYMASTER_PRIVATE_KEYS is set but contains no valid keys');
+  }
+  return keys;
+};
+
 const config: Config = {
   serviceName: process.env.SERVICE_NAME || 'x402 Facilitator',
   serviceDescription: process.env.SERVICE_DESCRIPTION || 'Secure x402 payment facilitator',
   port: parseInt(process.env.PORT || '8080', 10),
   nodeEnv: process.env.NODE_ENV || 'production',
-  facilitatorPrivateKey: process.env.FACILITATOR_PRIVATE_KEY!,
+  paymasterPrivateKeys: loadPaymasterKeys(),
   network: process.env.NETWORK || 'Base Sepolia',
   supportedNetworks: (process.env.SUPPORTED_NETWORKS || 'Base Sepolia').split(',').map(n => n.trim()),
   networks: {

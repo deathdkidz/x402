@@ -512,6 +512,57 @@ class DatabaseService {
   }
 
   /**
+   * Save webhook delivery attempt
+   */
+  async saveWebhookDelivery(data: {
+    transactionId: number;
+    webhookUrl: string;
+    event: string;
+    status: 'success' | 'failed';
+    responseCode: number | undefined;
+    attempts: number;
+    errorMessage?: string;
+  }): Promise<void> {
+    try {
+      await this.pool.execute(
+        `INSERT INTO webhook_deliveries 
+        (transaction_id, webhook_url, event, status, response_code, attempts, error_message)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          data.transactionId,
+          data.webhookUrl,
+          data.event,
+          data.status,
+          data.responseCode || null,
+          data.attempts,
+          data.errorMessage || null,
+        ]
+      );
+    } catch (error) {
+      logger.error('Database error saving webhook delivery:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get webhook delivery logs for a transaction
+   */
+  async getWebhookDeliveries(transactionId: number): Promise<any[]> {
+    try {
+      const [rows] = await this.pool.execute<mysql.RowDataPacket[]>(
+        `SELECT * FROM webhook_deliveries 
+         WHERE transaction_id = ? 
+         ORDER BY created_at DESC`,
+        [transactionId]
+      );
+      return rows;
+    } catch (error) {
+      logger.error('Database error getting webhook deliveries:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Close connection pool
    */
   async close(): Promise<void> {

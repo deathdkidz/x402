@@ -5,6 +5,8 @@ import logger from '../utils/logger.js';
 import db from './database.js';
 import redis from './redis.js';
 import { transactionQueue } from './transactionQueue.js';
+import webhookService from './webhook.js';
+import paymasterPool from './paymasterPool.js';
 
 // ERC-3009 ABI for gasless transfers with authorization
 const ERC3009_ABI = [
@@ -73,9 +75,9 @@ export class SettlementService {
     // Get provider for the specified network
     const provider = this.getProvider(requirements.network);
     
-    // Use facilitator's private key as paymaster
-    const paymasterWallet = new ethers.Wallet(config.facilitatorPrivateKey, provider);
-    logger.info(`Using facilitator wallet as paymaster: ${paymasterWallet.address}`);
+    // Get next available paymaster wallet from pool (round-robin)
+    const paymasterWallet = paymasterPool.getNextWallet();
+    logger.info(`Using paymaster wallet: ${paymasterWallet.address}`);
     logger.info(`Settling payment to merchant: ${merchantAddress}`);
     logger.info('=== STARTING PAYMENT SETTLEMENT ===');
     logger.info(`Network: ${requirements.network}`);
@@ -338,6 +340,16 @@ export class SettlementService {
       const txKey = this.getTransactionKey(payload, requirements);
       this.pendingTransactions.set(txKey, tx.hash);
 
+      // Update database with transaction hash immediately after submission
+      if (transactionId) {
+        try {
+          await db.updateTransaction(transactionId, 'pending', tx.hash);
+          logger.info(`💾 Transaction ${transactionId} updated with hash: ${tx.hash}`);
+        } catch (dbError) {
+          logger.warn('Failed to update transaction with hash:', dbError);
+        }
+      }
+
       // Cache the nonce as used immediately with pending status
       await redis.cacheUsedNonce(payer, nonce, tx.hash, 'pending');
 
@@ -396,6 +408,11 @@ export class SettlementService {
           } catch (dbError) {
             logger.warn('Failed to update transaction status:', dbError);
           }
+        }
+        
+        // Send webhook notification immediately
+        if (transactionId) {
+          await this.sendWebhookNotification(transactionId, merchantAddress, payer, requirements, tx.hash, 'completed');
         }
         
         // Remove from pending
@@ -457,6 +474,11 @@ export class SettlementService {
           }
         }
         
+        // Send webhook notification
+        if (transactionId) {
+          await this.sendWebhookNotification(transactionId, merchantAddress, payer, requirements, tx.hash, 'failed');
+        }
+        
         return {
           success: false,
           network: requirements.network,
@@ -468,6 +490,11 @@ export class SettlementService {
         // Timeout - transaction still pending
         // Let background monitor handle confirmation
         logger.info(`⏱️ Transaction pending (30s timeout). Monitor will check status. TX: ${tx.hash}`);
+        
+        // Send webhook notification for pending status
+        if (transactionId) {
+          await this.sendWebhookNotification(transactionId, merchantAddress, payer, requirements, tx.hash, 'pending');
+        }
         
         return {
           success: true,
@@ -937,6 +964,57 @@ export class SettlementService {
 
     logger.debug(`✓ Amount verification passed`);
     return { success: true, response: { success: true, network: 'unknown' } };
+  }
+
+  /**
+   * Send webhook notification to merchant
+   */
+  private async sendWebhookNotification(
+    transactionId: number,
+    merchantAddress: string,
+    payerAddress: string,
+    requirements: PaymentRequirements,
+    transactionHash: string,
+    status: 'pending' | 'completed' | 'failed'
+  ): Promise<void> {
+    try {
+      // Get merchant webhook configuration
+      const merchant = await db.getMerchantByAddress(merchantAddress);
+      if (!merchant || !merchant.webhook_url) {
+        return; // No webhook configured
+      }
+
+      // Check if merchant wants this event type
+      const wantedEvents = merchant.webhook_events.split(',');
+      const eventName = `transaction.${status}` as const;
+      if (!wantedEvents.includes(eventName)) {
+        logger.debug(`Merchant does not subscribe to ${eventName} events`);
+        return;
+      }
+
+      // Send webhook
+      await webhookService.sendWebhook(
+        merchant.webhook_url,
+        merchant.webhook_secret,
+        {
+          event: eventName,
+          transactionId,
+          transactionHash,
+          merchantAddress,
+          payerAddress,
+          amount: requirements.maxAmountRequired,
+          asset: requirements.asset,
+          network: requirements.network,
+          resource: requirements.resource,
+          description: requirements.description,
+          mimeType: requirements.mimeType,
+          status,
+          timestamp: Math.floor(Date.now() / 1000),
+        }
+      );
+    } catch (error) {
+      logger.error('Failed to send webhook notification from settlement:', error);
+    }
   }
 }
 

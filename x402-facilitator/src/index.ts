@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import http from 'http';
 import https from 'https';
+import { ethers } from 'ethers';
 import config from './config/index.js';
 import logger from './utils/logger.js';
 import routes from './routes/index.js';
@@ -14,6 +15,8 @@ import { securityMiddleware } from './middleware/security.js';
 import db from './services/database.js';
 import redis from './services/redis.js';
 import transactionMonitor from './services/transactionMonitor.js';
+import paymasterPool from './services/paymasterPool.js';
+import { getRpcUrl } from './config/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,6 +116,25 @@ const startServer = async () => {
     logger.info('✅ Database connection successful');
   } catch (error) {
     logger.error('❌ Database connection failed:', error);
+  }
+
+  // Initialize paymaster wallet pool
+  try {
+    const defaultNetwork = config.network;
+    const rpcUrl = getRpcUrl(defaultNetwork);
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    
+    await paymasterPool.initialize(provider);
+    const poolStats = paymasterPool.getPoolStats();
+    logger.info('✅ Paymaster pool initialized');
+    logger.info(`   Wallets: ${poolStats.total}`);
+    poolStats.addresses.forEach((addr, idx) => {
+      logger.info(`   [${idx + 1}] ${addr}`);
+    });
+  } catch (error) {
+    logger.error('❌ Failed to initialize paymaster pool:', error);
+    logger.error('❌ Settlement service will not work. Please check PAYMASTER_PRIVATE_KEYS or FACILITATOR_PRIVATE_KEY');
+    process.exit(1);
   }
 
   // Start transaction monitor for pending transactions
