@@ -13,6 +13,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  min-width: 320px; /* Minimum width for mobile devices */
+  overflow-x: auto; /* Allow horizontal scroll if content is wider */
 }
 
 /* Custom scrollbar */
@@ -58,6 +60,30 @@ body {
 .btn-secondary:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(236, 72, 153, 0.4);
+}
+
+/* Mobile responsive utilities */
+@media (max-width: 640px) {
+  /* Smaller text on mobile for buttons */
+  button {
+    font-size: 0.875rem !important; /* 14px */
+  }
+  
+  /* Reduce padding on mobile */
+  .mobile-compact {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  /* Stack button groups vertically on mobile */
+  .button-group-mobile {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .button-group-mobile > * {
+    width: 100%;
+  }
 }
 
 /* Animations */

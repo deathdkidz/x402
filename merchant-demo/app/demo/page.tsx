@@ -2,129 +2,137 @@
 
 import { useState, useEffect } from 'react';
 import { useAccount, useSignTypedData } from 'wagmi';
-import Link from 'next/link';
 import WalletConnect from '../components/WalletConnect';
-
-interface TokenConfig {
-  symbol: string;
-  name: string;
-  address: string;
-  decimals: number;
-  eip712?: {
-    name: string;
-    version: string;
-    verifyingContract: string;
-  };
-}
 
 interface NetworkConfig {
   network: string;
   chainId: number;
-  tokens: TokenConfig[];
-  rpcConfigured: boolean;
+  tokens: {
+    symbol: string;
+    address: string;
+    decimals: number;
+    eip712: {
+      name: string;
+      version: string;
+      verifyingContract: string;
+    };
+  }[];
 }
 
 export default function DemoPage() {
-  const { address, isConnected } = useAccount();
-  const { signTypedDataAsync } = useSignTypedData();
+  // UI State
+  const [step, setStep] = useState<'locked' | 'payment' | 'unlocked'>('locked');
   
-  const [apiKey, setApiKey] = useState('');
-  const [merchantAddress, setMerchantAddress] = useState('');
+  // Configuration
   const [networks, setNetworks] = useState<NetworkConfig[]>([]);
-  const [selectedNetwork, setSelectedNetwork] = useState('');
-  const [selectedToken, setSelectedToken] = useState('');
-  const [unlocked, setUnlocked] = useState(false);
+  const [selectedNetwork, setSelectedNetwork] = useState<string>('');
+  const [selectedToken, setSelectedToken] = useState<string>('');
+  
+  // Loading states
+  const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
-  const [txHash, setTxHash] = useState('');
-  const [loadingNetworks, setLoadingNetworks] = useState(true);
+  const [imageUrl, setImageUrl] = useState('');
 
   const facilitatorUrl = process.env.NEXT_PUBLIC_FACILITATOR_URL || 'http://localhost:8080';
+  const merchantAddress = process.env.NEXT_PUBLIC_MERCHANT_ADDRESS || '';
+  const PROTECTED_RESOURCE = '/dancing-cat.gif';
+  const PAYMENT_AMOUNT = '10000'; // 0.01 USDC
+  const RESOURCE_DESCRIPTION = 'Premium Dancing Cat GIF';
 
-  useEffect(() => {
-    const stored = localStorage.getItem('x402_api_key');
-    if (stored) setApiKey(stored);
-  }, []);
+  const { address, isConnected, chain } = useAccount();
+  const { signTypedDataAsync } = useSignTypedData();
 
-  // Fetch supported networks from facilitator
+  // Fetch networks on mount
   useEffect(() => {
     const fetchNetworks = async () => {
       try {
-        const response = await fetch(`${facilitatorUrl}/networks`);
-        if (response.ok) {
-          const data = await response.json();
+        const networksRes = await fetch(`${facilitatorUrl}/networks`);
+        if (networksRes.ok) {
+          const data = await networksRes.json();
           setNetworks(data.networks);
+          // Set default selections
           if (data.networks.length > 0) {
-            setSelectedNetwork(data.networks[0].network);
-            if (data.networks[0].tokens.length > 0) {
-              setSelectedToken(data.networks[0].tokens[0].address);
+            const defaultNet = data.networks[0];
+            setSelectedNetwork(defaultNet.network);
+            if (defaultNet.tokens.length > 0) {
+              setSelectedToken(defaultNet.tokens[0].address);
             }
           }
+        } else {
+          setError('Failed to load payment networks');
         }
       } catch (error) {
         console.error('Failed to fetch networks:', error);
-      } finally {
-        setLoadingNetworks(false);
+        setError('Failed to load configuration.');
       }
     };
-
     fetchNetworks();
-  }, []);
 
-  // Fetch merchant address when API key is available
-  useEffect(() => {
-    const fetchMerchantAddress = async () => {
-      if (!apiKey) return;
-      
-      try {
-        const response = await fetch(`${facilitatorUrl}/merchant/wallet`, {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`
-          }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          setMerchantAddress(data.merchant.merchant_address);
-        }
-      } catch (error) {
-        console.error('Failed to fetch merchant address:', error);
+    // Cleanup blob URL on unmount
+    return () => {
+      if (imageUrl) {
+        URL.revokeObjectURL(imageUrl);
       }
     };
+  }, [facilitatorUrl, imageUrl]);
 
-    fetchMerchantAddress();
-  }, [apiKey]);
+  // Handle network change
+  const handleNetworkChange = (networkName: string) => {
+    setSelectedNetwork(networkName);
+    const network = networks.find(n => n.network === networkName);
+    if (network && network.tokens.length > 0) {
+      setSelectedToken(network.tokens[0].address);
+    }
+  };
 
-  const handleUnlock = async () => {
-    if (!address || !apiKey || !merchantAddress || !selectedNetwork || !selectedToken) return;
-    
+  // Get current network and token configs
+  const networkConfig = networks.find(n => n.network === selectedNetwork);
+  const tokenConfig = networkConfig?.tokens.find(t => t.address === selectedToken);
+
+  const handleUnlock = () => {
+    if (!isConnected) {
+      setError('Please connect your wallet first');
+      return;
+    }
+    if (!merchantAddress) {
+      setError('Merchant address not loaded');
+      return;
+    }
+    setStep('payment');
+    setError('');
+  };
+
+  const handlePay = async () => {
+    if (!address || !networkConfig || !tokenConfig) {
+      setError('Missing required configuration');
+      return;
+    }
+
     setProcessing(true);
     setError('');
-    setTxHash('');
 
     try {
-      const networkConfig = networks.find(n => n.network === selectedNetwork);
-      const tokenConfig = networkConfig?.tokens.find(t => t.address === selectedToken);
-      
-      if (!networkConfig || !tokenConfig || !tokenConfig.eip712) {
-        throw new Error('Invalid network or token configuration');
-      }
-      
-      // 1. Generate payment payload locally
-      const validAfter = Math.floor(Date.now() / 1000);
-      const validBefore = validAfter + 3600; // 1 hour validity
-      const nonce = `0x${Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
-      
-      const payload = {
+      // Generate nonce
+      const nonce = '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      const now = Math.floor(Date.now() / 1000);
+      const validAfter = now;
+      const validBefore = now + 3600; // 1 hour validity
+
+      // Create authorization message
+      const authorization = {
         from: address,
-        to: merchantAddress,
-        value: '10000', // 0.01 USDC
-        validAfter: validAfter.toString(),
-        validBefore: validBefore.toString(),
-        nonce: nonce
+        to: merchantAddress as `0x${string}`,
+        value: BigInt(PAYMENT_AMOUNT),
+        validAfter: BigInt(validAfter),
+        validBefore: BigInt(validBefore),
+        nonce: nonce as `0x${string}`
       };
 
-      // 2. Sign with EIP-712 typed data
+      // Sign with EIP-712
       const signature = await signTypedDataAsync({
         domain: {
           name: tokenConfig.eip712.name,
@@ -143,316 +151,309 @@ export default function DemoPage() {
           ]
         },
         primaryType: 'TransferWithAuthorization',
-        message: payload as any
+        message: authorization
       });
 
-      // 3. Verify signature
-      const verifyResponse = await fetch(`${facilitatorUrl}/verify`, {
-        method: 'POST',
+      // Convert authorization back to strings for JSON
+      const authorizationForPayload = {
+        from: address,
+        to: merchantAddress,
+        value: PAYMENT_AMOUNT,
+        validAfter: validAfter.toString(),
+        validBefore: validBefore.toString(),
+        nonce: nonce
+      };
+
+      // Create payment requirements that match what we signed
+      const paymentRequirements = {
+        scheme: 'erc3009',
+        network: networkConfig.network,
+        asset: tokenConfig.address,
+        payTo: merchantAddress,
+        maxAmountRequired: PAYMENT_AMOUNT,
+        resource: PROTECTED_RESOURCE,
+        description: RESOURCE_DESCRIPTION,
+        mimeType: 'image/gif',
+        maxTimeoutSeconds: 3600
+      };
+
+      // Create X-PAYMENT header with requirements for middleware
+      const xPaymentData = {
+        x402Version: 1,
+        requirements: paymentRequirements, // Include the requirements the user signed for
+        payload: {
+          authorization: authorizationForPayload,
+          signature
+        }
+      };
+      const xPaymentHeader = Buffer.from(JSON.stringify(xPaymentData)).toString('base64');
+
+      // Request protected resource with payment (cache-busting to force new payment each time)
+      const response = await fetch(`${PROTECTED_RESOURCE}?t=${Date.now()}`, {
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'X-PAYMENT': xPaymentHeader
         },
-        body: JSON.stringify({
-          x402Version: 1,
-          paymentPayload: {
-            x402Version: 1,
-            payload: {
-              authorization: payload,
-              signature: signature
-            }
-          },
-          paymentRequirements: {
-            scheme: 'erc3009',
-            network: selectedNetwork,
-            asset: selectedToken,
-            payTo: merchantAddress,
-            maxAmountRequired: '10000',
-            resource: '/demo/cat',
-            description: 'Unlock cat image',
-            mimeType: 'image/jpeg',
-            maxTimeoutSeconds: 3600
-          }
-        })
+        cache: 'no-store'
       });
 
-      if (!verifyResponse.ok) {
-        throw new Error('Signature verification failed');
+      if (response.ok) {
+        // Payment accepted - get the image
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        setImageUrl(url);
+        setStep('unlocked');
+      } else if (response.status === 402) {
+        setError('Payment verification failed. Please try again.');
+      } else {
+        setError(`Request failed: ${response.status} ${response.statusText}`);
       }
-
-      // 4. Settle payment
-      const settleResponse = await fetch(`${facilitatorUrl}/settle`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          x402Version: 1,
-          paymentPayload: {
-            x402Version: 1,
-            payload: {
-              authorization: payload,
-              signature: signature
-            }
-          },
-          paymentRequirements: {
-            scheme: 'erc3009',
-            network: selectedNetwork,
-            asset: selectedToken,
-            payTo: merchantAddress,
-            maxAmountRequired: '10000',
-            resource: '/demo/cat',
-            description: 'Unlock cat image',
-            mimeType: 'image/jpeg',
-            maxTimeoutSeconds: 3600
-          }
-        })
-      });
-
-      if (!settleResponse.ok) {
-        const errorData = await settleResponse.json();
-        throw new Error(errorData.error || 'Settlement failed');
-      }
-
-      const settleData = await settleResponse.json();
-      
-      // Check if settlement was actually successful
-      if (!settleData.success) {
-        throw new Error(settleData.errorReason || 'Settlement transaction failed');
-      }
-      
-      setTxHash(settleData.transaction || '');
-      
-      // Handle different transaction statuses
-      if (settleData.status === 'completed') {
-        // Transaction confirmed on blockchain
-        setUnlocked(true);
-      } else if (settleData.status === 'pending') {
-        // Transaction submitted but not yet confirmed
-        setError(settleData.message || 'Transaction pending confirmation. Please wait...');
-        // Show message but don't unlock yet
-      }
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Payment failed');
+    } catch (err: any) {
+      console.error('Payment error:', err);
+      setError(err.message || 'Payment failed. Please try again.');
     } finally {
       setProcessing(false);
     }
   };
 
+  const handleReset = () => {
+    if (imageUrl) {
+      URL.revokeObjectURL(imageUrl);
+    }
+    setImageUrl('');
+    setStep('locked');
+    setError('');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <Link href="/" className="text-cyan-400 hover:text-cyan-300 text-sm mb-2 inline-flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              Back to Home
-            </Link>
-            <h1 className="text-3xl font-bold text-slate-100">Payment Demo</h1>
-            <p className="text-slate-400 text-sm">Unlock premium content with x402 payment</p>
-          </div>
+        <div className="text-center mb-10">
+          <h1 className="text-4xl sm:text-5xl font-bold mb-4 bg-gradient-to-r from-pink-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+            Premium Content Demo
+          </h1>
+          <p className="text-slate-400">
+            Experience X-402 payment protocol in action
+          </p>
+        </div>
+
+        {/* Wallet Connect */}
+        <div className="mb-8">
           <WalletConnect />
         </div>
 
-        {/* Content Card */}
-        <div className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/30 rounded-xl overflow-hidden">
-          {/* Status Messages */}
-          {!isConnected && (
-            <div className="bg-amber-500/10 border-b border-amber-500/20 p-4">
-              <div className="flex items-center gap-3">
-                <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <span className="text-amber-300 text-sm">Connect your wallet to unlock content</span>
+        {/* Main Content */}
+        <div className="bg-slate-800/40 border border-slate-700/40 rounded-xl overflow-hidden">
+          
+          {/* LOCKED STATE - Paywall */}
+          {step === 'locked' && (
+            <div className="p-8">
+              <div className="text-center mb-8">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-pink-500/10 border-2 border-pink-500/30 rounded-full mb-4">
+                  <svg className="w-10 h-10 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <h2 className="text-2xl font-bold text-white mb-2">Premium Content Locked</h2>
+                <p className="text-slate-400">Pay to unlock exclusive dancing cat GIF</p>
               </div>
+
+              {/* Blurred Preview */}
+              <div className="relative mb-6 rounded-lg overflow-hidden">
+                <div className="aspect-square bg-slate-900/60 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-6xl mb-4">🐱</div>
+                    <p className="text-slate-500">Preview unavailable</p>
+                  </div>
+                </div>
+                <div className="absolute inset-0 backdrop-blur-sm bg-black/20 flex items-center justify-center">
+                  <div className="bg-slate-900/90 border border-pink-500/30 rounded-lg p-6 text-center">
+                    <p className="text-pink-300 font-semibold mb-1">🔒 Unlock Required</p>
+                    <p className="text-2xl font-bold text-white">0.01 USDC</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Error Display */}
+              {error && (
+                <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                  <p className="text-red-300 text-sm">{error}</p>
+                </div>
+              )}
+
+              {/* Unlock Button */}
+              <button
+                onClick={handleUnlock}
+                disabled={!isConnected || !merchantAddress || loading}
+                className="w-full px-6 py-4 bg-gradient-to-r from-pink-500 to-purple-500 text-white rounded-lg font-semibold text-lg hover:from-pink-600 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+              >
+                {!isConnected ? 'Connect Wallet to Unlock' : 'Unlock Premium Content'}
+              </button>
+
+              <p className="text-xs text-slate-500 text-center mt-4">
+                One-time payment • Instant access • Secure on-chain transaction
+              </p>
             </div>
           )}
 
-          {error && (
-            <div className="bg-red-500/10 border-b border-red-500/20 p-4">
-              <div className="flex items-center gap-3">
-                <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                <span className="text-red-300 text-sm">{error}</span>
+          {/* PAYMENT STATE */}
+          {step === 'payment' && (
+            <div className="p-8">
+              <div className="text-center mb-8">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-cyan-500/10 border-2 border-cyan-500/30 rounded-full mb-4">
+                  <svg className="w-10 h-10 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+                <h2 className="text-2xl font-bold text-white mb-2">Complete Payment</h2>
+                <p className="text-slate-400">Sign the transaction to unlock content</p>
               </div>
-            </div>
-          )}
 
-          {processing && (
-            <div className="bg-blue-500/10 border-b border-blue-500/20 p-4">
-              <div className="flex items-center gap-3">
-                <svg className="w-5 h-5 text-blue-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+              {/* Payment Summary */}
+              <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6 mb-6">
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Content</span>
+                    <span className="text-white font-medium">{RESOURCE_DESCRIPTION}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Network</span>
+                    <span className="text-white font-medium">{selectedNetwork}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Token</span>
+                    <span className="text-white font-medium">{tokenConfig?.symbol}</span>
+                  </div>
+                  <div className="border-t border-slate-700/40 pt-3 flex justify-between">
+                    <span className="text-slate-400">Amount</span>
+                    <span className="text-2xl font-bold text-cyan-400">0.01 USDC</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Network & Token Selectors (can still change) */}
+              <div className="space-y-4 mb-6">
                 <div>
-                  <div className="text-blue-300 font-semibold">Processing Payment...</div>
-                  <div className="text-blue-400/70 text-sm">Please sign the message in your wallet</div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Payment Network</label>
+                  <select
+                    value={selectedNetwork}
+                    onChange={(e) => handleNetworkChange(e.target.value)}
+                    disabled={processing}
+                    className="w-full px-4 py-3 bg-slate-900/60 border border-slate-700/40 rounded-lg text-white focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 disabled:opacity-50"
+                  >
+                    {networks.map((net) => (
+                      <option key={net.network} value={net.network}>
+                        {net.network}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Payment Token</label>
+                  <select
+                    value={selectedToken}
+                    onChange={(e) => setSelectedToken(e.target.value)}
+                    disabled={processing}
+                    className="w-full px-4 py-3 bg-slate-900/60 border border-slate-700/40 rounded-lg text-white focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 disabled:opacity-50"
+                  >
+                    {networkConfig?.tokens.map((token) => (
+                      <option key={token.address} value={token.address}>
+                        {token.symbol}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Error Display */}
+              {error && (
+                <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                  <p className="text-red-300 text-sm">{error}</p>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setStep('locked')}
+                  disabled={processing}
+                  className="flex-1 px-6 py-4 bg-slate-700/40 border border-slate-600/40 text-slate-300 rounded-lg font-semibold hover:bg-slate-700/60 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePay}
+                  disabled={processing}
+                  className="flex-1 px-6 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg font-semibold hover:from-cyan-600 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  {processing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Processing...
+                    </span>
+                  ) : (
+                    'Sign & Pay'
+                  )}
+                </button>
               </div>
             </div>
           )}
 
-          {/* Locked/Unlocked Content */}
-          <div className="p-8">
-            {!unlocked ? (
-              <div className="text-center">
-                {/* Locked Icon */}
-                <div className="relative inline-block mb-6">
-                  <div className="w-48 h-48 bg-slate-700/30 rounded-2xl flex items-center justify-center border-2 border-slate-600/50 backdrop-blur-sm">
-                    <svg className="w-24 h-24 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </div>
-                  <div className="absolute -top-2 -right-2 bg-pink-500 text-white px-3 py-1 rounded-full text-xs font-bold">
-                    LOCKED
-                  </div>
+          {/* UNLOCKED STATE */}
+          {step === 'unlocked' && (
+            <div className="p-8">
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-green-500/10 border-2 border-green-500/30 rounded-full mb-4">
+                  <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
                 </div>
+                <h2 className="text-2xl font-bold text-white mb-2">Payment Successful!</h2>
+                <p className="text-slate-400">Your premium content is now unlocked</p>
+              </div>
 
-                <h2 className="text-2xl font-bold text-slate-100 mb-2">Premium Cat Content</h2>
-                <p className="text-slate-400 mb-6">
-                  Unlock this hilarious cat image for only <span className="text-pink-400 font-bold">0.01 USDC</span>
-                </p>
-
-                {/* Network Selector */}
-                {loadingNetworks ? (
-                  <div className="text-slate-400 text-sm mb-6">Loading networks...</div>
-                ) : (
-                  <div className="max-w-md mx-auto mb-6">
-                    <label className="block text-slate-300 text-sm font-medium mb-2">
-                      Select Network
-                    </label>
-                    <select
-                      value={selectedNetwork}
-                      onChange={(e) => {
-                        setSelectedNetwork(e.target.value);
-                        const network = networks.find(n => n.network === e.target.value);
-                        if (network && network.tokens.length > 0) {
-                          setSelectedToken(network.tokens[0].address);
-                        }
-                      }}
-                      className="w-full px-4 py-3 bg-slate-900/60 border border-slate-700/40 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20"
-                    >
-                      {networks.map((network) => (
-                        <option key={network.network} value={network.network}>
-                          {network.network} (Chain ID: {network.chainId})
-                        </option>
-                      ))}
-                    </select>
-
-                    {/* Token Selector */}
-                    {selectedNetwork && (networks.find(n => n.network === selectedNetwork)?.tokens.length ?? 0) > 0 && (
-                      <div className="mt-3">
-                        <label className="block text-slate-300 text-sm font-medium mb-2">
-                          Select Token
-                        </label>
-                        <select
-                          value={selectedToken}
-                          onChange={(e) => setSelectedToken(e.target.value)}
-                          className="w-full px-4 py-3 bg-slate-900/60 border border-slate-700/40 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20"
-                        >
-                          {networks.find(n => n.network === selectedNetwork)?.tokens?.map((token) => (
-                            <option key={token.address} value={token.address}>
-                              {token.symbol} - {token.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="bg-slate-800/50 border border-slate-700/40 rounded-lg p-4 mb-6 max-w-md mx-auto">
-                  <div className="flex items-center justify-between text-sm mb-2">
-                    <span className="text-slate-400">Price:</span>
-                    <span className="text-slate-100 font-semibold">0.01 {networks.find(n => n.network === selectedNetwork)?.tokens.find(t => t.address === selectedToken)?.symbol || 'USDC'}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm mb-2">
-                    <span className="text-slate-400">Network:</span>
-                    <span className="text-slate-100">{selectedNetwork}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-400">Gas Fees:</span>
-                    <span className="text-emerald-400 font-semibold">FREE (x402)</span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleUnlock}
-                  disabled={!isConnected || processing || !apiKey || !merchantAddress}
-                  className="btn-secondary px-8 py-3 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {processing ? 'Processing...' : '🔓 Unlock for 0.01 USDC'}
-                </button>
-
-                {!apiKey && isConnected && (
-                  <p className="text-amber-400 text-xs mt-3">⚠️ API key not configured. Return to home page.</p>
-                )}
-                {!merchantAddress && apiKey && isConnected && (
-                  <p className="text-amber-400 text-xs mt-3">⚠️ Loading merchant address...</p>
+              {/* Premium Content */}
+              <div className="relative w-full aspect-square max-w-2xl mx-auto mb-6 rounded-lg overflow-hidden bg-slate-900/60">
+                {imageUrl && (
+                  <img
+                    src={imageUrl}
+                    alt="Premium Dancing Cat"
+                    className="w-full h-full object-contain"
+                  />
                 )}
               </div>
-            ) : (
-              <div className="text-center">
-                {/* Success Message */}
-                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4 mb-6">
-                  <div className="flex items-center justify-center gap-3 mb-2">
-                    <svg className="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="text-emerald-300 font-semibold">Payment Successful!</span>
-                  </div>
-                  {txHash && (
-                    <a
-                      href={`https://sepolia.basescan.org/tx/${txHash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-cyan-400 hover:text-cyan-300 font-mono"
-                    >
-                      View on Explorer →
-                    </a>
-                  )}
-                </div>
 
-                {/* Unlocked Cat Image */}
-                <div className="relative inline-block mb-6">
-                  <div className="w-64 h-64 bg-gradient-to-br from-pink-500/20 to-purple-500/20 rounded-2xl flex items-center justify-center border-2 border-pink-500/50 backdrop-blur-sm">
-                    <div className="text-8xl">😺</div>
-                  </div>
-                  <div className="absolute -top-2 -right-2 bg-emerald-500 text-white px-3 py-1 rounded-full text-xs font-bold">
-                    UNLOCKED
-                  </div>
-                </div>
+              {/* Reset Button */}
+              <button
+                onClick={handleReset}
+                className="w-full px-6 py-3 bg-slate-700/40 border border-slate-600/40 text-slate-300 rounded-lg font-semibold hover:bg-slate-700/60 transition-all"
+              >
+                Lock Again (Demo Reset)
+              </button>
+            </div>
+          )}
 
-                <h2 className="text-2xl font-bold text-slate-100 mb-2">Success!</h2>
-                <p className="text-slate-400 mb-6">
-                  Enjoy your premium cat content! 🎉
-                </p>
-
-                <button
-                  onClick={() => {
-                    setUnlocked(false);
-                    setTxHash('');
-                    setError('');
-                  }}
-                  className="text-cyan-400 hover:text-cyan-300 text-sm"
-                >
-                  ← Lock Again (for testing)
-                </button>
-              </div>
-            )}
-          </div>
         </div>
 
-        {/* Info */}
-        <div className="mt-6 text-center text-xs text-slate-500">
-          This demo uses x402 protocol for gasless USDC payments on Base Sepolia testnet
+        {/* Info Footer */}
+        <div className="mt-8 bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+          <div className="flex items-start gap-2">
+            <svg className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="text-sm text-blue-300">
+              <p className="font-semibold mb-1">How it works</p>
+                <p className="text-blue-400/70">
+                Connect your wallet, click unlock, and sign the payment to instantly access premium content. 
+                Payment is processed securely on-chain using USDC. You can reset and try again as many times 
+                as you'd like in this demo.
+                </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

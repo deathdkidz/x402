@@ -8,31 +8,31 @@ export default function DocsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      <div className="max-w-6xl mx-auto px-4 py-8">
+      <div className="max-w-5xl mx-auto px-6 py-10">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-10">
           <div>
-            <h1 className="text-3xl font-bold text-slate-100 mb-2">API Documentation</h1>
-            <p className="text-slate-400">Complete guide to the x402 Facilitator API</p>
+            <h1 className="text-2xl font-bold text-slate-100 mb-2">API Documentation</h1>
+            <p className="text-slate-400 text-sm">Complete guide to the X-402 Facilitator API</p>
           </div>
           <Link
             href="/"
-            className="px-4 py-2 bg-slate-800/60 border border-slate-700/40 rounded-lg text-slate-300 hover:bg-slate-700/60 transition-colors"
+            className="px-4 py-2 bg-slate-800/40 border border-slate-700/40 rounded-lg text-slate-300 hover:bg-slate-700/60 transition-colors text-sm"
           >
             ← Back to Home
           </Link>
         </div>
 
         {/* Navigation Tabs */}
-        <div className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/30 rounded-xl p-2 mb-6">
+        <div className="bg-slate-800/40 border border-slate-700/40 rounded-lg p-2 mb-6">
           <div className="flex flex-wrap gap-2">
             {[
-              { id: 'overview', label: 'Overview', icon: '📖' },
-              { id: 'verify', label: '/verify', icon: '✓' },
-              { id: 'settle', label: '/settle', icon: '💰' },
-              { id: 'networks', label: '/networks', icon: '🌐' },
-              { id: 'health', label: '/health', icon: '💚' },
-              { id: 'merchant', label: '/merchant', icon: '👤' },
+              { id: 'overview', label: 'Overview' },
+              { id: 'verify', label: '/verify' },
+              { id: 'settle', label: '/settle' },
+              { id: 'networks', label: '/networks' },
+              { id: 'health', label: '/health' },
+              { id: 'merchant', label: '/merchant' },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -43,7 +43,6 @@ export default function DocsPage() {
                     : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/40'
                 }`}
               >
-                <span className="mr-2">{tab.icon}</span>
                 {tab.label}
               </button>
             ))}
@@ -51,7 +50,7 @@ export default function DocsPage() {
         </div>
 
         {/* Content Area */}
-        <div className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/30 rounded-xl p-6">
+        <div className="bg-slate-800/40 border border-slate-700/40 rounded-lg p-5">
           {/* Overview Tab */}
           {activeTab === 'overview' && (
             <div className="space-y-6">

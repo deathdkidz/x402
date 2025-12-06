@@ -77,7 +77,7 @@ export default function XPaymentDemo() {
     const fetchMerchantAddress = async () => {
       if (!apiKey) return;
       try {
-        const response = await fetch(`${facilitatorUrl}/merchant/wallet`, {
+        const response = await fetch(`${facilitatorUrl}/merchant`, {
           headers: { 'Authorization': `Bearer ${apiKey}` }
         });
         if (response.ok) {
@@ -104,9 +104,19 @@ export default function XPaymentDemo() {
 
     try {
       const network = networks.find(n => n.network === selectedNetwork);
-      if (!network || !network.tokens[0]) throw new Error('Network not found');
+      if (!network) {
+        throw new Error(`Network '${selectedNetwork}' not found. Available networks: ${networks.map(n => n.network).join(', ')}`);
+      }
+      
+      if (!network.tokens || network.tokens.length === 0) {
+        throw new Error(`No tokens configured for network '${selectedNetwork}'`);
+      }
 
       const token = network.tokens[0];
+      if (!token.eip712) {
+        throw new Error(`Token ${token.symbol} does not have EIP-712 configuration`);
+      }
+      
       const amount = '10000'; // 0.01 USDC
       const validAfter = Math.floor(Date.now() / 1000).toString();
       const validBefore = (Math.floor(Date.now() / 1000) + 3600).toString();
@@ -143,10 +153,10 @@ export default function XPaymentDemo() {
       setStep(2);
 
       const domain = {
-        name: token.eip712?.name || 'USD Coin',
-        version: token.eip712?.version || '2',
+        name: token.eip712.name,
+        version: token.eip712.version,
         chainId: network.chainId,
-        verifyingContract: token.address as `0x${string}`
+        verifyingContract: token.eip712.verifyingContract as `0x${string}`
       };
 
       const types = {
@@ -494,25 +504,25 @@ export default function XPaymentDemo() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">
+        <div className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/30 rounded-xl p-6 mb-6">
+          <h1 className="text-3xl font-bold text-slate-100 mb-2">
             X-PAYMENT Header Protocol Demo
           </h1>
-          <p className="text-gray-600 mb-4">
+          <p className="text-slate-400 mb-4">
             Complete X-402 payment flow with raw data inspection at each step
           </p>
           <WalletConnect />
         </div>
 
         {/* Configuration */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">Configuration</h2>
+        <div className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/30 rounded-xl p-6 mb-6">
+          <h2 className="text-xl font-bold text-slate-100 mb-4">Configuration</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-slate-300 mb-2">
                 API Key
               </label>
               <input
@@ -523,22 +533,22 @@ export default function XPaymentDemo() {
                   localStorage.setItem('x402_api_key', e.target.value);
                 }}
                 placeholder="Enter facilitator API key"
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 bg-slate-900/60 border border-slate-700/40 rounded-lg text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Merchant Address: {merchantAddress || 'Not loaded'}
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Merchant Address: <span className="text-cyan-400">{merchantAddress || 'Not loaded'}</span>
               </label>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-slate-300 mb-2">
                 Network
               </label>
               <select
                 value={selectedNetwork}
                 onChange={(e) => setSelectedNetwork(e.target.value)}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 bg-slate-900/60 border border-slate-700/40 rounded-lg text-slate-100 text-sm focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20"
               >
                 {networks.map(net => (
                   <option key={net.network} value={net.network}>
@@ -551,8 +561,8 @@ export default function XPaymentDemo() {
         </div>
 
         {/* Progress Indicator */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">Progress</h2>
+        <div className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/30 rounded-xl p-6 mb-6">
+          <h2 className="text-xl font-bold text-slate-100 mb-4">Progress</h2>
           <div className="flex items-center space-x-2 overflow-x-auto pb-2">
             {[
               'Start',
@@ -568,12 +578,12 @@ export default function XPaymentDemo() {
             ].map((label, idx) => (
               <div key={idx} className="flex items-center">
                 <div className={`flex items-center justify-center w-10 h-10 rounded-full ${
-                  step >= idx ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'
+                  step >= idx ? 'bg-cyan-500 text-white' : 'bg-slate-700/50 text-slate-400'
                 } font-semibold text-sm`}>
                   {idx}
                 </div>
                 {idx < 9 && (
-                  <div className={`h-1 w-8 ${step > idx ? 'bg-blue-500' : 'bg-gray-200'}`} />
+                  <div className={`h-1 w-8 ${step > idx ? 'bg-cyan-500' : 'bg-slate-700/50'}`} />
                 )}
               </div>
             ))}
@@ -581,73 +591,77 @@ export default function XPaymentDemo() {
         </div>
 
         {/* Actions */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">Actions</h2>
+        <div className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/30 rounded-xl p-6 mb-6">
+          <h2 className="text-xl font-bold text-slate-100 mb-4">Actions</h2>
           <div className="flex space-x-4">
             <button
               onClick={handleStep1_CreatePayment}
               disabled={!isConnected || !apiKey || !merchantAddress || processing || step >= 3}
-              className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed font-semibold"
+              className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:from-cyan-600 hover:to-blue-700 disabled:from-slate-600 disabled:to-slate-700 disabled:cursor-not-allowed font-semibold shadow-lg shadow-cyan-900/50 transition-all"
             >
               Step 1-3: Create & Sign Payment
             </button>
             <button
               onClick={handleStep4_SendToServer}
               disabled={!xPaymentHeader || processing || step >= 9}
-              className="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed font-semibold"
+              className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-lg hover:from-emerald-600 hover:to-green-700 disabled:from-slate-600 disabled:to-slate-700 disabled:cursor-not-allowed font-semibold shadow-lg shadow-emerald-900/50 transition-all"
             >
               Step 4-10: Send to Server & Complete
             </button>
             <button
               onClick={resetDemo}
-              className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold"
+              className="px-6 py-3 bg-slate-600 text-white rounded-lg hover:bg-slate-500 font-semibold transition-all"
             >
               Reset Demo
             </button>
           </div>
           {processing && (
-            <div className="mt-4 text-blue-600 font-medium">
+            <div className="mt-4 flex items-center gap-2 text-cyan-400 font-medium">
+              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
               Processing... Step {step}
             </div>
           )}
           {error && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+            <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300">
               Error: {error}
             </div>
           )}
         </div>
 
         {/* Raw Data Log */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">Raw Data Flow</h2>
+        <div className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/30 rounded-xl p-6 mb-6">
+          <h2 className="text-xl font-bold text-slate-100 mb-4">Raw Data Flow</h2>
           {rawDataLog.length === 0 ? (
-            <p className="text-gray-500">No data yet. Start the demo to see raw data at each step.</p>
+            <p className="text-slate-400">No data yet. Start the demo to see raw data at each step.</p>
           ) : (
             <div className="space-y-6">
               {rawDataLog.map((log, idx) => (
-                <div key={idx} className="border-l-4 border-blue-500 pl-4">
+                <div key={idx} className="border-l-4 border-cyan-500 pl-4">
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-bold text-lg text-gray-800">{log.step}</h3>
+                    <h3 className="font-bold text-lg text-slate-100">{log.step}</h3>
                     <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                      log.direction.includes('CLIENT') ? 'bg-blue-100 text-blue-800' :
-                      log.direction.includes('SERVER') ? 'bg-green-100 text-green-800' :
-                      'bg-purple-100 text-purple-800'
+                      log.direction.includes('CLIENT') ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' :
+                      log.direction.includes('SERVER') ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                      'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                     }`}>
                       {log.direction}
                     </span>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4 mb-2">
-                    <pre className="text-xs overflow-x-auto whitespace-pre-wrap">
+                  <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4 mb-2">
+                    <pre className="text-xs overflow-x-auto whitespace-pre-wrap text-slate-300 font-mono">
                       {JSON.stringify(log.data, null, 2)}
                     </pre>
                   </div>
                   {log.decoded && (
                     <details className="mb-2">
-                      <summary className="cursor-pointer text-sm font-semibold text-blue-600 hover:text-blue-800">
+                      <summary className="cursor-pointer text-sm font-semibold text-cyan-400 hover:text-cyan-300">
                         View Decoded Data
                       </summary>
-                      <div className="bg-blue-50 rounded-lg p-4 mt-2">
-                        <pre className="text-xs overflow-x-auto whitespace-pre-wrap">
+                      <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-4 mt-2">
+                        <pre className="text-xs overflow-x-auto whitespace-pre-wrap text-slate-300 font-mono">
                           {JSON.stringify(log.decoded, null, 2)}
                         </pre>
                       </div>
@@ -661,25 +675,30 @@ export default function XPaymentDemo() {
 
         {/* Final Result */}
         {serverResponse && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-xl font-bold mb-4 text-green-600">✅ Payment Complete!</h2>
+          <div className="bg-slate-800/30 backdrop-blur-sm border border-emerald-500/30 rounded-xl p-6">
+            <h2 className="text-xl font-bold mb-4 text-emerald-400 flex items-center gap-2">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Payment Complete!
+            </h2>
             <div className="space-y-4">
               <div>
-                <p className="font-semibold">Transaction Hash:</p>
-                <p className="font-mono text-sm text-blue-600 break-all">
+                <p className="font-semibold text-slate-300 mb-1">Transaction Hash:</p>
+                <p className="font-mono text-sm text-cyan-400 break-all bg-slate-900/60 px-3 py-2 rounded border border-slate-700/40">
                   {serverResponse.transactionHash}
                 </p>
               </div>
               <div>
-                <p className="font-semibold">Premium Content:</p>
+                <p className="font-semibold text-slate-300 mb-2">Premium Content:</p>
                 <img
                   src={serverResponse.imageUrl}
                   alt="Premium Cat"
-                  className="rounded-lg shadow-md max-w-md"
+                  className="rounded-lg shadow-lg border border-slate-700/40 max-w-md"
                 />
               </div>
               <div>
-                <p className="text-gray-600">{serverResponse.description}</p>
+                <p className="text-slate-400">{serverResponse.description}</p>
               </div>
             </div>
           </div>
