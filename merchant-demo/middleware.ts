@@ -92,7 +92,7 @@ async function verifyPayment(payment: any, requirements: any): Promise<boolean> 
 /**
  * Settle payment with facilitator
  */
-async function settlePayment(payment: any, requirements: any): Promise<boolean> {
+async function settlePayment(payment: any, requirements: any): Promise<{ success: boolean; status?: string; message?: string }> {
   try {
     const response = await fetch(`${FACILITATOR_URL}/settle`, {
       method: 'POST',
@@ -112,14 +112,24 @@ async function settlePayment(payment: any, requirements: any): Promise<boolean> 
 
     if (!response.ok) {
       console.error('Settlement failed:', response.status, await response.text());
-      return false;
+      return { success: false };
     }
 
     const result = await response.json();
-    return result.success || false;
+    
+    // Check both success field and status
+    // success: true with status: 'pending' means transaction submitted but not confirmed
+    // success: true with status: 'completed' means fully confirmed
+    console.log('💰 Settlement response:', result);
+    
+    return {
+      success: result.success || false,
+      status: result.status,
+      message: result.message || result.errorReason
+    };
   } catch (error) {
     console.error('Payment settlement error:', error);
-    return false;
+    return { success: false };
   }
 }
 
@@ -227,15 +237,25 @@ export async function middleware(request: NextRequest) {
   // Settle payment using user's API key if provided
   console.log('💰 Settling payment...');
   
-  const settled = await settlePayment(payment, requirements);
+  const settlementResult = await settlePayment(payment, requirements);
   
-  console.log('✅ Settlement result:', settled);
+  console.log('✅ Settlement result:', settlementResult);
   
-  if (!settled) {
+  if (!settlementResult.success) {
     return new NextResponse(
-      JSON.stringify({ error: 'Payment Settlement Failed' }),
+      JSON.stringify({ 
+        error: 'Payment Settlement Failed',
+        message: settlementResult.message 
+      }),
       { status: 402, headers: { 'Content-Type': 'application/json' } }
     );
+  }
+
+  // If settlement is pending, still serve content (transaction was submitted)
+  if (settlementResult.status === 'pending') {
+    console.log('⏱️  Transaction pending confirmation, serving content anyway');
+  } else if (settlementResult.status === 'completed') {
+    console.log('✅ Transaction confirmed on blockchain');
   }
 
   // Payment successful - allow access to the resource

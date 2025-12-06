@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 
 export default function DocsPage() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'verify' | 'settle' | 'networks' | 'health' | 'merchant'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'verify' | 'settle' | 'networks' | 'health' | 'merchant' | 'responses'>('overview');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
@@ -28,6 +28,7 @@ export default function DocsPage() {
           <div className="flex flex-wrap gap-2">
             {[
               { id: 'overview', label: 'Overview' },
+              { id: 'responses', label: 'Response Guide' },
               { id: 'verify', label: '/verify' },
               { id: 'settle', label: '/settle' },
               { id: 'networks', label: '/networks' },
@@ -130,10 +131,9 @@ export default function DocsPage() {
 
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4">
                 <div className="flex gap-2">
-                  <span className="text-amber-400">🔒</span>
                   <div>
                     <p className="text-amber-300 font-medium">Authentication Required</p>
-                    <p className="text-amber-300/80 text-sm">Include your API key in the Authorization header</p>
+                    <p className="text-amber-300/80 text-sm">Requires valid API key with active merchant</p>
                   </div>
                 </div>
               </div>
@@ -245,7 +245,6 @@ export default function DocsPage() {
 
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4">
                 <div className="flex gap-2">
-                  <span className="text-amber-400">🔒</span>
                   <div>
                     <p className="text-amber-300 font-medium">Authentication Required</p>
                     <p className="text-amber-300/80 text-sm">Include your API key in the Authorization header</p>
@@ -255,7 +254,6 @@ export default function DocsPage() {
 
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
                 <div className="flex gap-2">
-                  <span className="text-blue-400">ℹ️</span>
                   <div>
                     <p className="text-blue-300 text-sm">
                       Settlement executes the receiveWithAuthorization function on-chain, 
@@ -357,7 +355,6 @@ export default function DocsPage() {
 
               <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
                 <div className="flex gap-2">
-                  <span className="text-green-400">🔓</span>
                   <div>
                     <p className="text-green-300 font-medium">Public Endpoint</p>
                     <p className="text-green-300/80 text-sm">No authentication required</p>
@@ -438,7 +435,6 @@ export default function DocsPage() {
 
               <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
                 <div className="flex gap-2">
-                  <span className="text-green-400">🔓</span>
                   <div>
                     <p className="text-green-300 font-medium">Public Endpoint</p>
                     <p className="text-green-300/80 text-sm">No authentication required</p>
@@ -521,6 +517,228 @@ export default function DocsPage() {
             </div>
           )}
 
+          {/* Response Guide Tab */}
+          {activeTab === 'responses' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-100 mb-4">Response Handling Guide</h2>
+                <p className="text-slate-300 mb-4">
+                  Critical information for correctly handling API responses from the X-402 facilitator.
+                </p>
+              </div>
+
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-5">
+                <div className="flex gap-3">
+                  <div>
+                    <h3 className="text-red-300 font-bold mb-2">CRITICAL: Don't Just Check HTTP Status!</h3>
+                    <p className="text-red-300/80 text-sm">
+                      The facilitator returns <code className="bg-red-900/30 px-2 py-0.5 rounded">200 OK</code> even when operations fail.
+                      <strong className="block mt-2">Always check the response body fields!</strong>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Verify Response */}
+              <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
+                <h3 className="text-xl font-bold text-slate-100 mb-4">/verify Response</h3>
+                
+                <div className="space-y-4">
+                  <div className="bg-green-900/20 border border-green-500/30 rounded p-4">
+                    <h4 className="text-green-300 font-semibold mb-2">Valid Payment</h4>
+                    <pre className="text-xs overflow-x-auto"><code className="text-green-400">{`{
+  "isValid": true,
+  "is_valid": true,
+  "payer": "0x67B662afAc6AE778134803aeB9a32d4fF0ECe84C"
+}`}</code></pre>
+                    <p className="text-sm text-green-300/70 mt-2">HTTP 200 + <code>isValid: true</code> = Payment signature is valid</p>
+                  </div>
+
+                  <div className="bg-red-900/20 border border-red-500/30 rounded p-4">
+                    <h4 className="text-red-300 font-semibold mb-2">Invalid Payment</h4>
+                    <pre className="text-xs overflow-x-auto"><code className="text-red-400">{`{
+  "isValid": false,
+  "is_valid": false,
+  "invalidReason": "Network 'base-sepolia' is not supported...",
+  "invalid_reason": "Network 'base-sepolia' is not supported...",
+  "payer": "0x67B662afAc6AE778134803aeB9a32d4fF0ECe84C"
+}`}</code></pre>
+                    <p className="text-sm text-red-300/70 mt-2">HTTP 200 + <code>isValid: false</code> = Check <code>invalidReason</code> for details</p>
+                  </div>
+
+                  <div className="bg-slate-800/60 border border-slate-600 rounded p-4 mt-4">
+                    <h4 className="text-slate-300 font-semibold mb-2">Correct Handling:</h4>
+                    <pre className="text-xs overflow-x-auto"><code className="text-cyan-400">{`if (response.ok && result.isValid) {
+  // Payment is valid, proceed
+} else if (response.ok && !result.isValid) {
+  alert('Invalid: ' + result.invalidReason);
+} else {
+  // HTTP error (401, 500, etc)
+  alert('API Error');
+}`}</code></pre>
+                  </div>
+                </div>
+              </div>
+
+              {/* Settle Response */}
+              <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
+                <h3 className="text-xl font-bold text-slate-100 mb-4">/settle Response</h3>
+                
+                <div className="space-y-4">
+                  <div className="bg-amber-900/20 border border-amber-500/30 rounded p-4">
+                    <h4 className="text-amber-300 font-semibold mb-2">Transaction Pending (IMPORTANT!)</h4>
+                    <pre className="text-xs overflow-x-auto"><code className="text-amber-400">{`{
+  "success": true,
+  "transaction": "0x8f5e9c7b...",
+  "transactionHash": "0x8f5e9c7b...",
+  "network": "Base Sepolia",
+  "payer": "0x67B662...",
+  "status": "pending",
+  "message": "Transaction submitted and pending confirmation..."
+}`}</code></pre>
+                    <p className="text-sm text-amber-300/80 mt-2">
+                      <strong>HTTP 200 + <code>success: true</code> + <code>status: "pending"</code></strong><br/>
+                      Transaction submitted to blockchain but not yet confirmed (1-2 minutes).<br/>
+                      <strong className="text-amber-200">You should still serve the content!</strong>
+                    </p>
+                  </div>
+
+                  <div className="bg-green-900/20 border border-green-500/30 rounded p-4">
+                    <h4 className="text-green-300 font-semibold mb-2">Transaction Completed</h4>
+                    <pre className="text-xs overflow-x-auto"><code className="text-green-400">{`{
+  "success": true,
+  "transaction": "0x8f5e9c7b...",
+  "transactionHash": "0x8f5e9c7b...",
+  "network": "Base Sepolia",
+  "payer": "0x67B662...",
+  "status": "completed"
+}`}</code></pre>
+                    <p className="text-sm text-green-300/70 mt-2">
+                      HTTP 200 + <code>success: true</code> + <code>status: "completed"</code> = Fully confirmed on blockchain
+                    </p>
+                  </div>
+
+                  <div className="bg-red-900/20 border border-red-500/30 rounded p-4">
+                    <h4 className="text-red-300 font-semibold mb-2">Settlement Failed</h4>
+                    <pre className="text-xs overflow-x-auto"><code className="text-red-400">{`{
+  "success": false,
+  "errorReason": "Transaction already settled with this nonce",
+  "error_reason": "Transaction already settled with this nonce",
+  "network": "Base Sepolia",
+  "payer": "0x67B662...",
+  "transactionHash": "0xexisting...",
+  "transactionStatus": "confirmed",
+  "status": "failed"
+}`}</code></pre>
+                    <p className="text-sm text-red-300/70 mt-2">
+                      HTTP 200 + <code>success: false</code> = Settlement failed, check <code>errorReason</code>
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-800/60 border border-slate-600 rounded p-4 mt-4">
+                    <h4 className="text-slate-300 font-semibold mb-2">Correct Handling:</h4>
+                    <pre className="text-xs overflow-x-auto"><code className="text-cyan-400">{`if (response.ok && result.success) {
+  if (result.status === 'pending') {
+    console.log('Transaction pending confirmation...');
+    // Still serve content! Transaction was submitted.
+    serveProtectedContent();
+  } else if (result.status === 'completed') {
+    console.log('Transaction confirmed!');
+    serveProtectedContent();
+  }
+} else if (response.ok && !result.success) {
+  alert('Settlement failed: ' + result.errorReason);
+} else {
+  // HTTP error
+  alert('API Error');
+}`}</code></pre>
+                  </div>
+                </div>
+              </div>
+
+              {/* Common Error Reasons */}
+              <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
+                <h3 className="text-xl font-bold text-slate-100 mb-4">Common Error Reasons</h3>
+                
+                <div className="space-y-3">
+                  <div className="bg-slate-800/60 p-3 m-1 rounded">
+                    <code className="text-red-400 text-sm">Network 'xxx' is not supported</code>
+                    <p className="text-slate-400 text-xs mt-1">Use exact network names from /networks endpoint</p>
+                  </div>
+
+                  <div className="bg-slate-800/60 p-3 m-1 rounded">
+                    <code className="text-red-400 text-sm">Invalid signature</code>
+                    <p className="text-slate-400 text-xs mt-1">EIP-712 signature verification failed</p>
+                  </div>
+
+                  <div className="bg-slate-800/60 p-3 m-1 rounded">
+                    <code className="text-red-400 text-sm">Insufficient balance</code>
+                    <p className="text-slate-400 text-xs mt-1">Payer doesn't have enough tokens</p>
+                  </div>
+
+                  <div className="bg-slate-800/60 p-3 m-1 rounded">
+                    <code className="text-red-400 text-sm">Payment expired</code>
+                    <p className="text-slate-400 text-xs mt-1">Current time after validBefore timestamp</p>
+                  </div>
+
+                  <div className="bg-slate-800/60 p-3 m-1 rounded">
+                    <code className="text-red-400 text-sm">Transaction already settled with this nonce</code>
+                    <p className="text-slate-400 text-xs mt-1">Nonce was already used (replay attack prevention)</p>
+                  </div>
+
+                  <div className="bg-slate-800/60 p-3 m-1 rounded">
+                    <code className="text-red-400 text-sm">Nonce already used</code>
+                    <p className="text-slate-400 text-xs mt-1">Authorization already consumed on-chain</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Field Reference */}
+              <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
+                <h3 className="text-xl font-bold text-slate-100 mb-4">Status Field Reference</h3>
+                
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-800/60">
+                    <tr>
+                      <th className="text-left p-3 text-slate-300">Status</th>
+                      <th className="text-left p-3 text-slate-300">Meaning</th>
+                      <th className="text-left p-3 text-slate-300">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-slate-400">
+                    <tr className="border-t border-slate-700/40">
+                      <td className="p-3"><code className="text-amber-400">pending</code></td>
+                      <td className="p-3">Transaction submitted, awaiting confirmation</td>
+                      <td className="p-3 text-green-400">[OK] Serve content</td>
+                    </tr>
+                    <tr className="border-t border-slate-700/40">
+                      <td className="p-3"><code className="text-green-400">completed</code></td>
+                      <td className="p-3">Transaction confirmed on blockchain</td>
+                      <td className="p-3 text-green-400">[OK] Serve content</td>
+                    </tr>
+                    <tr className="border-t border-slate-700/40">
+                      <td className="p-3"><code className="text-red-400">failed</code></td>
+                      <td className="p-3">Transaction failed or was rejected</td>
+                      <td className="p-3 text-red-400">[ERROR] Show error to user</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Best Practices */}
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-5">
+                <h3 className="text-blue-300 font-bold mb-3">Best Practices</h3>
+                <div className="space-y-2 text-sm text-blue-300/80">
+                  <p>1. <strong>Always verify before settle</strong> - /verify is free, /settle costs gas</p>
+                  <p>2. <strong>Check both HTTP status AND result fields</strong> - Don't rely on status code alone</p>
+                  <p>3. <strong>Handle pending status gracefully</strong> - Show loading indicator but serve content</p>
+                  <p>4. <strong>Provide user-friendly error messages</strong> - Map <code>errorReason</code> to readable text</p>
+                  <p>5. <strong>Use exact network names</strong> - "Base Sepolia" not "base-sepolia"</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Merchant Endpoint Tab */}
           {activeTab === 'merchant' && (
             <div className="space-y-6">
@@ -533,7 +751,6 @@ export default function DocsPage() {
 
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4">
                 <div className="flex gap-2">
-                  <span className="text-amber-400">🔒</span>
                   <div>
                     <p className="text-amber-300 font-medium">Authentication Required</p>
                     <p className="text-amber-300/80 text-sm">Include your API key in the Authorization header</p>
@@ -599,7 +816,6 @@ export default function DocsPage() {
 
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 mt-6">
                 <div className="flex gap-2">
-                  <span className="text-blue-400">ℹ️</span>
                   <div>
                     <h4 className="text-blue-300 font-medium mb-2">Response Fields</h4>
                     <div className="text-blue-300/80 text-sm space-y-1">
@@ -614,50 +830,6 @@ export default function DocsPage() {
               </div>
             </div>
           )}
-        </div>
-
-        {/* Quick Links */}
-        <div className="mt-8 grid md:grid-cols-3 gap-4">
-          <Link
-            href="/demo"
-            className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/30 rounded-xl p-6 hover:border-cyan-500/30 transition-colors group"
-          >
-            <div className="text-3xl mb-3">🛒</div>
-            <h3 className="text-lg font-bold text-slate-100 mb-2 group-hover:text-cyan-400 transition-colors">
-              Try Demo
-            </h3>
-            <p className="text-sm text-slate-400">
-              Experience the payment flow with our demo store
-            </p>
-          </Link>
-
-          <Link
-            href="/test"
-            className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/30 rounded-xl p-6 hover:border-cyan-500/30 transition-colors group"
-          >
-            <div className="text-3xl mb-3">🧪</div>
-            <h3 className="text-lg font-bold text-slate-100 mb-2 group-hover:text-cyan-400 transition-colors">
-              API Testing
-            </h3>
-            <p className="text-sm text-slate-400">
-              Test all endpoints with an interactive interface
-            </p>
-          </Link>
-
-          <a
-            href="https://github.com/deathdkidz/x402"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/30 rounded-xl p-6 hover:border-cyan-500/30 transition-colors group"
-          >
-            <div className="text-3xl mb-3">📦</div>
-            <h3 className="text-lg font-bold text-slate-100 mb-2 group-hover:text-cyan-400 transition-colors">
-              GitHub
-            </h3>
-            <p className="text-sm text-slate-400">
-              View source code and contribute
-            </p>
-          </a>
         </div>
       </div>
     </div>
