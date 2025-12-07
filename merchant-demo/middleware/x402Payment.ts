@@ -297,7 +297,7 @@ export async function handleX402Payment(
   // Build payment requirements
   const requirements: PaymentRequirements = {
     scheme: 'erc3009',
-    network: config.network || 'base-sepolia',
+    network: config.network || 'Base Sepolia', // Must match facilitator's network name exactly
     asset: config.asset || '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
     payTo: MERCHANT_ADDRESS,
     maxAmountRequired: config.amount,
