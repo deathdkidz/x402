@@ -1,8 +1,8 @@
 module.exports = {
   apps: [{
     name: 'merchant-demo',
-    script: 'npm',
-    args: 'start',
+    script: 'node_modules/next/dist/bin/next',
+    args: 'start -p 3000',
     cwd: '/srv/x402/merchant-demo',
     instances: 1,
     autorestart: true,
@@ -10,12 +10,11 @@ module.exports = {
     max_memory_restart: '1G',
     env: {
       NODE_ENV: 'production',
-      PORT: 3003
+      PORT: 3000
     },
-    error_file: './logs/pm2-error.log',
-    out_file: './logs/pm2-out.log',
-    log_file: './logs/pm2-combined.log',
-    time: true,
-    merge_logs: true
+    error_file: './logs/err.log',
+    out_file: './logs/out.log',
+    log_file: './logs/combined.log',
+    time: true
   }]
 };
