@@ -1,12 +1,15 @@
 import mysql from 'mysql2/promise';
+import crypto from 'crypto';
+import { ethers } from 'ethers';
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
 
 export interface Merchant {
   id: number;
-  merchant_address: string;
+  auth_address: string;
+  business_name: string | null;
   api_key: string;
-  private_key: string;
+  private_key: string;  // Topup wallet private key (derive address when needed)
   created_at: Date;
   updated_at: Date;
   is_active: boolean;
@@ -17,6 +20,32 @@ export interface Merchant {
   webhook_url: string | null;
   webhook_secret: string | null;
   webhook_events: string;
+  email: string | null;
+  profile_image_url: string | null;
+}
+
+export interface AuthNonce {
+  id: number;
+  auth_address: string;
+  nonce: string;
+  created_at: Date;
+  expires_at: Date;
+  used: boolean;
+}
+
+export interface MerchantSession {
+  id: number;
+  merchant_id: number;
+  session_token: string;
+  auth_address: string;
+  nonce: string;
+  signature: string | null;
+  expires_at: Date;
+  created_at: Date;
+  last_activity: Date;
+  ip_address: string | null;
+  user_agent: string | null;
+  is_active: boolean;
 }
 
 class DatabaseService {
@@ -61,12 +90,26 @@ class DatabaseService {
   }
 
   /**
-   * Get merchant by address
+   * Get topup address from merchant's private key
+   * Only derive when needed (e.g., for deposits)
+   */
+  getTopupAddress(merchant: Merchant): string {
+    try {
+      const wallet = new ethers.Wallet(merchant.private_key);
+      return wallet.address.toLowerCase();
+    } catch (error) {
+      logger.error('Error deriving topup address from private key:', error);
+      throw new Error('Invalid private key');
+    }
+  }
+
+  /**
+   * Get merchant by address (auth address - primary identifier)
    */
   async getMerchantByAddress(address: string): Promise<Merchant | null> {
     try {
       const [rows] = await this.pool.execute<mysql.RowDataPacket[]>(
-        'SELECT * FROM merchants WHERE merchant_address = ? AND is_active = TRUE',
+        'SELECT * FROM merchants WHERE auth_address = ? AND is_active = TRUE',
         [address.toLowerCase()]
       );
 
@@ -82,25 +125,68 @@ class DatabaseService {
   }
 
   /**
+   * Get merchant by auth address
+   */
+  async getMerchantByAuthAddress(authAddress: string): Promise<Merchant | null> {
+    try {
+      const [rows] = await this.pool.execute<mysql.RowDataPacket[]>(
+        'SELECT * FROM merchants WHERE auth_address = ? AND is_active = TRUE',
+        [authAddress.toLowerCase()]
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return rows[0] as Merchant;
+    } catch (error) {
+      logger.error('Database error getting merchant by auth address:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get merchant by ID
+   */
+  async getMerchantById(id: number): Promise<Merchant | null> {
+    try {
+      const [rows] = await this.pool.execute<mysql.RowDataPacket[]>(
+        'SELECT * FROM merchants WHERE id = ? AND is_active = TRUE',
+        [id]
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return rows[0] as Merchant;
+    } catch (error) {
+      logger.error('Database error getting merchant by ID:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Create new merchant
    */
   async createMerchant(
-    merchantAddress: string,
+    authAddress: string,
     apiKey: string,
-    privateKey: string
+    privateKey: string,
+    businessName?: string
   ): Promise<Merchant> {
     try {
       const [result] = await this.pool.execute<mysql.ResultSetHeader>(
-        'INSERT INTO merchants (merchant_address, api_key, private_key) VALUES (?, ?, ?)',
-        [merchantAddress.toLowerCase(), apiKey, privateKey]
+        'INSERT INTO merchants (auth_address, api_key, private_key, business_name) VALUES (?, ?, ?, ?)',
+        [authAddress.toLowerCase(), apiKey, privateKey, businessName || null]
       );
 
-      const merchant = await this.getMerchantByAddress(merchantAddress);
+      const merchant = await this.getMerchantByAddress(authAddress);
       if (!merchant) {
         throw new Error('Failed to create merchant');
       }
 
-      logger.info(`New merchant created: ${merchantAddress}`);
+      logger.info(`New merchant created: auth=${authAddress}`);
       return merchant;
     } catch (error) {
       logger.error('Database error creating merchant:', error);
@@ -161,7 +247,7 @@ class DatabaseService {
    * Save a new transaction
    */
   async saveTransaction(data: {
-    merchantAddress: string;
+    recipientAddress: string;
     payerAddress: string;
     amount: string;
     asset: string;
@@ -187,7 +273,7 @@ class DatabaseService {
          signature, amount, asset, network, resource, description, mime_type, transaction_hash, status, timeout_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          data.merchantAddress.toLowerCase(),
+          data.recipientAddress.toLowerCase(),
           data.payerAddress.toLowerCase(),
           data.nonce,
           data.validAfter,
@@ -295,7 +381,7 @@ class DatabaseService {
    * Update merchant tier and rate limits
    */
   async updateMerchantTier(
-    merchantAddress: string,
+    authAddress: string,
     tier: string,
     verifyLimit?: number,
     settleLimit?: number,
@@ -318,14 +404,14 @@ class DatabaseService {
         params.push(rateLimitWindow);
       }
 
-      params.push(merchantAddress);
+      params.push(authAddress.toLowerCase());
 
       await this.pool.execute(
-        `UPDATE merchants SET ${updates.join(', ')} WHERE merchant_address = ?`,
+        `UPDATE merchants SET ${updates.join(', ')} WHERE auth_address = ?`,
         params
       );
 
-      logger.info(`Updated merchant ${merchantAddress} to tier: ${tier}`);
+      logger.info(`Updated merchant ${authAddress} to tier: ${tier}`);
     } catch (error) {
       logger.error('Database error updating merchant tier:', error);
       throw error;
@@ -335,7 +421,7 @@ class DatabaseService {
   /**
    * Get merchant rate limits (with Redis caching)
    */
-  async getMerchantRateLimits(merchantAddress: string): Promise<{
+  async getMerchantRateLimits(authAddress: string): Promise<{
     verifyLimit: number;
     settleLimit: number;
     window: number;
@@ -343,8 +429,8 @@ class DatabaseService {
   } | null> {
     try {
       const [rows] = await this.pool.execute<mysql.RowDataPacket[]>(
-        'SELECT tier, verify_limit, settle_limit, rate_limit_window FROM merchants WHERE merchant_address = ? AND is_active = TRUE',
-        [merchantAddress]
+        'SELECT tier, verify_limit, settle_limit, rate_limit_window FROM merchants WHERE auth_address = ? AND is_active = TRUE',
+        [authAddress.toLowerCase()]
       );
 
       if (rows.length === 0) {
@@ -558,6 +644,216 @@ class DatabaseService {
       return rows;
     } catch (error) {
       logger.error('Database error getting webhook deliveries:', error);
+      throw error;
+    }
+  }
+
+  // ============ Auth Nonce Methods ============
+
+  /**
+   * Create auth nonce for wallet authentication
+   */
+  async createAuthNonce(authAddress: string): Promise<AuthNonce> {
+    try {
+      const nonce = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+      const [result] = await this.pool.execute<mysql.ResultSetHeader>(
+        `INSERT INTO auth_nonces (auth_address, nonce, expires_at) 
+         VALUES (?, ?, ?)`,
+        [authAddress.toLowerCase(), nonce, expiresAt]
+      );
+
+      return {
+        id: result.insertId,
+        auth_address: authAddress.toLowerCase(),
+        nonce,
+        created_at: new Date(),
+        expires_at: expiresAt,
+        used: false,
+      };
+    } catch (error) {
+      logger.error('Database error creating auth nonce:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get auth nonce
+   */
+  async getAuthNonce(nonce: string): Promise<AuthNonce | null> {
+    try {
+      const [rows] = await this.pool.execute<mysql.RowDataPacket[]>(
+        `SELECT * FROM auth_nonces 
+         WHERE nonce = ? AND used = FALSE AND expires_at > NOW()`,
+        [nonce]
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return rows[0] as AuthNonce;
+    } catch (error) {
+      logger.error('Database error getting auth nonce:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Mark nonce as used
+   */
+  async markNonceUsed(nonce: string): Promise<void> {
+    try {
+      await this.pool.execute(
+        'UPDATE auth_nonces SET used = TRUE WHERE nonce = ?',
+        [nonce]
+      );
+    } catch (error) {
+      logger.error('Database error marking nonce used:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up expired nonces (should be run periodically)
+   */
+  async cleanupExpiredNonces(): Promise<void> {
+    try {
+      await this.pool.execute(
+        'DELETE FROM auth_nonces WHERE expires_at < NOW()'
+      );
+    } catch (error) {
+      logger.error('Database error cleaning up expired nonces:', error);
+      throw error;
+    }
+  }
+
+  // ============ Merchant Session Methods ============
+
+  /**
+   * Create merchant session
+   */
+  async createMerchantSession(data: {
+    merchantId: number;
+    authAddress: string;
+    nonce: string;
+    signature: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }): Promise<MerchantSession> {
+    try {
+      const sessionToken = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+      const [result] = await this.pool.execute<mysql.ResultSetHeader>(
+        `INSERT INTO merchant_sessions 
+         (merchant_id, session_token, auth_address, nonce, signature, expires_at, ip_address, user_agent) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          data.merchantId,
+          sessionToken,
+          data.authAddress.toLowerCase(),
+          data.nonce,
+          data.signature,
+          expiresAt,
+          data.ipAddress || null,
+          data.userAgent || null,
+        ]
+      );
+
+      return {
+        id: result.insertId,
+        merchant_id: data.merchantId,
+        session_token: sessionToken,
+        auth_address: data.authAddress.toLowerCase(),
+        nonce: data.nonce,
+        signature: data.signature,
+        expires_at: expiresAt,
+        created_at: new Date(),
+        last_activity: new Date(),
+        ip_address: data.ipAddress || null,
+        user_agent: data.userAgent || null,
+        is_active: true,
+      };
+    } catch (error) {
+      logger.error('Database error creating merchant session:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get session by token
+   */
+  async getSessionByToken(sessionToken: string): Promise<MerchantSession | null> {
+    try {
+      const [rows] = await this.pool.execute<mysql.RowDataPacket[]>(
+        `SELECT * FROM merchant_sessions 
+         WHERE session_token = ? AND is_active = TRUE AND expires_at > NOW()`,
+        [sessionToken]
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      // Update last activity
+      await this.pool.execute(
+        'UPDATE merchant_sessions SET last_activity = NOW() WHERE id = ?',
+        [rows[0].id]
+      );
+
+      return rows[0] as MerchantSession;
+    } catch (error) {
+      logger.error('Database error getting session by token:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Invalidate session
+   */
+  async invalidateSession(sessionToken: string): Promise<void> {
+    try {
+      await this.pool.execute(
+        'UPDATE merchant_sessions SET is_active = FALSE WHERE session_token = ?',
+        [sessionToken]
+      );
+    } catch (error) {
+      logger.error('Database error invalidating session:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all active sessions for merchant
+   */
+  async getMerchantSessions(merchantId: number): Promise<MerchantSession[]> {
+    try {
+      const [rows] = await this.pool.execute<mysql.RowDataPacket[]>(
+        `SELECT * FROM merchant_sessions 
+         WHERE merchant_id = ? AND is_active = TRUE AND expires_at > NOW()
+         ORDER BY last_activity DESC`,
+        [merchantId]
+      );
+
+      return rows as MerchantSession[];
+    } catch (error) {
+      logger.error('Database error getting merchant sessions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up expired sessions (should be run periodically)
+   */
+  async cleanupExpiredSessions(): Promise<void> {
+    try {
+      await this.pool.execute(
+        'UPDATE merchant_sessions SET is_active = FALSE WHERE expires_at < NOW()'
+      );
+    } catch (error) {
+      logger.error('Database error cleaning up expired sessions:', error);
       throw error;
     }
   }

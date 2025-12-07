@@ -2,20 +2,7 @@
 
 A secure, production-ready x402 payment facilitator service with multi-layer verification and security checks.
 
-## 📚 Documentation
-
-Complete documentation is available in the [docs/](./docs/) folder:
-
-- **[Quick Start](./docs/QUICKSTART.md)** - Get running in 5 minutes
-- **[Setup Guide](./docs/SETUP.md)** - Complete installation and configuration
-- **[Environment Variables](./docs/ENVIRONMENT.md)** - Configuration reference
-- **[Multi-Paymaster](./docs/MULTI_PAYMASTER.md)** - Parallel settlement processing
-- **[Webhooks](./docs/WEBHOOKS.md)** - Payment notifications
-- **[Security](./docs/SECURITY.md)** - Security best practices
-- **[Rate Limiting](./docs/RATE_LIMITING.md)** - API rate limits
-- **[Gas Tracking](./docs/GAS_TRACKING.md)** - Monitor gas costs
-
-## 🚀 Features
+##  Features
 
 ### Multi-Layer Security
 - **7-Layer Payment Verification**

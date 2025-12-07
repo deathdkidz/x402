@@ -131,7 +131,7 @@ class RedisService {
     try {
       const key = `merchant:${apiKey}`;
       await this.client.setex(key, ttl, JSON.stringify(merchantData));
-      logger.debug(`Cached merchant: ${merchantData.merchant_address}`);
+      logger.debug(`Cached merchant: ${merchantData.auth_address}`);
     } catch (error) {
       logger.error('Failed to cache merchant:', error);
     }
@@ -176,7 +176,7 @@ class RedisService {
    * Cache merchant rate limits
    */
   async cacheMerchantRateLimits(
-    merchantAddress: string,
+    authAddress: string,
     limits: { verifyLimit: number; settleLimit: number; window: number; tier: string },
     ttl: number = 3600
   ): Promise<void> {
@@ -185,9 +185,9 @@ class RedisService {
     }
 
     try {
-      const key = `ratelimits:${merchantAddress}`;
+      const key = `ratelimits:${authAddress}`;
       await this.client.setex(key, ttl, JSON.stringify(limits));
-      logger.debug(`Cached rate limits for merchant: ${merchantAddress}`);
+      logger.debug(`Cached rate limits for merchant: ${authAddress}`);
     } catch (error) {
       logger.error('Failed to cache merchant rate limits:', error);
     }
@@ -197,14 +197,14 @@ class RedisService {
    * Get cached merchant rate limits
    */
   async getCachedMerchantRateLimits(
-    merchantAddress: string
+    authAddress: string
   ): Promise<{ verifyLimit: number; settleLimit: number; window: number; tier: string } | null> {
     if (!this.isReady() || !this.client) {
       return null;
     }
 
     try {
-      const key = `ratelimits:${merchantAddress}`;
+      const key = `ratelimits:${authAddress}`;
       const result = await this.client.get(key);
       return result ? JSON.parse(result) : null;
     } catch (error) {
@@ -216,15 +216,15 @@ class RedisService {
   /**
    * Invalidate merchant rate limits cache
    */
-  async invalidateMerchantRateLimits(merchantAddress: string): Promise<void> {
+  async invalidateMerchantRateLimits(authAddress: string): Promise<void> {
     if (!this.isReady() || !this.client) {
       return;
     }
 
     try {
-      const key = `ratelimits:${merchantAddress}`;
+      const key = `ratelimits:${authAddress}`;
       await this.client.del(key);
-      logger.debug(`Invalidated rate limits cache for merchant: ${merchantAddress}`);
+      logger.debug(`Invalidated rate limits cache for merchant: ${authAddress}`);
     } catch (error) {
       logger.error('Failed to invalidate merchant rate limits cache:', error);
     }

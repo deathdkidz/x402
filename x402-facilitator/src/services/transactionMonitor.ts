@@ -146,8 +146,8 @@ export class TransactionMonitor {
     status: 'completed' | 'failed'
   ): Promise<void> {
     try {
-      // Get merchant webhook configuration
-      const merchant = await db.getMerchantByAddress(tx.merchant_address);
+      // Get merchant webhook configuration (recipient_address is the merchant's auth address)
+      const merchant = await db.getMerchantByAddress(tx.recipient_address);
       if (!merchant || !merchant.webhook_url) {
         return; // No webhook configured
       }
@@ -170,7 +170,7 @@ export class TransactionMonitor {
           event: event as 'transaction.completed' | 'transaction.failed',
           transactionId: tx.id,
           transactionHash: tx.transaction_hash,
-          merchantAddress: tx.merchant_address,
+          merchantAddress: tx.recipient_address,
           payerAddress: tx.payer_address,
           amount: tx.amount,
           asset: tx.asset,

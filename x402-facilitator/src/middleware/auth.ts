@@ -53,12 +53,12 @@ export const apiKeyAuth = async (req: Request, res: Response, next: NextFunction
 
       // Cache merchant data for 1 hour
       await redis.cacheMerchant(apiKey, merchant, 3600);
-      logger.debug(`Cached merchant: ${merchant.merchant_address}`);
+      logger.debug(`Cached merchant: ${merchant.auth_address}`);
     }
 
     // Attach merchant to request for use in routes
     req.merchant = merchant;
-    logger.info(`Authenticated merchant: ${merchant.merchant_address}`);
+    logger.info(`Authenticated merchant: ${merchant.auth_address}`);
     next();
   } catch (error) {
     logger.error('Authentication error:', error);
@@ -93,7 +93,7 @@ export const optionalApiKeyAuth = async (req: Request, res: Response, next: Next
 
     if (merchant) {
       req.merchant = merchant;
-      logger.info(`Optionally authenticated merchant: ${merchant.merchant_address}`);
+      logger.info(`Optionally authenticated merchant: ${merchant.auth_address}`);
     }
 
     next();

@@ -2,14 +2,6 @@
 
 A complete implementation of HTTP 402 Payment Required using ERC-3009 gasless USDC transfers on EVM-compatible blockchains.
 
-## 📚 Documentation
-
-Complete documentation is available in the [docs/](./docs/) folder:
-- [Protocol Flow](./docs/X402_PROTOCOL_FLOW.md) - How X402 works
-- [Testing Guide](./docs/X402_TESTING_GUIDE.md) - Testing the system  
-- [Implementation Details](./docs/IMPLEMENTATION_SUMMARY.md) - Technical details
-- [Security Audit](./docs/SECURITY_AUDIT_SUMMARY.md) - Security review
-
 ## Overview
 
 x402 enables seamless micropayments for API access using USDC transfers. Merchants can require payment for API endpoints without users needing ETH for gas fees.

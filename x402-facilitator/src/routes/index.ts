@@ -171,7 +171,7 @@ router.post(
 
     logger.info('=== SETTLE REQUEST RECEIVED ===');
     logger.info(`From IP: ${req.ip}`);
-    logger.info(`Merchant: ${req.merchant?.merchant_address}`);
+    logger.info(`Merchant: ${req.merchant?.auth_address}`);
     logger.info(`Network: ${paymentRequirements.network}`);
     logger.info(`Asset: ${paymentRequirements.asset}`);
     logger.info(`Amount: ${paymentRequirements.maxAmountRequired}`);
@@ -188,7 +188,7 @@ router.post(
       const result = await settlementService.settle(
         paymentPayload,
         paymentRequirements,
-        req.merchant.merchant_address
+        req.merchant.auth_address
       );
 
       const duration = Date.now() - startTime;

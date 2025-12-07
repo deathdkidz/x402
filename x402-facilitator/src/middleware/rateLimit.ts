@@ -83,7 +83,7 @@ export const merchantRateLimiter = async (
     return;
   }
 
-  const merchantAddress = req.merchant.merchant_address;
+  const authAddress = req.merchant.auth_address;
   const endpoint = req.path;
 
   try {
@@ -96,15 +96,15 @@ export const merchantRateLimiter = async (
     }
 
     // Get merchant-specific rate limits (cached or from database)
-    let merchantLimits = await redis.getCachedMerchantRateLimits(merchantAddress);
+    let merchantLimits = await redis.getCachedMerchantRateLimits(authAddress);
     
     if (!merchantLimits) {
       // Cache miss - query database
-      merchantLimits = await db.getMerchantRateLimits(merchantAddress);
+      merchantLimits = await db.getMerchantRateLimits(authAddress);
       
       if (!merchantLimits) {
         // Merchant not found, use default limits
-        logger.warn(`No rate limits found for merchant ${merchantAddress}, using defaults`);
+        logger.warn(`No rate limits found for merchant ${authAddress}, using defaults`);
         merchantLimits = {
           verifyLimit: 60,
           settleLimit: 20,
@@ -114,7 +114,7 @@ export const merchantRateLimiter = async (
       }
       
       // Cache for 1 hour
-      await redis.cacheMerchantRateLimits(merchantAddress, merchantLimits, 3600);
+      await redis.cacheMerchantRateLimits(authAddress, merchantLimits, 3600);
     }
 
     // Determine limit based on endpoint
@@ -128,7 +128,7 @@ export const merchantRateLimiter = async (
       limit = { max: merchantLimits.verifyLimit, window: merchantLimits.window };
     }
 
-    const key = `ratelimit:merchant:${merchantAddress}:${endpoint}`;
+    const key = `ratelimit:merchant:${authAddress}:${endpoint}`;
 
     // Increment counter
     const current = await client.incr(key);
@@ -150,7 +150,7 @@ export const merchantRateLimiter = async (
     // Check if limit exceeded
     if (current > limit.max) {
       logger.warn(
-        `Merchant rate limit exceeded: ${merchantAddress} (${merchantLimits.tier}) on ${endpoint} (${current}/${limit.max})`
+        `Merchant rate limit exceeded: ${authAddress} (${merchantLimits.tier}) on ${endpoint} (${current}/${limit.max})`
       );
       res.status(429).json({
         error: 'Too Many Requests',
@@ -162,7 +162,7 @@ export const merchantRateLimiter = async (
     }
 
     logger.debug(
-      `Merchant ${merchantAddress} (${merchantLimits.tier}) on ${endpoint}: ${current}/${limit.max} requests`
+      `Merchant ${authAddress} (${merchantLimits.tier}) on ${endpoint}: ${current}/${limit.max} requests`
     );
     next();
   } catch (error) {

@@ -281,7 +281,7 @@ export class SettlementService {
         }
 
         transactionId = await db.saveTransaction({
-          merchantAddress: merchantAddress,
+          recipientAddress: merchantAddress,
           payerAddress: payer,
           nonce: nonce,
           validAfter: validAfter.toString(),

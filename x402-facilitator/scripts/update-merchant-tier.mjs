@@ -30,7 +30,7 @@ async function updateMerchantTier() {
   const args = process.argv.slice(2);
   
   if (args.length < 2) {
-    console.log('Usage: npm run update-tier <merchant_address> <tier> [verify_limit] [settle_limit] [window]');
+    console.log('Usage: npm run update-tier <auth_address> <tier> [verify_limit] [settle_limit] [window]');
     console.log('\nAvailable tiers:');
     console.log('  free       - 60 verify/min, 20 settle/min');
     console.log('  basic      - 120 verify/min, 40 settle/min');
@@ -43,7 +43,7 @@ async function updateMerchantTier() {
     process.exit(1);
   }
 
-  const merchantAddress = args[0];
+  const authAddress = args[0];
   const tier = args[1];
   
   let verifyLimit, settleLimit, window;
@@ -77,18 +77,18 @@ async function updateMerchantTier() {
   try {
     // Check if merchant exists
     const [merchants] = await connection.execute(
-      'SELECT merchant_address, tier, verify_limit, settle_limit FROM merchants WHERE merchant_address = ?',
-      [merchantAddress]
+      'SELECT auth_address, tier, verify_limit, settle_limit FROM merchants WHERE auth_address = ?',
+      [authAddress.toLowerCase()]
     );
 
     if (merchants.length === 0) {
-      console.error(`Merchant not found: ${merchantAddress}`);
+      console.error(`Merchant not found: ${authAddress}`);
       process.exit(1);
     }
 
     const oldMerchant = merchants[0];
     console.log('\n📊 Current Settings:');
-    console.log(`   Merchant: ${oldMerchant.merchant_address}`);
+    console.log(`   Merchant: ${oldMerchant.auth_address}`);
     console.log(`   Tier: ${oldMerchant.tier}`);
     console.log(`   Verify Limit: ${oldMerchant.verify_limit}/min`);
     console.log(`   Settle Limit: ${oldMerchant.settle_limit}/min`);
@@ -97,19 +97,19 @@ async function updateMerchantTier() {
     await connection.execute(
       `UPDATE merchants 
        SET tier = ?, verify_limit = ?, settle_limit = ?, rate_limit_window = ? 
-       WHERE merchant_address = ?`,
-      [tier, verifyLimit, settleLimit, window, merchantAddress]
+       WHERE auth_address = ?`,
+      [tier, verifyLimit, settleLimit, window, authAddress.toLowerCase()]
     );
 
     console.log('\n✅ Updated Settings:');
-    console.log(`   Merchant: ${merchantAddress}`);
+    console.log(`   Merchant: ${authAddress}`);
     console.log(`   Tier: ${tier}`);
     console.log(`   Verify Limit: ${verifyLimit}/min`);
     console.log(`   Settle Limit: ${settleLimit}/min`);
     console.log(`   Window: ${window} seconds`);
     console.log('\n🔄 Note: Rate limit cache will refresh within 1 hour');
     console.log('   To clear cache immediately, restart the facilitator or run:');
-    console.log(`   redis-cli DEL "ratelimits:${merchantAddress}"`);
+    console.log(`   redis-cli DEL "ratelimits:${authAddress.toLowerCase()}"`);
 
   } catch (error) {
     console.error('Error updating merchant tier:', error);
