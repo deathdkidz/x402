@@ -4,7 +4,6 @@ import { verifyRateLimiter, settleRateLimiter, merchantRateLimiter } from '../mi
 import { apiKeyAuth } from '../middleware/auth.js';
 import verificationService from '../services/verification.js';
 import settlementService from '../services/settlement.js';
-import merchantRoutes from './merchants.js';
 import logger from '../utils/logger.js';
 import config from '../config/index.js';
 
@@ -75,7 +74,6 @@ router.get('/', (req: Request, res: Response) => {
       networks: 'GET /networks',
       verify: 'POST /verify',
       settle: 'POST /settle',
-      merchant: 'GET /merchant',
     },
     supportedNetworks: config.supportedNetworks,
   });
@@ -229,8 +227,5 @@ router.post(
     }
   }
 );
-
-// Mount merchant management routes
-router.use('/', merchantRoutes);
 
 export default router;

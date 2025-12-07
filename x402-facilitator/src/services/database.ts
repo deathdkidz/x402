@@ -183,7 +183,7 @@ class DatabaseService {
         : null;
 
       const [result] = await this.pool.execute<mysql.ResultSetHeader>(
-        `INSERT INTO transactions (merchant_address, payer_address, nonce, valid_after, valid_before, 
+        `INSERT INTO transactions (recipient_address, payer_address, nonce, valid_after, valid_before, 
          signature, amount, asset, network, resource, description, mime_type, transaction_hash, status, timeout_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [

@@ -17,7 +17,6 @@
     "pm2:delete": "pm2 delete x402-facilitator",
     "test": "echo \"Tests not yet implemented\" && exit 0",
     "lint": "eslint src --ext .ts",
-    "generate:merchant": "node scripts/generate-merchant.mjs",
     "update:tier": "node scripts/update-merchant-tier.mjs"
   },
   "keywords": [
