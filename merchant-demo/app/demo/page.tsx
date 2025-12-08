@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAccount, useSignTypedData } from 'wagmi';
+import Link from 'next/link';
 import WalletConnect from '../components/WalletConnect';
 
 interface NetworkConfig {
@@ -228,13 +229,21 @@ export default function DemoPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
         {/* Header */}
-        <div className="text-center mb-10">
-          <h1 className="text-4xl sm:text-5xl font-bold mb-4 bg-gradient-to-r from-pink-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
-            Premium Content Demo
-          </h1>
-          <p className="text-slate-400">
-            Experience X-402 payment protocol in action
-          </p>
+        <div className="mb-10">
+          <Link href="/" className="text-cyan-400 hover:text-cyan-300 text-sm mb-4 inline-flex items-center gap-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Home
+          </Link>
+          <div className="text-center">
+            <h1 className="text-4xl sm:text-5xl font-bold mb-4 bg-gradient-to-r from-pink-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+              Premium Content Demo
+            </h1>
+            <p className="text-slate-400">
+              Experience X-402 payment protocol in action
+            </p>
+          </div>
         </div>
 
         {/* Wallet Connect */}
