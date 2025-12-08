@@ -21,8 +21,8 @@ const ERC3009_ABI = [
  * Implements:
  * 1. Network validation (supported networks)
  * 2. Payer extraction
- * 3. Merchant authorization validation
- * 4. Authorization and signature extraction
+ * 3. Authorization and signature extraction
+ * 4. Recipient verification (authorization.to === requirements.payTo)
  * 5. Signature verification (EIP-712)
  * 6. Time window validation (validAfter/validBefore)
  * 7. Amount matching validation
@@ -32,6 +32,12 @@ const ERC3009_ABI = [
  * 11. Gas estimation
  * 12. Transaction execution
  * 13. Transaction monitoring
+ * 
+ * Note: API key authentication (merchantAddress) is only used for:
+ * - Rate limiting
+ * - Webhook configuration
+ * - Transaction history tracking
+ * It does NOT restrict which addresses can receive payments.
  */
 export class SettlementService {
   private pendingTransactions: Map<string, string> = new Map();
@@ -107,18 +113,19 @@ export class SettlementService {
       }
       const payer = payerResult.payer!;
 
-      // Safety Check 3: Validate merchant is authorized
-      const authCheck = this.validateMerchantAuth(requirements.payTo, merchantAddress);
-      if (!authCheck.success) {
-        return authCheck.response;
-      }
-
-      // Safety Check 4: Extract authorization and signature
+      // Safety Check 3: Extract authorization and signature
       const authResult = this.extractAuthorization(payload);
       if (!authResult.success) {
         return authResult.response;
       }
       const { authorization, signature } = authResult;
+
+      // Safety Check 4: Verify recipient matches (CRITICAL SECURITY)
+      // This prevents authorization reuse - ensures payload.to matches requirements.payTo
+      const recipientCheck = this.verifyRecipient(authorization!, requirements);
+      if (!recipientCheck.success) {
+        return recipientCheck.response;
+      }
 
       // Safety Check 5: Verify signature matches payer
       const sigCheck = await this.verifySignature(
@@ -129,12 +136,6 @@ export class SettlementService {
       );
       if (!sigCheck.success) {
         return sigCheck.response;
-      }
-
-      // Safety Check 5.5: Verify recipient matches (CRITICAL SECURITY)
-      const recipientCheck = this.verifyRecipient(authorization!, requirements);
-      if (!recipientCheck.success) {
-        return recipientCheck.response;
       }
 
       // Safety Check 6: Verify time window (validAfter/validBefore)
@@ -626,26 +627,6 @@ export class SettlementService {
 
     logger.debug(`✓ Authorization extracted with signature`);
     return { success: true, authorization, signature, response: { success: true, network: 'unknown' } };
-  }
-
-  /**
-   * Validate merchant is authorized to receive payment
-   */
-  private validateMerchantAuth(payTo: string, merchantAddress: string): { success: boolean; response: SettleResponse } {
-    if (payTo.toLowerCase() !== merchantAddress.toLowerCase()) {
-      logger.warn(`Merchant address mismatch. Expected: ${merchantAddress}, Got: ${payTo}`);
-      return {
-        success: false,
-        response: {
-          success: false,
-          network: 'unknown',
-          errorReason: 'Merchant address mismatch. This facilitator is not authorized for this payment.',
-        },
-      };
-    }
-
-    logger.debug(`✓ Merchant authorization validated`);
-    return { success: true, response: { success: true, network: 'unknown' } };
   }
 
   /**
