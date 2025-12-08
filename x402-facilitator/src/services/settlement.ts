@@ -82,7 +82,11 @@ export class SettlementService {
     const provider = this.getProvider(requirements.network);
     
     // Get next available paymaster wallet from pool (round-robin)
-    const paymasterWallet = paymasterPool.getNextWallet();
+    const paymasterWalletBase = paymasterPool.getNextWallet();
+    
+    // Connect wallet to the correct network provider
+    const paymasterWallet = paymasterWalletBase.connect(provider);
+    
     logger.info(`Using paymaster wallet: ${paymasterWallet.address}`);
     logger.info(`Settling payment to merchant: ${merchantAddress}`);
     logger.info('=== STARTING PAYMENT SETTLEMENT ===');
@@ -219,6 +223,13 @@ export class SettlementService {
 
       // Check on-chain if not in cache (fallback for cache misses or restarts)
       try {
+        // Debug logging for troubleshooting
+        logger.debug(`🔍 Checking nonce state on-chain...`);
+        logger.debug(`   Payer: ${payer} (type: ${typeof payer}, length: ${payer.length})`);
+        logger.debug(`   Nonce: ${nonce} (type: ${typeof nonce}, length: ${nonce.length})`);
+        logger.debug(`   Token Contract: ${requirements.asset}`);
+        logger.debug(`   Network: ${requirements.network}`);
+        
         const isNonceUsed = await tokenContract.authorizationState(payer, nonce);
         if (isNonceUsed) {
           logger.warn(`⛔ Nonce already used on-chain: ${nonce} for payer: ${payer}`);
@@ -232,6 +243,14 @@ export class SettlementService {
         logger.debug(`✓ Nonce ${nonce} not yet used (cache miss, checked on-chain)`);
       } catch (error) {
         logger.error('Failed to check nonce state:', error);
+        if (error instanceof Error) {
+          logger.error('Error details:', {
+            message: error.message,
+            code: (error as any).code,
+            data: (error as any).data,
+            info: (error as any).info,
+          });
+        }
         return {
           success: false,
           network: requirements.network,
@@ -577,10 +596,15 @@ export class SettlementService {
     if (payload.payload && typeof payload.payload === 'object' && 'authorization' in payload.payload) {
       const exactPayload = payload.payload as ExactPaymentPayload;
       payer = exactPayload.authorization.from?.trim();
+      
+      // Debug logging
+      logger.debug(`🔍 Raw payer from payload: "${exactPayload.authorization.from}" (type: ${typeof exactPayload.authorization.from})`);
+      logger.debug(`   Trimmed payer: "${payer}"`);
     }
 
     if (!payer) {
       logger.warn('Could not extract payer address from payload');
+      logger.warn('Payload structure:', JSON.stringify(payload, null, 2));
       return {
         success: false,
         response: {
@@ -611,6 +635,19 @@ export class SettlementService {
       const exactPayload = payload.payload as ExactPaymentPayload;
       authorization = exactPayload.authorization;
       signature = exactPayload.signature;
+      
+      // Debug logging
+      logger.debug(`🔍 Authorization extracted:`, {
+        from: authorization?.from,
+        to: authorization?.to,
+        value: authorization?.value,
+        validAfter: authorization?.validAfter,
+        validBefore: authorization?.validBefore,
+        nonce: authorization?.nonce,
+        nonceType: typeof authorization?.nonce,
+        nonceLength: authorization?.nonce?.length,
+      });
+      logger.debug(`   Signature: ${signature?.substring(0, 20)}...${signature?.substring(signature.length - 10)}`);
     }
 
     if (!authorization || !signature) {
