@@ -378,6 +378,71 @@ class DatabaseService {
   }
 
   /**
+   * Log transaction lifecycle event (reorg, drop, replacement, status change)
+   */
+  async logTransactionEvent(data: {
+    transactionId: number;
+    transactionHash: string;
+    eventType: 'submitted' | 'pending' | 'preconfirmed' | 'completed' | 'failed' | 
+               'reorg_detected' | 'dropped' | 'replaced' | 'rebroadcast' | 'canonical_confirmed';
+    fromStatus?: string;
+    toStatus?: string;
+    blockNumber?: bigint;
+    confirmations?: number;
+    replacedByTx?: string;
+    gasPriceOld?: string;
+    gasPriceNew?: string;
+    eventData?: any;
+    errorMessage?: string;
+  }): Promise<number> {
+    try {
+      const [result] = await this.pool.execute<mysql.ResultSetHeader>(
+        `INSERT INTO transaction_events (
+          transaction_id, transaction_hash, event_type, from_status, to_status,
+          block_number, confirmations, replaced_by_tx, gas_price_old, gas_price_new,
+          event_data, error_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          data.transactionId,
+          data.transactionHash,
+          data.eventType,
+          data.fromStatus || null,
+          data.toStatus || null,
+          data.blockNumber?.toString() || null,
+          data.confirmations || null,
+          data.replacedByTx || null,
+          data.gasPriceOld || null,
+          data.gasPriceNew || null,
+          data.eventData ? JSON.stringify(data.eventData) : null,
+          data.errorMessage || null,
+        ]
+      );
+
+      return result.insertId;
+    } catch (error) {
+      logger.error('Database error logging transaction event:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get transaction event history
+   */
+  async getTransactionEvents(transactionId: number): Promise<any[]> {
+    try {
+      const [rows] = await this.pool.execute<mysql.RowDataPacket[]>(
+        `SELECT * FROM transaction_events WHERE transaction_id = ? ORDER BY created_at ASC`,
+        [transactionId]
+      );
+
+      return rows;
+    } catch (error) {
+      logger.error('Database error getting transaction events:', error);
+      return [];
+    }
+  }
+
+  /**
    * Update merchant tier and rate limits
    */
   async updateMerchantTier(

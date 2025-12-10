@@ -204,6 +204,19 @@ export class SettlementService {
           };
         }
         
+        // If preconfirmed (flashblock received, canonical finality pending)
+        if (cachedTx.status === 'preconfirmed') {
+          return {
+            success: true,
+            transaction: cachedTx.transactionHash,
+            transactionHash: cachedTx.transactionHash,
+            network: requirements.network,
+            payer,
+            status: 'preconfirmed',
+            message: 'Payment confirmed via flashblock (canonical finality pending)',
+          };
+        }
+        
         // If pending or failed, return error
         return {
           success: false,
@@ -370,14 +383,63 @@ export class SettlementService {
 
       // Cache the nonce as used immediately with pending status
       await redis.cacheUsedNonce(payer, nonce, tx.hash, 'pending');
+      
+      // Log submission event
+      if (transactionId) {
+        try {
+          await db.logTransactionEvent({
+            transactionId,
+            transactionHash: tx.hash,
+            eventType: 'submitted',
+            toStatus: 'pending',
+          });
+        } catch (error) {
+          logger.warn('Failed to log submission event:', error);
+        }
+      }
 
       logger.info(`⏳ Transaction sent: ${tx.hash}`);
       logger.info(`   Paymaster: ${paymasterWallet.address}`);
-      logger.info(`   Waiting for confirmation (${config.settlementTimeoutMs/1000}s timeout)...`);
 
-      // HYBRID APPROACH: Wait for confirmation with configurable timeout
-      // This gives instant feedback for most transactions (which confirm in 5-15 seconds)
-      // while still being non-blocking for slow/stuck transactions
+      // FLASHBLOCK FAST PATH: Try to get flashblock preconfirmation (~200-500ms)
+      // This allows immediate merchant response for better UX
+      const flashblockReceipt = await this.waitForFlashblock(tx.hash, requirements.network);
+      
+      if (flashblockReceipt && flashblockReceipt.status === 1) {
+        // ⚡ FLASHBLOCK PRECONFIRMATION RECEIVED - Return immediately to merchant!
+        logger.info(`⚡ Flashblock preconfirmation successful. Returning immediately to merchant.`);
+        logger.info(`   Post-transaction processing will continue in background.`);
+        
+        // Process everything else asynchronously (don't block merchant response)
+        setImmediate(() => {
+          this.processPostTransactionAsync(
+            tx,
+            flashblockReceipt,
+            transactionId,
+            merchantAddress,
+            payer,
+            requirements,
+            nonce,
+            paymasterAddress,
+            balanceBefore,
+            txKey
+          ).catch(error => {
+            logger.error('Async post-processing error:', error);
+          });
+        });
+        
+        return {
+          success: true,
+          transaction: tx.hash,
+          network: requirements.network,
+          payer,
+          status: 'preconfirmed', // Soft confirmation via flashblock
+          message: 'Payment confirmed via flashblock (canonical finality pending)',
+        };
+      }
+      
+      // FALLBACK: No flashblock available, use standard confirmation flow
+      logger.info(`   No flashblock available, waiting for standard confirmation (${config.settlementTimeoutMs/1000}s timeout)...`);
       
       const receipt = await this.waitForTransaction(tx.hash, config.settlementTimeoutMs, requirements.network);
       
@@ -737,6 +799,55 @@ export class SettlementService {
   }
 
   /**
+   * Wait for flashblock preconfirmation ONLY (fast path for immediate merchant response)
+   * Returns receipt within ~200-500ms or null if not available
+   */
+  private async waitForFlashblock(
+    txHash: string,
+    network: string
+  ): Promise<ethers.TransactionReceipt | null> {
+    const networkLower = network.toLowerCase();
+    // Flashblock-enabled networks: Base, Optimism (including testnets), Unichain
+    // Note: Alchemy WebSocket RPC automatically includes flashblock data in responses
+    const isFlashblockNetwork = 
+      networkLower.includes('base') ||           // Base Sepolia, Base Mainnet
+      networkLower.includes('optimism') ||      // Optimism Mainnet
+      networkLower.includes('op sepolia') ||    // OP Sepolia testnet
+      networkLower.includes('op ') ||           // Other OP chains
+      networkLower.includes('unichain');        // Unichain Sepolia, Mainnet
+    
+    if (!isFlashblockNetwork) {
+      logger.debug(`Network ${network} does not support flashblocks, skipping fast path`);
+      return null;
+    }
+    
+    const provider = this.getProvider(network);
+    const startTime = Date.now();
+    const maxWait = 500; // 500ms max for flashblock preconfirmation
+    const pollInterval = 50; // Poll every 50ms for instant response
+    
+    logger.debug(`⚡ Waiting for flashblock preconfirmation (max ${maxWait}ms)...`);
+    
+    while (Date.now() - startTime < maxWait) {
+      try {
+        const receipt = await provider.getTransactionReceipt(txHash);
+        if (receipt) {
+          const elapsed = Date.now() - startTime;
+          logger.info(`⚡ Flashblock preconfirmation received in ${elapsed}ms`);
+          return receipt;
+        }
+      } catch (error) {
+        // Ignore errors during aggressive polling
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+    
+    logger.debug(`No flashblock received within ${maxWait}ms, falling back to standard confirmation`);
+    return null;
+  }
+
+  /**
    * Wait for transaction with timeout
    * Optimized for Flashblock-enabled networks (Base, Optimism, Unichain):
    * Polls aggressively in first 1.5s for ~200ms preconfirmations
@@ -1028,6 +1139,227 @@ export class SettlementService {
 
     logger.debug(`✓ Amount verification passed`);
     return { success: true, response: { success: true, network: 'unknown' } };
+  }
+
+  /**
+   * Process post-transaction tasks asynchronously (after merchant response sent)
+   * Handles: gas tracking, database updates, webhooks, canonical finality monitoring
+   */
+  private async processPostTransactionAsync(
+    tx: ethers.ContractTransactionResponse,
+    receipt: ethers.TransactionReceipt,
+    transactionId: number | null,
+    merchantAddress: string,
+    payer: string,
+    requirements: PaymentRequirements,
+    nonce: string,
+    paymasterAddress: string,
+    balanceBefore: bigint,
+    txKey: string
+  ): Promise<void> {
+    try {
+      logger.debug(`🔄 Starting async post-transaction processing for TX: ${tx.hash}`);
+      
+      const provider = this.getProvider(requirements.network);
+      let merchantId: number | undefined;
+      
+      // Get merchant ID for gas tracking
+      try {
+        const merchant = await db.getMerchantByAddress(merchantAddress);
+        merchantId = merchant?.id;
+      } catch (e) {
+        logger.warn('Could not get merchant ID for gas tracking');
+      }
+      
+      // Track gas usage
+      if (receipt && receipt.status === 1) {
+        try {
+          const balanceAfter = await provider.getBalance(paymasterAddress);
+          const gasUsed = receipt.gasUsed;
+          const effectiveGasPrice = receipt.gasPrice || 0n;
+          const gasCostWei = gasUsed * effectiveGasPrice;
+          const gasCostNative = ethers.formatEther(gasCostWei);
+          const gasCostGwei = ethers.formatUnits(gasCostWei, 'gwei');
+          
+          await db.saveGasTracking({
+            transactionId: transactionId || undefined,
+            merchantId,
+            operationType: 'settlement',
+            network: requirements.network,
+            transactionHash: tx.hash,
+            gasToken: this.getGasToken(requirements.network),
+            gasUsed,
+            gasPrice: effectiveGasPrice.toString(),
+            gasCostWei: gasCostWei.toString(),
+            gasCostNative,
+            balanceBefore: balanceBefore.toString(),
+            balanceAfter: balanceAfter.toString(),
+            status: 'success',
+            blockNumber: receipt.blockNumber ? BigInt(receipt.blockNumber) : undefined,
+          });
+          
+          logger.info(`⛽ Gas used: ${gasUsed.toString()} units @ ${ethers.formatUnits(effectiveGasPrice, 'gwei')} gwei`);
+        } catch (gasError) {
+          logger.warn('Failed to track gas usage:', gasError);
+        }
+      }
+      
+      // Update cache with completed status
+      await redis.cacheUsedNonce(payer, nonce, tx.hash, 'completed');
+      
+      // Log preconfirmation event (flashblock received)
+      if (transactionId) {
+        try {
+          await db.logTransactionEvent({
+            transactionId,
+            transactionHash: tx.hash,
+            eventType: 'preconfirmed',
+            fromStatus: 'pending',
+            toStatus: 'preconfirmed',
+            blockNumber: receipt.blockNumber ? BigInt(receipt.blockNumber) : undefined,
+          });
+        } catch (error) {
+          logger.warn('Failed to log preconfirmation event:', error);
+        }
+      }
+      
+      // Update transaction status in database
+      if (transactionId) {
+        try {
+          await db.updateTransaction(transactionId, 'completed', tx.hash);
+          logger.info(`💾 Transaction ${transactionId} marked as completed`);
+        } catch (dbError) {
+          logger.warn('Failed to update transaction status:', dbError);
+        }
+      }
+      
+      // Send webhook notification
+      if (transactionId) {
+        await this.sendWebhookNotification(transactionId, merchantAddress, payer, requirements, tx.hash, 'completed');
+      }
+      
+      // Monitor for canonical finality (2s block on flashblock networks)
+      await this.monitorCanonicalFinality(tx.hash, transactionId, requirements.network, txKey);
+      
+      logger.debug(`✅ Async post-transaction processing complete for TX: ${tx.hash}`);
+      
+    } catch (error) {
+      logger.error('❌ Post-transaction processing error:', error);
+      // Don't fail - payment already confirmed to merchant via flashblock
+      // Background monitor will catch any issues
+    }
+  }
+
+  /**
+   * Monitor transaction for canonical finality (2s block confirmation)
+   * Handles reorgs if they occur (0.2% chance on flashblock networks)
+   */
+  private async monitorCanonicalFinality(
+    txHash: string,
+    transactionId: number | null,
+    network: string,
+    txKey: string
+  ): Promise<void> {
+    try {
+      logger.debug(`🔍 Monitoring canonical finality for TX: ${txHash}`);
+      
+      const provider = this.getProvider(network);
+      const maxWait = 10000; // 10 seconds max wait for canonical block
+      const startTime = Date.now();
+      
+      while (Date.now() - startTime < maxWait) {
+        const tx = await provider.getTransaction(txHash);
+        const receipt = await provider.getTransactionReceipt(txHash);
+        
+        // Check if transaction is dropped from mempool
+        if (!tx && !receipt) {
+          logger.warn(`⚠️  Transaction ${txHash} dropped from mempool after flashblock preconfirmation!`);
+          
+          // Log dropped event
+          if (transactionId) {
+            try {
+              await db.logTransactionEvent({
+                transactionId,
+                transactionHash: txHash,
+                eventType: 'dropped',
+                fromStatus: 'preconfirmed',
+                toStatus: 'dropped',
+                errorMessage: 'Transaction dropped from mempool after flashblock preconfirmation (0.2% reorg chance). Transaction monitor will verify nonce state.',
+              });
+            } catch (error) {
+              logger.warn('Failed to log dropped transaction event:', error);
+            }
+          }
+          
+          // NOTE: Cannot automatically resubmit ERC-3009 transactions - signature is user-generated
+          // Transaction monitor will detect drop, check nonce availability, and mark as failed
+          // Merchant must request user to retry payment if nonce still unused
+          return;
+        }
+        
+        // Check if transaction is in canonical block (has confirmations)
+        if (receipt && receipt.blockNumber) {
+          const confirmations = await receipt.confirmations();
+          if (confirmations >= 1) {
+            logger.info(`✅ Canonical finality confirmed for TX: ${txHash} (${confirmations} confirmations)`);
+            
+            // Log canonical confirmation event
+            if (transactionId) {
+              try {
+                await db.logTransactionEvent({
+                  transactionId,
+                  transactionHash: txHash,
+                  eventType: 'canonical_confirmed',
+                  fromStatus: 'preconfirmed',
+                  toStatus: 'completed',
+                  blockNumber: BigInt(receipt.blockNumber),
+                  confirmations,
+                });
+              } catch (error) {
+                logger.warn('Failed to log canonical confirmation event:', error);
+              }
+            }
+            
+            this.pendingTransactions.delete(txKey);
+            return;
+          }
+        }
+        
+        // Still in mempool or flashblock, wait
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      logger.debug(`Transaction ${txHash} still pending canonical confirmation after ${maxWait}ms. Background monitor will continue tracking.`);
+      
+    } catch (error) {
+      logger.error(`Error monitoring canonical finality for ${txHash}:`, error);
+    }
+  }
+
+  /**
+   * Check if transaction is still in mempool or dropped
+   * Returns: 'confirmed' | 'pending' | 'dropped'
+   */
+  private async getTransactionStatus(
+    txHash: string,
+    network: string
+  ): Promise<'confirmed' | 'pending' | 'dropped'> {
+    try {
+      const provider = this.getProvider(network);
+      const tx = await provider.getTransaction(txHash);
+      const receipt = await provider.getTransactionReceipt(txHash);
+      
+      if (receipt) {
+        return 'confirmed';
+      } else if (tx) {
+        return 'pending'; // In mempool
+      } else {
+        return 'dropped'; // Not found anywhere
+      }
+    } catch (error) {
+      logger.error(`Error checking transaction status for ${txHash}:`, error);
+      return 'pending'; // Assume pending if error
+    }
   }
 
   /**

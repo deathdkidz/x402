@@ -48,7 +48,7 @@ export interface SettleResponse {
   transactionHash?: string;
   transactionStatus?: string;
   cached?: boolean;
-  status?: 'pending' | 'completed' | 'failed';
+  status?: 'pending' | 'completed' | 'failed' | 'preconfirmed';
   message?: string;
 }
 
