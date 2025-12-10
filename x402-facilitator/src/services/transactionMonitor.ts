@@ -3,7 +3,8 @@ import db from './database.js';
 import redis from './redis.js';
 import webhookService from './webhook.js';
 import logger from '../utils/logger.js';
-import { getRpcUrl, createProvider } from '../config/index.js';
+import config, { getRpcUrl } from '../config/index.js';
+import providerPool from './providerPool.js';
 
 /**
  * Background job to check status of pending transactions
@@ -11,7 +12,7 @@ import { getRpcUrl, createProvider } from '../config/index.js';
  */
 export class TransactionMonitor {
   private intervalId: NodeJS.Timeout | null = null;
-  private checkIntervalMs = 20000; // Check every 20 seconds for faster status updates
+  private checkIntervalMs = config.transactionMonitorIntervalMs;
 
   /**
    * Start monitoring pending transactions
@@ -90,7 +91,7 @@ export class TransactionMonitor {
         return;
       }
 
-      const provider = createProvider(tx.network);
+      const provider = providerPool.getProvider(tx.network);
       const receipt = await provider.getTransactionReceipt(tx.transaction_hash);
 
       if (!receipt) {

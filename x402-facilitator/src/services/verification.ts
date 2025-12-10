@@ -1,7 +1,8 @@
 import { ethers } from 'ethers';
 import { PaymentPayload, PaymentRequirements, VerifyResponse, ExactPaymentPayload } from '../types/index.js';
-import config, { getRpcUrl, getEIP712Domain, getTokenByAddress, createProvider } from '../config/index.js';
+import config, { getRpcUrl, getEIP712Domain, getTokenByAddress } from '../config/index.js';
 import logger from '../utils/logger.js';
+import providerPool from './providerPool.js';
 
 // Standard ERC20 ABI for balance checking
 const ERC20_ABI = [
@@ -23,10 +24,10 @@ const ERC20_ABI = [
  */
 export class VerificationService {
   /**
-   * Get provider for specific network (auto-detects HTTP/WebSocket)
+   * Get provider for specific network (from persistent pool)
    */
   private getProvider(network: string): ethers.JsonRpcProvider | ethers.WebSocketProvider {
-    return createProvider(network);
+    return providerPool.getProvider(network);
   }
 
   /**

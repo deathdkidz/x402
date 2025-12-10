@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
 import db from './database.js';
+import config from '../config/index.js';
 
 interface WebhookPayload {
   event: 'transaction.completed' | 'transaction.failed' | 'transaction.pending';
@@ -29,8 +30,8 @@ interface WebhookDeliveryResult {
  * Service to send webhooks to merchants with retry logic and delivery tracking
  */
 export class WebhookService {
-  private readonly maxRetries = 3;
-  private readonly retryDelays = [0, 5000, 15000]; // 0s, 5s, 15s
+  private readonly maxRetries = config.webhookRetryAttempts;
+  private readonly retryDelays = config.webhookRetryDelays;
 
   /**
    * Validate webhook URL security

@@ -6,16 +6,19 @@ import config from '../config/index.js';
  * Paymaster wallet pool for load balancing settlement transactions
  * Implements round-robin selection to parallelize blockchain submissions
  * Wallets are loaded from environment variables (no database dependency)
+ * Stores base wallets (no provider) and connects to specific network providers on-demand
  */
 class PaymasterPool {
-  private wallets: ethers.Wallet[] = [];
+  private baseWallets: ethers.Wallet[] = []; // Wallets without provider
+  private addresses: string[] = [];
   private currentIndex: number = 0;
   private isInitialized: boolean = false;
 
   /**
    * Initialize paymaster wallets from configuration
+   * No provider needed - wallets are connected to network providers on-demand
    */
-  async initialize(provider: ethers.Provider): Promise<void> {
+  async initialize(): Promise<void> {
     try {
       if (this.isInitialized) {
         logger.warn('Paymaster pool already initialized');
@@ -28,23 +31,25 @@ class PaymasterPool {
         throw new Error('No paymaster private keys configured');
       }
 
-      // Load all paymaster wallets
-      this.wallets = [];
-      const addresses = new Set<string>();
+      // Load all paymaster wallets (without provider)
+      this.baseWallets = [];
+      this.addresses = [];
+      const addressSet = new Set<string>();
 
       for (let i = 0; i < privateKeys.length; i++) {
         try {
-          const wallet = new ethers.Wallet(privateKeys[i], provider);
-          const address = await wallet.getAddress();
+          const wallet = new ethers.Wallet(privateKeys[i]);
+          const address = wallet.address;
           
           // Check for duplicate addresses
-          if (addresses.has(address.toLowerCase())) {
+          if (addressSet.has(address.toLowerCase())) {
             logger.warn(`⚠️ Duplicate paymaster wallet address detected: ${address} (skipping)`);
             continue;
           }
 
-          addresses.add(address.toLowerCase());
-          this.wallets.push(wallet);
+          addressSet.add(address.toLowerCase());
+          this.baseWallets.push(wallet);
+          this.addresses.push(address);
           
           logger.info(`✅ Loaded paymaster wallet ${i + 1}: ${address}`);
         } catch (error) {
@@ -53,15 +58,15 @@ class PaymasterPool {
         }
       }
 
-      if (this.wallets.length === 0) {
+      if (this.baseWallets.length === 0) {
         throw new Error('Failed to load any paymaster wallets');
       }
 
       this.isInitialized = true;
-      logger.info(`📦 Paymaster pool initialized: ${this.wallets.length} wallet(s) ready for parallel settlement`);
+      logger.info(`📦 Paymaster pool initialized: ${this.baseWallets.length} wallet(s) ready for parallel settlement`);
       
-      if (this.wallets.length > 1) {
-        logger.info(`⚡ Multi-wallet mode: Can process ${this.wallets.length} settlements in parallel`);
+      if (this.baseWallets.length > 1) {
+        logger.info(`⚡ Multi-wallet mode: Can process ${this.baseWallets.length} settlements in parallel`);
       } else {
         logger.info(`⚠️ Single-wallet mode: Settlements will be sequential. Add more wallets to PAYMASTER_PRIVATE_KEYS for parallelization`);
       }
@@ -72,32 +77,35 @@ class PaymasterPool {
   }
 
   /**
-   * Get next wallet using round-robin selection
+   * Get next wallet connected to specific provider using round-robin selection
+   * This is efficient because ethers.js internally reuses the signer
    */
-  getNextWallet(): ethers.Wallet {
-    if (!this.isInitialized || this.wallets.length === 0) {
+  getNextWallet(provider: ethers.Provider): ethers.Wallet {
+    if (!this.isInitialized || this.baseWallets.length === 0) {
       throw new Error('Paymaster pool not initialized. Call initialize() first.');
     }
 
     // Round-robin selection
-    const wallet = this.wallets[this.currentIndex];
-    this.currentIndex = (this.currentIndex + 1) % this.wallets.length;
+    const baseWallet = this.baseWallets[this.currentIndex];
+    this.currentIndex = (this.currentIndex + 1) % this.baseWallets.length;
 
-    return wallet;
+    // Connect to the specific provider
+    return baseWallet.connect(provider);
   }
 
   /**
-   * Get specific wallet by address
+   * Get specific wallet by address, connected to the given provider
    */
-  getWalletByAddress(address: string): ethers.Wallet | undefined {
-    return this.wallets.find(w => w.address.toLowerCase() === address.toLowerCase());
+  getWalletByAddress(address: string, provider: ethers.Provider): ethers.Wallet | undefined {
+    const baseWallet = this.baseWallets.find(w => w.address.toLowerCase() === address.toLowerCase());
+    return baseWallet ? baseWallet.connect(provider) : undefined;
   }
 
   /**
    * Get all wallet addresses
    */
   getAllAddresses(): string[] {
-    return this.wallets.map(w => w.address);
+    return [...this.addresses];
   }
 
   /**
@@ -105,8 +113,8 @@ class PaymasterPool {
    */
   getPoolStats(): { total: number; addresses: string[]; currentIndex: number } {
     return {
-      total: this.wallets.length,
-      addresses: this.wallets.map(w => w.address),
+      total: this.baseWallets.length,
+      addresses: [...this.addresses],
       currentIndex: this.currentIndex,
     };
   }
@@ -115,7 +123,7 @@ class PaymasterPool {
    * Check if pool is initialized
    */
   isReady(): boolean {
-    return this.isInitialized && this.wallets.length > 0;
+    return this.isInitialized && this.baseWallets.length > 0;
   }
 }
 

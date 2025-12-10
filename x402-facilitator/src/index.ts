@@ -7,7 +7,7 @@ import fs from 'fs';
 import http from 'http';
 import https from 'https';
 import { ethers } from 'ethers';
-import config, { createProvider } from './config/index.js';
+import config from './config/index.js';
 import logger from './utils/logger.js';
 import routes from './routes/index.js';
 import { generalRateLimiter } from './middleware/rateLimit.js';
@@ -16,6 +16,7 @@ import db from './services/database.js';
 import redis from './services/redis.js';
 import transactionMonitor from './services/transactionMonitor.js';
 import paymasterPool from './services/paymasterPool.js';
+import providerPool from './services/providerPool.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -101,6 +102,46 @@ const startServer = async () => {
   logger.info(`Rate Limiting: ${config.rateLimitMaxRequests} req/${config.rateLimitWindowMs}ms`);
   logger.info('='.repeat(60));
 
+  // Initialize provider pool with persistent WebSocket connections
+  await providerPool.initialize();
+  const poolStats = providerPool.getStats();
+  logger.info(`📡 Provider Pool: ${poolStats.websocket} WebSocket, ${poolStats.http} HTTP, ${poolStats.total} total`);
+  logger.info('='.repeat(60));
+
+  // Test RPC connections
+  logger.info('🔌 Testing RPC connections...');
+  const allNetworks = [...config.testnetNetworks, ...config.mainnetNetworks];
+  let rpcSuccessCount = 0;
+  let rpcFailCount = 0;
+  
+  for (const network of allNetworks) {
+    try {
+      const provider = providerPool.getProvider(network);
+      const isWebSocket = provider instanceof ethers.WebSocketProvider;
+      
+      // Test connection with timeout
+      const blockNumberPromise = provider.getBlockNumber();
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 5000)
+      );
+      
+      const startTime = Date.now();
+      const blockNumber = await Promise.race([blockNumberPromise, timeoutPromise]) as number;
+      const latency = Date.now() - startTime;
+      
+      // Only show connection type for HTTP connections (WebSocket is already shown in provider pool stats)
+      const typeLabel = isWebSocket ? '' : ' HTTP';
+      logger.info(`   ✅ ${network}:${typeLabel} Block #${blockNumber} (${latency}ms)`);
+      rpcSuccessCount++;
+    } catch (error: any) {
+      logger.error(`   ❌ ${network}: Connection failed - ${error.message}`);
+      rpcFailCount++;
+    }
+  }
+  
+  logger.info(`📊 RPC Status: ${rpcSuccessCount}/${allNetworks.length} connected, ${rpcFailCount} failed`);
+  logger.info('='.repeat(60));
+
   // Initialize Redis connection
   try {
     await redis.connect();
@@ -117,12 +158,9 @@ const startServer = async () => {
     logger.error('❌ Database connection failed:', error);
   }
 
-  // Initialize paymaster wallet pool
+  // Initialize paymaster wallet pool (no provider needed - connects on-demand)
   try {
-    const defaultNetwork = config.testnetNetworks[0] || 'Base Sepolia';
-    const provider = createProvider(defaultNetwork);
-    
-    await paymasterPool.initialize(provider);
+    await paymasterPool.initialize();
     const poolStats = paymasterPool.getPoolStats();
     logger.info('✅ Paymaster pool initialized');
     logger.info(`   Wallets: ${poolStats.total}`);
@@ -146,43 +184,47 @@ const startServer = async () => {
 
 // Start HTTP server
 const httpServer = http.createServer(app);
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, async () => {
   logger.info(`✅ HTTP Server listening on port ${PORT}`);
-  startServer();
-});
-
-// Start HTTPS server if enabled
-if (USE_HTTPS) {
-  try {
-    const certPath = config.sslCertPath || path.join(process.cwd(), 'ssl', 'cert.pem');
-    const keyPath = config.sslKeyPath || path.join(process.cwd(), 'ssl', 'key.pem');
-    
-    // Check if certificates exist
-    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-      const httpsOptions = {
-        cert: fs.readFileSync(certPath),
-        key: fs.readFileSync(keyPath)
-      };
+  
+  // Start HTTPS server and wait for it to be ready before async initialization
+  if (USE_HTTPS) {
+    try {
+      const certPath = config.sslCertPath || path.join(process.cwd(), 'ssl', 'cert.pem');
+      const keyPath = config.sslKeyPath || path.join(process.cwd(), 'ssl', 'key.pem');
       
-      const httpsServer = https.createServer(httpsOptions, app);
-      httpsServer.listen(HTTPS_PORT, () => {
-        logger.info(`✅ HTTPS Server listening on port ${HTTPS_PORT} (⭐ use this)`);
-      });
-    } else {
-      logger.warn(`⚠️ SSL certificates not found at ${certPath} and ${keyPath}`);
-      logger.warn('⚠️ HTTPS server not started. HTTP only available.');
-      logger.info('💡 To generate self-signed certificates, run: ./setup-ssl.sh');
+      if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+        const httpsOptions = {
+          cert: fs.readFileSync(certPath),
+          key: fs.readFileSync(keyPath)
+        };
+        
+        const httpsServer = https.createServer(httpsOptions, app);
+        await new Promise<void>((resolve) => {
+          httpsServer.listen(HTTPS_PORT, () => {
+            logger.info(`✅ HTTPS Server listening on port ${HTTPS_PORT} (⭐ preferred)`);
+            resolve();
+          });
+        });
+      } else {
+        logger.warn(`⚠️ SSL certificates not found at ${certPath} and ${keyPath}`);
+        logger.warn('⚠️ HTTPS server not started. HTTP only available.');
+      }
+    } catch (error) {
+      logger.error('❌ Failed to start HTTPS server:', error);
+      logger.warn('⚠️ Continuing with HTTP only');
     }
-  } catch (error) {
-    logger.error('❌ Failed to start HTTPS server:', error);
-    logger.warn('⚠️ Continuing with HTTP only');
   }
-}
+  
+  // Now run async initialization
+  await startServer();
+});
 
 // Graceful shutdown
 const shutdown = async () => {
   logger.info('Shutting down gracefully...');
   transactionMonitor.stop();
+  await providerPool.destroy();
   await redis.disconnect();
   await db.close();
   process.exit(0);

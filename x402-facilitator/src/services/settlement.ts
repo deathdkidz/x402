@@ -1,12 +1,13 @@
 import { ethers } from 'ethers';
 import { PaymentPayload, PaymentRequirements, SettleResponse, ExactPaymentPayload } from '../types/index.js';
-import config, { getRpcUrl, getEIP712Domain, getTokenByAddress, createProvider } from '../config/index.js';
+import config, { getRpcUrl, getEIP712Domain, getTokenByAddress } from '../config/index.js';
 import logger from '../utils/logger.js';
 import db from './database.js';
 import redis from './redis.js';
 import { transactionQueue } from './transactionQueue.js';
 import webhookService from './webhook.js';
 import paymasterPool from './paymasterPool.js';
+import providerPool from './providerPool.js';
 
 // ERC-3009 ABI for gasless transfers with authorization
 const ERC3009_ABI = [
@@ -43,10 +44,10 @@ export class SettlementService {
   private pendingTransactions: Map<string, string> = new Map();
 
   /**
-   * Get provider for specific network (auto-detects HTTP/WebSocket)
+   * Get provider for specific network (from persistent pool)
    */
   private getProvider(network: string): ethers.JsonRpcProvider | ethers.WebSocketProvider {
-    return createProvider(network);
+    return providerPool.getProvider(network);
   }
 
   /**
@@ -80,11 +81,8 @@ export class SettlementService {
     // Get provider for the specified network
     const provider = this.getProvider(requirements.network);
     
-    // Get next available paymaster wallet from pool (round-robin)
-    const paymasterWalletBase = paymasterPool.getNextWallet();
-    
-    // Connect wallet to the correct network provider
-    const paymasterWallet = paymasterWalletBase.connect(provider);
+    // Get next available paymaster wallet from pool (round-robin), connected to network provider
+    const paymasterWallet = paymasterPool.getNextWallet(provider);
     
     logger.info(`Using paymaster wallet: ${paymasterWallet.address}`);
     logger.info(`Settling payment to merchant: ${merchantAddress}`);
@@ -351,7 +349,7 @@ export class SettlementService {
           sig.r,
           sig.s,
           {
-            gasLimit: 200000, // Standard gas limit for ERC-3009 transfers
+            gasLimit: config.settlementGasLimit,
           }
         );
       });
@@ -375,13 +373,13 @@ export class SettlementService {
 
       logger.info(`⏳ Transaction sent: ${tx.hash}`);
       logger.info(`   Paymaster: ${paymasterWallet.address}`);
-      logger.info('   Waiting for confirmation (30s timeout)...');
+      logger.info(`   Waiting for confirmation (${config.settlementTimeoutMs/1000}s timeout)...`);
 
-      // HYBRID APPROACH: Wait up to 30 seconds for confirmation
+      // HYBRID APPROACH: Wait for confirmation with configurable timeout
       // This gives instant feedback for most transactions (which confirm in 5-15 seconds)
       // while still being non-blocking for slow/stuck transactions
       
-      const receipt = await this.waitForTransaction(tx.hash, 30000, requirements.network); // 30 second timeout
+      const receipt = await this.waitForTransaction(tx.hash, config.settlementTimeoutMs, requirements.network);
       
       if (receipt && receipt.status === 1) {
         // Transaction confirmed quickly!

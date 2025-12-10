@@ -4,6 +4,56 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Help text
+const HELP_TEXT = `
+╔═══════════════════════════════════════════════════════════════════╗
+║                  PAYMASTER BALANCE MANAGER                        ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+Manage paymaster wallet balances across multiple networks.
+
+USAGE:
+  node balance-paymaster.mjs [OPTIONS] [NETWORK]
+
+MODES:
+  1. Balance Check & Rebalancing (default)
+     - Checks wallet balances
+     - Rebalances if difference > threshold
+     
+  2. Fund Consolidation
+     - Consolidates all funds to a single wallet
+     - Use: --consolidate=<ADDRESS>
+
+OPTIONS:
+  --execute                    Execute transactions (default is dry-run)
+  --consolidate=<ADDRESS>      Consolidate all funds to target address
+  --help                       Show this help message
+
+NETWORK:
+  - Specify network name (e.g., "Base Sepolia", "Ethereum", "BSC")
+  - If omitted, checks all configured networks
+
+EXAMPLES:
+  # Check balances (all networks, dry-run)
+  node balance-paymaster.mjs
+
+  # Rebalance specific network (dry-run)
+  node balance-paymaster.mjs "Ethereum Sepolia"
+
+  # Rebalance specific network (execute)
+  node balance-paymaster.mjs --execute "Base Sepolia"
+
+  # Consolidate funds (dry-run)
+  node balance-paymaster.mjs --consolidate=0x1234... "Base Sepolia"
+
+  # Consolidate funds (execute)
+  node balance-paymaster.mjs --consolidate=0x1234... --execute "Ethereum Sepolia"
+
+  # Consolidate all networks to one wallet
+  node balance-paymaster.mjs --consolidate=0x1234... --execute
+
+`;
+
 // Configuration
 const TESTNET_NETWORKS = (process.env.TESTNET_NETWORKS || '').split(',').map(n => n.trim()).filter(n => n.length > 0);
 const MAINNET_NETWORKS = (process.env.MAINNET_NETWORKS || '').split(',').map(n => n.trim()).filter(n => n.length > 0);
@@ -13,6 +63,7 @@ const PAYMASTER_PRIVATE_KEYS = process.env.PAYMASTER_PRIVATE_KEYS.split(',').map
 // RPC URLs
 const RPC_URLS = {
   'Base Sepolia': process.env.BASE_SEPOLIA_RPC,
+
   'Ethereum Sepolia': process.env.ETHEREUM_SEPOLIA_RPC,
   'BSC Testnet': process.env.BSC_TESTNET_RPC,
   'Base': process.env.BASE_RPC,
@@ -34,6 +85,7 @@ const GAS_TOKENS = {
 const REBALANCE_THRESHOLD = process.env.REBALANCE_THRESHOLD || '0.01'; // Default 0.01 ETH difference
 const MIN_BALANCE_TO_KEEP = process.env.MIN_BALANCE_TO_KEEP || '0.005'; // Keep at least 0.005 ETH in source wallet
 const USE_BATCHING = process.env.USE_BATCHING !== 'false'; // Enable batching by default
+const GAS_LIMIT_SIMPLE_TRANSFER = 200000; // Standard ETH transfer gas limit
 
 // Simple batch transfer contract ABI (if deployed on network)
 const BATCH_TRANSFER_ABI = [
@@ -44,7 +96,6 @@ const BATCH_TRANSFER_ABI = [
 const BATCH_CONTRACTS = {
   'Base Sepolia': '0xe6158F16A2781241703cc8005229c8e1ADd866De',
   'Ethereum Sepolia': '0x725487b8d800AA6155ed21d25470991139770616',
-  'BSC Testnet': '0xF7B3f366aaA6d293E4C391F2E834056dB7f3bE50',
 };
 
 async function checkBalances(network) {
@@ -59,7 +110,11 @@ async function checkBalances(network) {
     return null;
   }
   
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  // Auto-detect provider type (WebSocket or HTTP)
+  const provider = rpcUrl.startsWith('wss://') || rpcUrl.startsWith('ws://')
+    ? new ethers.WebSocketProvider(rpcUrl)
+    : new ethers.JsonRpcProvider(rpcUrl);
+  
   const gasToken = GAS_TOKENS[network] || 'ETH';
   
   console.log(`\n${'='.repeat(70)}`);
@@ -184,6 +239,132 @@ async function rebalanceIfNeeded(networkData, dryRun = true) {
   console.log(`\n✓ Rebalancing complete!`);
 }
 
+async function consolidateToWallet(networkData, targetAddress, dryRun = true) {
+  const { network, gasToken, provider, balances } = networkData;
+  
+  console.log(`\n${'═'.repeat(70)}`);
+  console.log(`💰 Consolidating Funds to Single Wallet`);
+  console.log('═'.repeat(70));
+  console.log(`Target Address: ${targetAddress}`);
+  console.log(`Network: ${network}`);
+  
+  // Find target wallet in the list
+  const targetWallet = balances.find(b => b.address.toLowerCase() === targetAddress.toLowerCase());
+  
+  if (!targetWallet) {
+    console.log(`\n❌ Error: Target address ${targetAddress} not found in paymaster wallets`);
+    return;
+  }
+  
+  console.log(`\nTarget Wallet: [${targetWallet.index}] ${targetWallet.address}`);
+  console.log(`Current Balance: ${targetWallet.balanceFormatted} ${gasToken}`);
+  
+  // Calculate total consolidation
+  const senders = balances.filter(b => b.address.toLowerCase() !== targetAddress.toLowerCase() && b.balance > 0n);
+  
+  if (senders.length === 0) {
+    console.log(`\n✓ No other wallets have funds. Target wallet already has all funds.`);
+    return;
+  }
+  
+  let totalToTransfer = 0n;
+  const minKeep = ethers.parseEther('0.0001'); // Keep dust for gas
+  
+  console.log(`\n${'─'.repeat(70)}`);
+  console.log(`Wallets to Consolidate (${senders.length}):`);
+  console.log('─'.repeat(70));
+  
+  const transfers = [];
+  
+  for (const sender of senders) {
+    // Estimate gas cost for this transfer
+    const gasEstimate = BigInt(GAS_LIMIT_SIMPLE_TRANSFER);
+    const feeData = await provider.getFeeData();
+    const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || 0n;
+    const gasCost = gasEstimate * gasPrice;
+    
+    // Calculate amount to send (balance - gas cost - small buffer)
+    const buffer = gasCost / 2n; // 50% buffer for gas price fluctuations
+    const amountToSend = sender.balance - gasCost - buffer;
+    
+    if (amountToSend > minKeep) {
+      totalToTransfer += amountToSend;
+      transfers.push({
+        from: sender,
+        amount: amountToSend,
+        gasCost: gasCost + buffer,
+      });
+      
+      console.log(`  [${sender.index}] ${sender.balanceFormatted} ${gasToken} → Send ${ethers.formatEther(amountToSend)} ${gasToken} (gas: ${ethers.formatEther(gasCost + buffer)} ${gasToken})`);
+    } else {
+      console.log(`  [${sender.index}] ${sender.balanceFormatted} ${gasToken} → ⚠️ Balance too low (gas would consume all)`);
+    }
+  }
+  
+  console.log('─'.repeat(70));
+  console.log(`Total to Transfer: ${ethers.formatEther(totalToTransfer)} ${gasToken}`);
+  console.log(`Final Balance (estimated): ${ethers.formatEther(targetWallet.balance + totalToTransfer)} ${gasToken}`);
+  console.log('─'.repeat(70));
+  
+  if (transfers.length === 0) {
+    console.log(`\n⚠️ No wallets have sufficient balance to transfer (gas costs too high)`);
+    return;
+  }
+  
+  if (dryRun) {
+    console.log(`\n⚠️  DRY RUN MODE - No transactions will be sent`);
+    console.log(`   Run with --execute flag to perform actual consolidation`);
+    return;
+  }
+  
+  // Execute transfers
+  console.log(`\n🚀 Executing Consolidation...`);
+  
+  let successCount = 0;
+  let failCount = 0;
+  
+  for (let i = 0; i < transfers.length; i++) {
+    const transfer = transfers[i];
+    
+    console.log(`\n[${i + 1}/${transfers.length}] Transferring from wallet [${transfer.from.index}]`);
+    console.log(`  From: ${transfer.from.address}`);
+    console.log(`  To: ${targetAddress}`);
+    console.log(`  Amount: ${ethers.formatEther(transfer.amount)} ${gasToken}`);
+    
+    try {
+      const tx = await transfer.from.wallet.sendTransaction({
+        to: targetAddress,
+        value: transfer.amount,
+        gasLimit: GAS_LIMIT_SIMPLE_TRANSFER,
+      });
+      
+      console.log(`  📤 TX sent: ${tx.hash}`);
+      console.log(`  ⏳ Waiting for confirmation...`);
+      
+      const receipt = await tx.wait();
+      
+      if (receipt.status === 1) {
+        console.log(`  ✅ Confirmed in block ${receipt.blockNumber}`);
+        console.log(`  ⛽ Gas used: ${receipt.gasUsed.toString()} units`);
+        successCount++;
+      } else {
+        console.log(`  ❌ Transaction failed`);
+        failCount++;
+      }
+      
+    } catch (error) {
+      console.log(`  ❌ Error: ${error.message}`);
+      failCount++;
+    }
+  }
+  
+  console.log(`\n${'═'.repeat(70)}`);
+  console.log(`Consolidation Complete!`);
+  console.log(`  ✅ Success: ${successCount}`);
+  console.log(`  ❌ Failed: ${failCount}`);
+  console.log('═'.repeat(70));
+}
+
 async function executeBatchTransfer(sender, receivers, gasToken, provider, network) {
   const recipients = receivers.map(r => r.to.address);
   const amounts = receivers.map(r => r.amount);
@@ -226,7 +407,7 @@ async function executeBatchTransfer(sender, receivers, gasToken, provider, netwo
     const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || 0n;
     const gasCost = gasEstimate * gasPrice;
     
-    const individualGasEstimate = 21000n * BigInt(receivers.length);
+    const individualGasEstimate = BigInt(GAS_LIMIT_SIMPLE_TRANSFER) * BigInt(receivers.length);
     const savings = Number(individualGasEstimate - gasEstimate);
     
     console.log(`\n  Gas estimate: ${gasEstimate.toString()} units`);
@@ -325,35 +506,76 @@ async function executeIndividualTransfers(senders, receivers, gasToken, provider
 
 async function main() {
   const args = process.argv.slice(2);
+  
+  // Check for help flag
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(HELP_TEXT);
+    process.exit(0);
+  }
+  
   const execute = args.includes('--execute');
+  const consolidateArg = args.find(arg => arg.startsWith('--consolidate='));
   const networkFilter = args.find(arg => !arg.startsWith('--'));
+  
+  // Parse consolidate target address
+  const consolidateMode = !!consolidateArg;
+  const targetAddress = consolidateArg ? consolidateArg.split('=')[1] : null;
   
   console.log('╔' + '═'.repeat(68) + '╗');
   console.log('║' + ' '.repeat(15) + 'PAYMASTER BALANCE MANAGER' + ' '.repeat(28) + '║');
   console.log('╚' + '═'.repeat(68) + '╝');
   
   console.log(`\nLoaded ${PAYMASTER_PRIVATE_KEYS.length} paymaster wallets`);
-  console.log(`Rebalance threshold: ${REBALANCE_THRESHOLD} ETH/BNB`);
-  console.log(`Minimum balance to keep: ${MIN_BALANCE_TO_KEEP} ETH/BNB`);
-  console.log(`Batch transfers: ${USE_BATCHING ? 'enabled' : 'disabled'}`);
+  
+  if (consolidateMode) {
+    console.log(`\n💰 MODE: Fund Consolidation`);
+    if (!targetAddress || !ethers.isAddress(targetAddress)) {
+      console.error(`\n❌ Error: Invalid target address: ${targetAddress}`);
+      console.log(`\nUsage: node balance-paymaster.mjs --consolidate=<TARGET_ADDRESS> [--execute] [network]`);
+      console.log(`Example: node balance-paymaster.mjs --consolidate=0x1234... --execute "Base Sepolia"`);
+      console.log(`\nFor more help: node balance-paymaster.mjs --help`);
+      process.exit(1);
+    }
+    console.log(`Target Address: ${targetAddress}`);
+  } else {
+    console.log(`\n⚖️  MODE: Balance Rebalancing`);
+    console.log(`Rebalance threshold: ${REBALANCE_THRESHOLD} ETH/BNB`);
+    console.log(`Minimum balance to keep: ${MIN_BALANCE_TO_KEEP} ETH/BNB`);
+    console.log(`Batch transfers: ${USE_BATCHING ? 'enabled' : 'disabled'}`);
+  }
   
   if (!execute) {
-    console.log(`\n⚠️  Running in DRY RUN mode (use --execute to perform rebalancing)`);
+    console.log(`\n⚠️  Running in DRY RUN mode (use --execute to perform transactions)`);
   }
   
   const networksToCheck = networkFilter 
     ? [networkFilter]
     : ALL_NETWORKS;
   
+  const providers = []; // Track providers for cleanup
+  
   for (const network of networksToCheck) {
     try {
       const networkData = await checkBalances(network);
       // Skip if network has no RPC configured
       if (networkData) {
-        await rebalanceIfNeeded(networkData, !execute);
+        providers.push(networkData.provider); // Track provider for cleanup
+        
+        if (consolidateMode) {
+          await consolidateToWallet(networkData, targetAddress, !execute);
+        } else {
+          await rebalanceIfNeeded(networkData, !execute);
+        }
       }
     } catch (error) {
       console.error(`\n✗ Error checking ${network}:`, error.message);
+    }
+  }
+  
+  // Cleanup WebSocket connections
+  for (const provider of providers) {
+    if (provider instanceof ethers.WebSocketProvider) {
+      await provider.destroy();
     }
   }
   
@@ -363,3 +585,5 @@ async function main() {
 }
 
 main().catch(console.error);
+
+

@@ -30,8 +30,8 @@ export const generalRateLimiter = rateLimit({
  * Strict rate limiter for payment verification endpoints
  */
 export const verifyRateLimiter = rateLimit({
-  windowMs: 60000, // 1 minute
-  max: 30, // 30 requests per minute
+  windowMs: config.verifyRateLimitWindowMs,
+  max: config.verifyRateLimitMax,
   message: {
     error: 'Too Many Requests',
     message: 'Verification rate limit exceeded.',
@@ -51,8 +51,8 @@ export const verifyRateLimiter = rateLimit({
  * Very strict rate limiter for settlement endpoints
  */
 export const settleRateLimiter = rateLimit({
-  windowMs: 60000, // 1 minute
-  max: 10, // 10 requests per minute
+  windowMs: config.settleRateLimitWindowMs,
+  max: config.settleRateLimitMax,
   message: {
     error: 'Too Many Requests',
     message: 'Settlement rate limit exceeded.',

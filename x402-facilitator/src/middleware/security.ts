@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger.js';
+import config from '../config/index.js';
 
 // Block common attack patterns
 const suspiciousPatterns = [
@@ -80,7 +81,7 @@ export const securityMiddleware = (req: Request, res: Response, next: NextFuncti
   next();
 };
 
-// Cleanup old entries every 10 minutes
+// Cleanup old entries periodically
 setInterval(() => {
   const now = Date.now();
   for (const [ip, data] of suspiciousIPs.entries()) {
@@ -88,4 +89,4 @@ setInterval(() => {
       suspiciousIPs.delete(ip);
     }
   }
-}, 600000);
+}, config.securityCleanupIntervalMs);

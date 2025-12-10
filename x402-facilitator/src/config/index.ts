@@ -49,7 +49,24 @@ interface Config {
     database: string;
     user: string;
     password: string;
+    connectionLimit: number;
+    queueLimit: number;
   };
+  transactionMonitorIntervalMs: number;
+  transactionTimeoutMs: number;
+  settlementGasLimit: number;
+  settlementTimeoutMs: number;
+  webhookTimeoutMs: number;
+  webhookRetryAttempts: number;
+  webhookRetryDelays: number[];
+  securityBanThreshold: number;
+  securityBanDurationMs: number;
+  securityCleanupIntervalMs: number;
+  gasBufferPercentage: number;
+  verifyRateLimitWindowMs: number;
+  verifyRateLimitMax: number;
+  settleRateLimitWindowMs: number;
+  settleRateLimitMax: number;
 }
 
 // Validate required environment variables
@@ -158,7 +175,24 @@ const config: Config = {
     database: process.env.DB_NAME || 'x402_facilitator',
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
+    connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '200', 10),
+    queueLimit: parseInt(process.env.DB_QUEUE_LIMIT || '200', 10),
   },
+  transactionMonitorIntervalMs: parseInt(process.env.TRANSACTION_MONITOR_INTERVAL_MS || '20000', 10),
+  transactionTimeoutMs: parseInt(process.env.TRANSACTION_TIMEOUT_MS || '300000', 10),
+  settlementGasLimit: parseInt(process.env.SETTLEMENT_GAS_LIMIT || '200000', 10),
+  settlementTimeoutMs: parseInt(process.env.SETTLEMENT_TIMEOUT_MS || '30000', 10),
+  webhookTimeoutMs: parseInt(process.env.WEBHOOK_TIMEOUT_MS || '5000', 10),
+  webhookRetryAttempts: parseInt(process.env.WEBHOOK_RETRY_ATTEMPTS || '3', 10),
+  webhookRetryDelays: (process.env.WEBHOOK_RETRY_DELAYS || '0,5000,15000').split(',').map(d => parseInt(d.trim(), 10)),
+  securityBanThreshold: parseInt(process.env.SECURITY_BAN_THRESHOLD || '10', 10),
+  securityBanDurationMs: parseInt(process.env.SECURITY_BAN_DURATION_MS || '3600000', 10),
+  securityCleanupIntervalMs: parseInt(process.env.SECURITY_CLEANUP_INTERVAL_MS || '600000', 10),
+  gasBufferPercentage: parseInt(process.env.GAS_BUFFER_PERCENTAGE || '20', 10),
+  verifyRateLimitWindowMs: parseInt(process.env.VERIFY_RATE_LIMIT_WINDOW_MS || '60000', 10),
+  verifyRateLimitMax: parseInt(process.env.VERIFY_RATE_LIMIT_MAX || '30', 10),
+  settleRateLimitWindowMs: parseInt(process.env.SETTLE_RATE_LIMIT_WINDOW_MS || '60000', 10),
+  settleRateLimitMax: parseInt(process.env.SETTLE_RATE_LIMIT_MAX || '10', 10),
 };
 
 // Helper functions to access network/token data
@@ -180,6 +214,7 @@ export const getRpcUrl = (network: string): string => {
 };
 
 // Create provider with automatic HTTP/WebSocket detection
+// NOTE: This creates a NEW connection each time - use providerPool for persistent connections
 export const createProvider = (network: string): ethers.JsonRpcProvider | ethers.WebSocketProvider => {
   const rpcUrl = getRpcUrl(network);
   

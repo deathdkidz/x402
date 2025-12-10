@@ -59,13 +59,13 @@ class DatabaseService {
       user: config.database.user,
       password: config.database.password,
       waitForConnections: true,
-      connectionLimit: 50, // Increased for heavy load
-      queueLimit: 0,
+      connectionLimit: config.database.connectionLimit,
+      queueLimit: config.database.queueLimit,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10000,
     });
 
-    logger.info('MySQL connection pool created (50 connections)');
+    logger.info(`MySQL connection pool created (${config.database.connectionLimit} connections, queue limit: ${config.database.queueLimit})`);
   }
 
   /**
