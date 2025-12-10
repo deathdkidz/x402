@@ -367,7 +367,26 @@ export default function DocsPage() {
                 <pre className="bg-slate-800/60 p-4 rounded-lg overflow-x-auto text-xs">
                   <code className="text-green-400 font-mono">{`{
   "success": true,
-  "networks": [
+  "mainnet": [
+    {
+      "network": "Base",
+      "chainId": 8453,
+      "tokens": [
+        {
+          "symbol": "USDC",
+          "name": "USD Coin",
+          "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "decimals": 6,
+          "eip712": {
+            "name": "USDC",
+            "version": "2",
+            "verifyingContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+          }
+        }
+      ]
+    }
+  ],
+  "testnet": [
     {
       "network": "Base Sepolia",
       "chainId": 84532,
@@ -383,10 +402,9 @@ export default function DocsPage() {
             "verifyingContract": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
           }
         }
-      ],
+      ]
     }
-  ],
-  "defaultNetwork": "Base Sepolia"
+  ]
 }`}</code>
                 </pre>
               </div>

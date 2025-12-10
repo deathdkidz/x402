@@ -64,7 +64,9 @@ export default function XPaymentDemo() {
         const response = await fetch(`${facilitatorUrl}/networks`);
         if (response.ok) {
           const data = await response.json();
-          setNetworks(data.networks);
+          // Combine mainnet and testnet networks
+          const allNetworks = [...(data.mainnet || []), ...(data.testnet || [])];
+          setNetworks(allNetworks);
         }
       } catch (error) {
         console.error('Failed to fetch networks:', error);

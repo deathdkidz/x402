@@ -125,11 +125,13 @@ export default function TutorialPage() {
         const response = await fetch(`${facilitatorUrl}/networks`);
         if (response.ok) {
           const data = await response.json();
-          setNetworks(data.networks);
-          if (data.networks.length > 0) {
-            setSelectedNetwork(data.networks[0].network);
-            if (data.networks[0].tokens.length > 0) {
-              setSelectedToken(data.networks[0].tokens[0].address);
+          // Combine mainnet and testnet networks
+          const allNetworks = [...(data.mainnet || []), ...(data.testnet || [])];
+          setNetworks(allNetworks);
+          if (allNetworks.length > 0) {
+            setSelectedNetwork(allNetworks[0].network);
+            if (allNetworks[0].tokens.length > 0) {
+              setSelectedToken(allNetworks[0].tokens[0].address);
             }
           }
         }

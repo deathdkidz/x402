@@ -51,10 +51,12 @@ export default function DemoPage() {
         const networksRes = await fetch(`${facilitatorUrl}/networks`);
         if (networksRes.ok) {
           const data = await networksRes.json();
-          setNetworks(data.networks);
+          // Combine mainnet and testnet networks
+          const allNetworks = [...(data.mainnet || []), ...(data.testnet || [])];
+          setNetworks(allNetworks);
           // Set default selections
-          if (data.networks.length > 0) {
-            const defaultNet = data.networks[0];
+          if (allNetworks.length > 0) {
+            const defaultNet = allNetworks[0];
             setSelectedNetwork(defaultNet.network);
             if (defaultNet.tokens.length > 0) {
               setSelectedToken(defaultNet.tokens[0].address);
