@@ -738,22 +738,68 @@ export class SettlementService {
 
   /**
    * Wait for transaction with timeout
+   * Optimized for Flashblock-enabled networks (Base, Optimism, OP Stack, Unichain):
+   * Polls aggressively in first 1.5s for ~200ms preconfirmations
    */
   private async waitForTransaction(
     txHash: string,
     timeoutMs: number,
     network: string
   ): Promise<ethers.TransactionReceipt | null> {
+    const provider = this.getProvider(network);
+    const startTime = Date.now();
+    
+    // For networks with flashblock/fast preconfirmation support (Base, OP Stack chains, Unichain)
+    const networkLower = network.toLowerCase();
+    const isFlashblockSupportedNetwork = 
+      networkLower.includes('base') || 
+      networkLower.includes('optimism') || 
+      networkLower.includes('op ') || 
+      networkLower.includes('unichain');
+    
+    if (isFlashblockSupportedNetwork) {
+      logger.debug(`⚡ Using Flashblock-optimized polling for ${network}`);
+      
+      // Phase 1: Aggressive polling for flashblock preconfirmation (first 1.5 seconds)
+      // Flashblock-enabled L2s (Base, Optimism, Unichain) confirm in ~200-400ms typically
+      const flashblockPhaseMs = 1500;
+      const flashblockPollInterval = 100; // Poll every 100ms
+      
+      while (Date.now() - startTime < flashblockPhaseMs) {
+        try {
+          const receipt = await provider.getTransactionReceipt(txHash);
+          if (receipt) {
+            const elapsed = Date.now() - startTime;
+            logger.info(`⚡ Flashblock preconfirmation received in ${elapsed}ms`);
+            return receipt;
+          }
+        } catch (error) {
+          // Ignore errors during polling, continue
+        }
+        
+        // Wait before next poll
+        await new Promise(resolve => setTimeout(resolve, flashblockPollInterval));
+      }
+      
+      logger.debug(`Phase 1 complete (1.5s). Switching to standard polling...`);
+    }
+    
+    // Phase 2: Standard wait with timeout (for non-Base or after flashblock phase)
     let timeoutId: NodeJS.Timeout;
+    
+    const remainingTimeout = timeoutMs - (Date.now() - startTime);
+    if (remainingTimeout <= 0) {
+      logger.info(`⏱️ Transaction ${txHash} still pending, will be monitored in background`);
+      return null;
+    }
     
     const timeout = new Promise<null>((resolve) => {
       timeoutId = setTimeout(() => {
         logger.info(`⏱️ Transaction ${txHash} still pending after ${timeoutMs/1000}s, will be monitored in background`);
         resolve(null);
-      }, timeoutMs);
+      }, remainingTimeout);
     });
 
-    const provider = this.getProvider(network);
     const receiptPromise = provider.waitForTransaction(txHash);
 
     const result = await Promise.race([receiptPromise, timeout]);

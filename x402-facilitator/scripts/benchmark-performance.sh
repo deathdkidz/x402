@@ -3,7 +3,9 @@
 # Facilitator Performance Benchmark
 # Measures latency and throughput of payment settlement
 
-set -e
+# Don't use set -e as it conflicts with (( arithmetic )) operations
+set -u  # Exit on undefined variables
+set -o pipefail  # Catch errors in pipelines
 
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -11,8 +13,17 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-FACILITATOR_URL="${FACILITATOR_URL:-http://localhost:3000}"
+FACILITATOR_URL="${FACILITATOR_URL:-https://api.netpay.id}"
 API_KEY="${TEST_API_KEY:-}"
+
+# Validate required commands
+REQUIRED_CMDS="curl date"
+for cmd in $REQUIRED_CMDS; do
+    if ! command -v $cmd >/dev/null 2>&1; then
+        echo -e "${RED}ERROR: Required command '$cmd' not found${NC}"
+        exit 1
+    fi
+done
 
 echo "╔═══════════════════════════════════════════════════════════════════╗"
 echo "║          x402 FACILITATOR PERFORMANCE BENCHMARK                   ║"
@@ -48,10 +59,10 @@ for i in {1..10}; do
     if [ "$HTTP_CODE" = "200" ]; then
         echo "  Request $i: ${LATENCY}ms ✓"
         TOTAL_TIME=$((TOTAL_TIME + LATENCY))
-        ((SUCCESS++))
+        SUCCESS=$((SUCCESS + 1))
     else
         echo -e "  Request $i: ${RED}FAILED (HTTP $HTTP_CODE)${NC}"
-        ((FAIL++))
+        FAIL=$((FAIL + 1))
     fi
 done
 
@@ -105,7 +116,7 @@ if [ -n "$API_KEY" ]; then
         if [ "$HTTP_CODE" = "200" ]; then
             echo "  Request $i: ${LATENCY}ms ✓"
             TOTAL_TIME=$((TOTAL_TIME + LATENCY))
-            ((SUCCESS++))
+            SUCCESS=$((SUCCESS + 1))
         else
             echo -e "  Request $i: ${RED}FAILED (HTTP $HTTP_CODE)${NC}"
         fi
@@ -140,14 +151,17 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "TEST 3: Database Performance"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-MYSQL_USER="${MYSQL_USER:-root}"
-MYSQL_PASSWORD="${MYSQL_PASSWORD:-}"
-MYSQL_HOST="${MYSQL_HOST:-localhost}"
-MYSQL_DB="${MYSQL_DB:-x402_facilitator}"
+MYSQL_USER="${DB_USER:-root}"
+MYSQL_PASSWORD="${DB_PASSWORD:-}"
+MYSQL_HOST="${DB_HOST:-localhost}"
+MYSQL_DB="${DB_NAME:-x402_facilitator}"
 
 if command -v mysql >/dev/null 2>&1; then
+    # Use MYSQL_PWD environment variable for password (safer than -p flag)
+    if [ -n "$MYSQL_PASSWORD" ]; then
+        export MYSQL_PWD="$MYSQL_PASSWORD"
+    fi
     MYSQL_CMD="mysql -h${MYSQL_HOST} -u${MYSQL_USER} -D${MYSQL_DB}"
-    [ -n "$MYSQL_PASSWORD" ] && MYSQL_CMD="$MYSQL_CMD -p${MYSQL_PASSWORD}"
     
     # Test simple query
     START=$(date +%s%N | cut -b1-13)
@@ -174,6 +188,9 @@ if command -v mysql >/dev/null 2>&1; then
     if [ "$SLOW_QUERIES" -gt 100 ]; then
         echo -e "${YELLOW}⚠ WARNING: High number of slow queries${NC}"
     fi
+    
+    # Unset password after use
+    unset MYSQL_PWD
 else
     echo -e "${YELLOW}SKIPPED - MySQL client not available${NC}"
 fi
@@ -219,15 +236,20 @@ if command -v redis-cli >/dev/null 2>&1; then
     MISSES=$(echo "$INFO" | grep "keyspace_misses:" | cut -d: -f2 | tr -d '\r')
     
     if [ -n "$HITS" ] && [ -n "$MISSES" ] && [ "$((HITS + MISSES))" -gt 0 ]; then
-        HIT_RATE=$(echo "scale=2; $HITS * 100 / ($HITS + $MISSES)" | bc)
-        echo "  Cache hit rate: ${HIT_RATE}%"
-        
-        if (( $(echo "$HIT_RATE > 80" | bc -l) )); then
-            echo -e "${GREEN}✓ EXCELLENT${NC} - High cache efficiency"
-        elif (( $(echo "$HIT_RATE > 50" | bc -l) )); then
-            echo -e "${GREEN}✓ GOOD${NC} - Moderate cache efficiency"
+        if command -v bc >/dev/null 2>&1; then
+            HIT_RATE=$(echo "scale=2; $HITS * 100 / ($HITS + $MISSES)" | bc)
+            echo "  Cache hit rate: ${HIT_RATE}%"
+            
+            if (( $(echo "$HIT_RATE > 80" | bc -l) )); then
+                echo -e "${GREEN}✓ EXCELLENT${NC} - High cache efficiency"
+            elif (( $(echo "$HIT_RATE > 50" | bc -l) )); then
+                echo -e "${GREEN}✓ GOOD${NC} - Moderate cache efficiency"
+            else
+                echo -e "${YELLOW}⚠ LOW${NC} - Consider cache warming or longer TTL"
+            fi
         else
-            echo -e "${YELLOW}⚠ LOW${NC} - Consider cache warming or longer TTL"
+            # Fallback without bc
+            echo "  Cache hits: $HITS, misses: $MISSES"
         fi
     fi
     
@@ -258,7 +280,9 @@ BASE_SEPOLIA_RPC="${BASE_SEPOLIA_RPC:-}"
 if [ -n "$BASE_SEPOLIA_RPC" ]; then
     # Extract HTTP URL from WebSocket URL if needed
     if [[ "$BASE_SEPOLIA_RPC" == wss://* ]]; then
-        RPC_URL=$(echo "$BASE_SEPOLIA_RPC" | sed 's/wss:/https:/')
+        RPC_URL=$(echo "$BASE_SEPOLIA_RPC" | sed 's|wss://|https://|')
+    elif [[ "$BASE_SEPOLIA_RPC" == ws://* ]]; then
+        RPC_URL=$(echo "$BASE_SEPOLIA_RPC" | sed 's|ws://|http://|')
     else
         RPC_URL="$BASE_SEPOLIA_RPC"
     fi
@@ -278,7 +302,7 @@ if [ -n "$BASE_SEPOLIA_RPC" ]; then
         if [ -n "$RESPONSE" ] && echo "$RESPONSE" | grep -q "result"; then
             echo "  Request $i: ${LATENCY}ms ✓"
             TOTAL_TIME=$((TOTAL_TIME + LATENCY))
-            ((SUCCESS++))
+            SUCCESS=$((SUCCESS + 1))
         else
             echo -e "  Request $i: ${RED}FAILED${NC}"
         fi
