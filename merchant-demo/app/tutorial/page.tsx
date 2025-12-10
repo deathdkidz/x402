@@ -108,9 +108,13 @@ export default function TutorialPage() {
 
   useEffect(() => {
     const storedKey = localStorage.getItem('x402_api_key');
-    const storedAddress = localStorage.getItem('x402_merchant_address');
+    const storedAddress = localStorage.getItem('x402_recipient_address');
     if (storedKey) setApiKey(storedKey);
-    if (storedAddress) setMerchantAddress(storedAddress);
+    if (storedAddress) setRecipientAddress(storedAddress);
+    // Only show tutorial if both values were loaded from storage
+    if (storedKey && storedAddress) {
+      setConfigReady(true);
+    }
     setIsLoadingConfig(false);
   }, []);
 
@@ -143,9 +147,9 @@ export default function TutorialPage() {
     localStorage.setItem('x402_api_key', value);
   };
 
-  const handleMerchantAddressChange = (value: string) => {
-    setMerchantAddress(value);
-    localStorage.setItem('x402_merchant_address', value);
+  const handleRecipientAddressChange = (value: string) => {
+    setRecipientAddress(value);
+    localStorage.setItem('x402_recipient_address', value);
   };
 
   // Auto-generate data when entering certain steps
@@ -395,6 +399,26 @@ export default function TutorialPage() {
     }
   };
 
+  // Show loading screen while initializing
+  if (isLoadingConfig) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block relative">
+            <div className="w-16 h-16 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <svg className="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+          </div>
+          <p className="mt-6 text-slate-300 font-semibold">Loading Tutorial...</p>
+          <p className="mt-2 text-slate-500 text-sm">Initializing configuration</p>
+        </div>
+      </div>
+    );
+  }
+
   // Show configuration input screen if not ready
   if (!configReady) {
     return (
@@ -535,8 +559,8 @@ export default function TutorialPage() {
               </label>
               <input
                 type="text"
-                value={isLoadingConfig ? '' : merchantAddress}
-                onChange={(e) => handleMerchantAddressChange(e.target.value)}
+                value={isLoadingConfig ? '' : recipientAddress}
+                onChange={(e) => handleRecipientAddressChange(e.target.value)}
                 placeholder="0x..."
                 className="w-full px-4 py-2.5 bg-slate-900/60 border border-slate-700/40 rounded-lg text-slate-100 text-sm focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all placeholder-slate-500 font-mono"
               />
@@ -791,8 +815,8 @@ export default function TutorialPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <div className="text-sm text-blue-300">
-                      <strong>from:</strong> Your wallet address<br />
-                      <strong>to:</strong> Merchant's wallet<br />
+                      <strong>from:</strong> Buyer wallet address<br />
+                      <strong>to:</strong> Recipient's wallet<br />
                       <strong>value:</strong> 10000 = 0.01 USDC (6 decimals)<br />
                       <strong>validAfter/validBefore:</strong> Time window for authorization<br />
                       <strong>nonce:</strong> Random value for replay protection
