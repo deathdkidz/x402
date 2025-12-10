@@ -63,7 +63,6 @@ curl -X GET $FACILITATOR_URL/networks | jq
           }
         }
       ],
-      "rpcConfigured": true
     }
   ],
   "defaultNetwork": "base-sepolia"

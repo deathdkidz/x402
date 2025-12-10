@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { PaymentPayload, PaymentRequirements, VerifyResponse, ExactPaymentPayload } from '../types/index.js';
-import config, { getRpcUrl, getEIP712Domain, getTokenByAddress } from '../config/index.js';
+import config, { getRpcUrl, getEIP712Domain, getTokenByAddress, createProvider } from '../config/index.js';
 import logger from '../utils/logger.js';
 
 // Standard ERC20 ABI for balance checking
@@ -23,11 +23,10 @@ const ERC20_ABI = [
  */
 export class VerificationService {
   /**
-   * Get provider for specific network
+   * Get provider for specific network (auto-detects HTTP/WebSocket)
    */
-  private getProvider(network: string): ethers.JsonRpcProvider {
-    const rpcUrl = getRpcUrl(network);
-    return new ethers.JsonRpcProvider(rpcUrl);
+  private getProvider(network: string): ethers.JsonRpcProvider | ethers.WebSocketProvider {
+    return createProvider(network);
   }
 
   /**
@@ -125,11 +124,12 @@ export class VerificationService {
    * Layer 1: Validate network is supported
    */
   private validateNetwork(network: string): VerifyResponse {
-    if (!config.supportedNetworks.includes(network)) {
+    const allNetworks = [...config.mainnetNetworks, ...config.testnetNetworks];
+    if (!allNetworks.includes(network)) {
       logger.warn(`Unsupported network: ${network}`);
       return {
         isValid: false,
-        invalidReason: `Network '${network}' is not supported. Supported networks: ${config.supportedNetworks.join(', ')}`,
+        invalidReason: `Network '${network}' is not supported. Supported networks: ${allNetworks.join(', ')}`,
       };
     }
     logger.debug(`✓ Network validation passed: ${network}`);

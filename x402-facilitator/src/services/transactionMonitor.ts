@@ -3,7 +3,7 @@ import db from './database.js';
 import redis from './redis.js';
 import webhookService from './webhook.js';
 import logger from '../utils/logger.js';
-import { getRpcUrl } from '../config/index.js';
+import { getRpcUrl, createProvider } from '../config/index.js';
 
 /**
  * Background job to check status of pending transactions
@@ -90,7 +90,7 @@ export class TransactionMonitor {
         return;
       }
 
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const provider = createProvider(tx.network);
       const receipt = await provider.getTransactionReceipt(tx.transaction_hash);
 
       if (!receipt) {

@@ -7,7 +7,7 @@ import fs from 'fs';
 import http from 'http';
 import https from 'https';
 import { ethers } from 'ethers';
-import config from './config/index.js';
+import config, { createProvider } from './config/index.js';
 import logger from './utils/logger.js';
 import routes from './routes/index.js';
 import { generalRateLimiter } from './middleware/rateLimit.js';
@@ -16,7 +16,6 @@ import db from './services/database.js';
 import redis from './services/redis.js';
 import transactionMonitor from './services/transactionMonitor.js';
 import paymasterPool from './services/paymasterPool.js';
-import { getRpcUrl } from './config/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,8 +94,8 @@ const startServer = async () => {
   if (USE_HTTPS) {
     logger.info(`HTTPS Port: ${HTTPS_PORT} (⭐ preferred)`);
   }
-  logger.info(`Network: ${config.network}`);
-  logger.info(`Supported Networks: ${config.supportedNetworks.join(', ')}`);
+  logger.info(`Mainnet Networks: ${config.mainnetNetworks.join(', ')}`);
+  logger.info(`Testnet Networks: ${config.testnetNetworks.join(', ')}`);
   logger.info(`Database: ${config.database.database}@${config.database.host}:${config.database.port}`);
   logger.info(`Redis: ${config.redisUrl}`);
   logger.info(`Rate Limiting: ${config.rateLimitMaxRequests} req/${config.rateLimitWindowMs}ms`);
@@ -120,9 +119,8 @@ const startServer = async () => {
 
   // Initialize paymaster wallet pool
   try {
-    const defaultNetwork = config.network;
-    const rpcUrl = getRpcUrl(defaultNetwork);
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const defaultNetwork = config.testnetNetworks[0] || 'Base Sepolia';
+    const provider = createProvider(defaultNetwork);
     
     await paymasterPool.initialize(provider);
     const poolStats = paymasterPool.getPoolStats();

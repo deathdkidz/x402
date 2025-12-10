@@ -38,7 +38,6 @@ Returns all supported payment networks and tokens.
           }
         }
       ],
-      "rpcConfigured": true
     },
     {
       "network": "Ethereum Sepolia",
@@ -56,7 +55,6 @@ Returns all supported payment networks and tokens.
           }
         }
       ],
-      "rpcConfigured": true
     },
     {
       "network": "BSC Testnet",
@@ -74,7 +72,6 @@ Returns all supported payment networks and tokens.
           }
         }
       ],
-      "rpcConfigured": true
     }
   ],
   "defaultNetwork": "Base Sepolia"

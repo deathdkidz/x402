@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import { ethers } from 'ethers';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,8 +36,8 @@ interface Config {
   sslKeyPath?: string;
   nodeEnv: string;
   paymasterPrivateKeys: string[];
-  network: string;
-  supportedNetworks: string[];
+  mainnetNetworks: string[];
+  testnetNetworks: string[];
   networks: { [network: string]: NetworkConfig };
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
@@ -52,7 +53,7 @@ interface Config {
 }
 
 // Validate required environment variables
-const requiredEnvVars = ['PAYMASTER_PRIVATE_KEYS', 'SUPPORTED_NETWORKS'];
+const requiredEnvVars = ['PAYMASTER_PRIVATE_KEYS'];
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingEnvVars.length > 0) {
@@ -75,9 +76,41 @@ const config: Config = {
   port: parseInt(process.env.PORT || '8080', 10),
   nodeEnv: process.env.NODE_ENV || 'production',
   paymasterPrivateKeys: loadPaymasterKeys(),
-  network: process.env.NETWORK || 'Base Sepolia',
-  supportedNetworks: (process.env.SUPPORTED_NETWORKS || 'Base Sepolia').split(',').map(n => n.trim()),
+  mainnetNetworks: (process.env.MAINNET_NETWORKS || '').split(',').map(n => n.trim()).filter(n => n.length > 0),
+  testnetNetworks: (process.env.TESTNET_NETWORKS || '').split(',').map(n => n.trim()).filter(n => n.length > 0),
   networks: {
+    'Base': {
+      chainId: 8453,
+      rpcUrl: process.env.BASE_SEPOLIA_RPC || 'wss://base-mainnet.g.alchemy.com/v2/demo',
+      tokens: [
+        {
+          symbol: 'USDC',
+          name: 'USD Coin',
+          address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+          decimals: 6,
+          eip712: {
+            name: 'USD Coin',
+            version: '2',
+          },
+        },
+      ],
+    },
+    'Ethereum': {
+      chainId: 11155111,
+      rpcUrl: process.env.ETHEREUM_SEPOLIA_RPC || 'https://eth-sepolia.g.alchemy.com/v2/demo',
+      tokens: [
+        {
+          symbol: 'USDC',
+          name: 'USD Coin',
+          address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+          decimals: 6,
+          eip712: {
+            name: 'USD Coin',
+            version: '2',
+          },
+        },
+      ],
+    },
     'Base Sepolia': {
       chainId: 84532,
       rpcUrl: process.env.BASE_SEPOLIA_RPC || 'https://base-sepolia.g.alchemy.com/v2/demo',
@@ -105,22 +138,6 @@ const config: Config = {
           decimals: 6,
           eip712: {
             name: 'USDC',
-            version: '2',
-          },
-        },
-      ],
-    },
-    'BSC Testnet': {
-      chainId: 97,
-      rpcUrl: process.env.BSC_TESTNET_RPC || 'https://bnb-testnet.g.alchemy.com/v2/demo',
-      tokens: [
-        {
-          symbol: 'USDT',
-          name: 'USDT Token',
-          address: '0x337610d27c682E347C9cD60BD4b3b107C9d34dDd',
-          decimals: 18,
-          eip712: {
-            name: 'USDT Token',
             version: '2',
           },
         },
@@ -162,6 +179,17 @@ export const getRpcUrl = (network: string): string => {
   return networkConfig.rpcUrl;
 };
 
+// Create provider with automatic HTTP/WebSocket detection
+export const createProvider = (network: string): ethers.JsonRpcProvider | ethers.WebSocketProvider => {
+  const rpcUrl = getRpcUrl(network);
+  
+  if (rpcUrl.startsWith('wss://') || rpcUrl.startsWith('ws://')) {
+    return new ethers.WebSocketProvider(rpcUrl);
+  }
+  
+  return new ethers.JsonRpcProvider(rpcUrl);
+};
+
 export const getEIP712Domain = (network: string, tokenAddress: string) => {
   const token = getTokenByAddress(network, tokenAddress);
   const networkConfig = config.networks[network];
@@ -176,6 +204,11 @@ export const getEIP712Domain = (network: string, tokenAddress: string) => {
     chainId: networkConfig.chainId,
     verifyingContract: token.address,
   };
+};
+
+// Helper to get all supported networks (testnet + mainnet)
+export const getAllSupportedNetworks = (): string[] => {
+  return [...config.testnetNetworks, ...config.mainnetNetworks];
 };
 
 export { TokenConfig, NetworkConfig };

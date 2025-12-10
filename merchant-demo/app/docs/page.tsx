@@ -384,7 +384,6 @@ export default function DocsPage() {
           }
         }
       ],
-      "rpcConfigured": true
     }
   ],
   "defaultNetwork": "Base Sepolia"

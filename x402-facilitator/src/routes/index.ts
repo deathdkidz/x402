@@ -18,7 +18,6 @@ router.get('/health', (req: Request, res: Response) => {
     service: 'x402-facilitator',
     timestamp: Date.now(),
     uptime: process.uptime(),
-    supportedNetworks: config.supportedNetworks,
   });
 });
 
@@ -27,7 +26,7 @@ router.get('/health', (req: Request, res: Response) => {
  * GET /networks
  */
 router.get('/networks', (req: Request, res: Response) => {
-  const networks = config.supportedNetworks.map(network => {
+  const mainnetNetworks = config.mainnetNetworks.map(network => {
     const networkConfig = config.networks[network];
     
     if (!networkConfig) {
@@ -51,14 +50,40 @@ router.get('/networks', (req: Request, res: Response) => {
           verifyingContract: token.address,
         } : undefined,
       })),
-      rpcConfigured: !!networkConfig.rpcUrl,
+    };
+  });
+
+  const testnetNetworks = config.testnetNetworks.map(network => {
+    const networkConfig = config.networks[network];
+    
+    if (!networkConfig) {
+      return {
+        network,
+        error: 'Network not configured',
+      };
+    }
+    
+    return {
+      network,
+      chainId: networkConfig.chainId,
+      tokens: networkConfig.tokens.map(token => ({
+        symbol: token.symbol,
+        name: token.name,
+        address: token.address,
+        decimals: token.decimals,
+        eip712: token.eip712 ? {
+          name: token.eip712.name,
+          version: token.eip712.version,
+          verifyingContract: token.address,
+        } : undefined,
+      })),
     };
   });
 
   res.status(200).json({
     success: true,
-    networks,
-    defaultNetwork: config.network,
+    mainnet: mainnetNetworks,
+    testnet: testnetNetworks,
   });
 });
 
@@ -75,7 +100,8 @@ router.get('/', (req: Request, res: Response) => {
       verify: 'POST /verify',
       settle: 'POST /settle',
     },
-    supportedNetworks: config.supportedNetworks,
+    mainnetNetworks: config.mainnetNetworks,
+    testnetNetworks: config.testnetNetworks,
   });
 });
 

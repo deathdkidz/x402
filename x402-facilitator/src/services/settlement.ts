@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { PaymentPayload, PaymentRequirements, SettleResponse, ExactPaymentPayload } from '../types/index.js';
-import config, { getRpcUrl, getEIP712Domain, getTokenByAddress } from '../config/index.js';
+import config, { getRpcUrl, getEIP712Domain, getTokenByAddress, createProvider } from '../config/index.js';
 import logger from '../utils/logger.js';
 import db from './database.js';
 import redis from './redis.js';
@@ -43,11 +43,10 @@ export class SettlementService {
   private pendingTransactions: Map<string, string> = new Map();
 
   /**
-   * Get provider for specific network
+   * Get provider for specific network (auto-detects HTTP/WebSocket)
    */
-  private getProvider(network: string): ethers.JsonRpcProvider {
-    const rpcUrl = getRpcUrl(network);
-    return new ethers.JsonRpcProvider(rpcUrl);
+  private getProvider(network: string): ethers.JsonRpcProvider | ethers.WebSocketProvider {
+    return createProvider(network);
   }
 
   /**
@@ -262,6 +261,7 @@ export class SettlementService {
       const sig = ethers.Signature.from(signature!.trim());
 
       logger.info(`📤 Executing transferWithAuthorization: ${payer} -> ${payTo}, amount: ${amount.toString()}`);
+      logger.info(`   Paymaster: ${paymasterWallet.address} (paying gas fees)`);
       logger.info(`   ValidAfter: ${validAfter}, ValidBefore: ${validBefore}`);
       logger.info(`   Nonce: ${nonce}`);
       logger.info(`   Signature v=${sig.v}, r=${sig.r}, s=${sig.s}`);
@@ -374,6 +374,7 @@ export class SettlementService {
       await redis.cacheUsedNonce(payer, nonce, tx.hash, 'pending');
 
       logger.info(`⏳ Transaction sent: ${tx.hash}`);
+      logger.info(`   Paymaster: ${paymasterWallet.address}`);
       logger.info('   Waiting for confirmation (30s timeout)...');
 
       // HYBRID APPROACH: Wait up to 30 seconds for confirmation
@@ -413,6 +414,7 @@ export class SettlementService {
           });
           
           logger.info(`⛽ Gas used: ${gasUsed.toString()} units @ ${ethers.formatUnits(effectiveGasPrice, 'gwei')} gwei, Cost: ${gasCostGwei} gwei (${gasCostNative} ${this.getGasToken(requirements.network)})`);
+          logger.info(`   Paid by paymaster: ${paymasterWallet.address}`);
         } catch (gasError) {
           logger.warn('Failed to track gas usage:', gasError);
         }
@@ -789,14 +791,15 @@ export class SettlementService {
    * Validate network is supported
    */
   private validateNetwork(network: string): { success: boolean; response: SettleResponse } {
-    if (!config.supportedNetworks.includes(network)) {
+    const allNetworks = [...config.mainnetNetworks, ...config.testnetNetworks];
+    if (!allNetworks.includes(network)) {
       logger.warn(`❌ Unsupported network in settlement: ${network}`);
       return {
         success: false,
         response: {
           success: false,
           network,
-          errorReason: `Network '${network}' is not supported. Supported networks: ${config.supportedNetworks.join(', ')}`,
+          errorReason: `Network '${network}' is not supported. Supported networks: ${allNetworks.join(', ')}`,
         },
       };
     }
