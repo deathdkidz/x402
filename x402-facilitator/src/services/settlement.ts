@@ -738,7 +738,7 @@ export class SettlementService {
 
   /**
    * Wait for transaction with timeout
-   * Optimized for Flashblock-enabled networks (Base, Optimism, OP Stack, Unichain):
+   * Optimized for Flashblock-enabled networks (Base, Optimism, Unichain):
    * Polls aggressively in first 1.5s for ~200ms preconfirmations
    */
   private async waitForTransaction(
@@ -749,19 +749,18 @@ export class SettlementService {
     const provider = this.getProvider(network);
     const startTime = Date.now();
     
-    // For networks with flashblock/fast preconfirmation support (Base, OP Stack chains, Unichain)
+    // For networks with flashblock/fast preconfirmation support (Base, Optimism, Unichain)
     const networkLower = network.toLowerCase();
     const isFlashblockSupportedNetwork = 
       networkLower.includes('base') || 
       networkLower.includes('optimism') || 
-      networkLower.includes('op ') || 
       networkLower.includes('unichain');
     
     if (isFlashblockSupportedNetwork) {
       logger.debug(`⚡ Using Flashblock-optimized polling for ${network}`);
       
       // Phase 1: Aggressive polling for flashblock preconfirmation (first 1.5 seconds)
-      // Flashblock-enabled L2s (Base, Optimism, Unichain) confirm in ~200-400ms typically
+      // Flashblock-enabled networks (Base, Optimism, Unichain) confirm in ~200-400ms typically
       const flashblockPhaseMs = 1500;
       const flashblockPollInterval = 100; // Poll every 100ms
       

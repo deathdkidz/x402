@@ -39,14 +39,12 @@ const networkLower = network.toLowerCase();
 const isFlashblockSupportedNetwork = 
   networkLower.includes('base') || 
   networkLower.includes('optimism') || 
-  networkLower.includes('op ') || 
   networkLower.includes('unichain');
 ```
 
 Automatically activates for:
 - **Base** (Sepolia, Mainnet)
 - **Optimism** (OP Mainnet, OP Sepolia)
-- **OP Stack chains** (Any network with "op" in name)
 - **Unichain** (Unichain Sepolia, Mainnet)
 
 ## Performance Impact
@@ -213,7 +211,6 @@ No additional configuration needed! The optimization:
 ✅ **ACTIVE** - Deployed and operational on:
 - **Base** (Sepolia, Mainnet)
 - **Optimism** (OP Mainnet, OP Sepolia)
-- **OP Stack chains** (All OP-based networks)
 - **Unichain** (Sepolia, Mainnet when available)
 
 ## Next Steps
