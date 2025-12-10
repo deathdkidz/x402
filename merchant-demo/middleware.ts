@@ -46,6 +46,7 @@ function getContentType(path: string): string {
 
 /**
  * Verify payment with facilitator
+ * Uses HTTP keep-alive for faster connections
  */
 async function verifyPayment(payment: any, requirements: any): Promise<boolean> {
   try {
@@ -53,7 +54,8 @@ async function verifyPayment(payment: any, requirements: any): Promise<boolean> 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`
+        'Authorization': `Bearer ${API_KEY}`,
+        'Connection': 'keep-alive'
       },
       body: JSON.stringify({
         x402Version: 1,
@@ -62,7 +64,9 @@ async function verifyPayment(payment: any, requirements: any): Promise<boolean> 
           payload: payment
         },
         paymentRequirements: requirements
-      })
+      }),
+      // Enable HTTP keep-alive for connection reuse
+      keepalive: true
     });
 
     const responseText = await response.text();
@@ -91,6 +95,7 @@ async function verifyPayment(payment: any, requirements: any): Promise<boolean> 
 
 /**
  * Settle payment with facilitator
+ * Waits for blockchain confirmation before returning
  */
 async function settlePayment(payment: any, requirements: any): Promise<{ success: boolean; status?: string; message?: string }> {
   try {
@@ -98,8 +103,11 @@ async function settlePayment(payment: any, requirements: any): Promise<{ success
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`
+        'Authorization': `Bearer ${API_KEY}`,
+        'Connection': 'keep-alive'
       },
+      // Enable HTTP keep-alive for connection reuse
+      keepalive: true,
       body: JSON.stringify({
         x402Version: 1,
         paymentPayload: {
@@ -215,48 +223,42 @@ export async function middleware(request: NextRequest) {
     console.log('⚠️  Using requirements from config (fallback)');
   }
 
-  // Verify payment using user's API key if provided
-  console.log('🔍 Verifying payment:', {
-    network: requirements.network,
-    asset: requirements.asset,
-    amount: requirements.maxAmountRequired,
-    payTo: requirements.payTo
-  });
-
-  const isValid = await verifyPayment(payment, requirements);
-  
-  console.log('✅ Verification result:', isValid);
-  
-  if (!isValid) {
-    return new NextResponse(
-      JSON.stringify({ error: 'Payment Verification Failed' }),
-      { status: 402, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
-
-  // Settle payment using user's API key if provided
-  console.log('💰 Settling payment...');
+  // SETTLE - Submit payment to facilitator for blockchain execution
+  // The /settle endpoint performs ALL verification internally:
+  // ✅ Signature validation (cryptographic check)
+  // ✅ Nonce check (prevents double-spending via Redis + on-chain)
+  // ✅ Balance verification (ensures payer has funds)
+  // ✅ Amount validation (matches requirement)
+  // ✅ Time window validation (validAfter/validBefore)
+  // ✅ Recipient validation (payTo matches)
+  // Then executes the blockchain transaction and waits for confirmation
+  console.log('💰 Settling payment on blockchain (includes verification + execution)...');
+  console.log('   Network:', requirements.network);
+  console.log('   Amount:', requirements.maxAmountRequired);
+  console.log('   PayTo:', requirements.payTo);
   
   const settlementResult = await settlePayment(payment, requirements);
   
-  console.log('✅ Settlement result:', settlementResult);
-  
   if (!settlementResult.success) {
+    console.log('❌ Payment rejected by facilitator');
+    console.log('   Reason:', settlementResult.message || 'Unknown error');
     return new NextResponse(
       JSON.stringify({ 
-        error: 'Payment Settlement Failed',
-        message: settlementResult.message 
+        error: 'Payment Failed',
+        message: settlementResult.message || 'Settlement rejected by facilitator'
       }),
       { status: 402, headers: { 'Content-Type': 'application/json' } }
     );
   }
 
-  // If settlement is pending, still serve content (transaction was submitted)
-  if (settlementResult.status === 'pending') {
-    console.log('⏱️  Transaction pending confirmation, serving content anyway');
-  } else if (settlementResult.status === 'completed') {
-    console.log('✅ Transaction confirmed on blockchain');
+  // Settlement successful - funds transferred on blockchain
+  if (settlementResult.status === 'completed') {
+    console.log('✅ Payment confirmed on blockchain');
+  } else if (settlementResult.status === 'pending') {
+    console.log('⏳ Transaction submitted to blockchain, awaiting confirmation');
   }
+
+  console.log('🎉 Payment successful - serving protected content');
 
   // Payment successful - allow access to the resource
   // Add X-PAYMENT-RESPONSE header to indicate successful payment

@@ -880,20 +880,11 @@ export default function TutorialPage() {
                     <div className="mb-4">
                       <h3 className="text-sm font-semibold text-slate-300 mb-2">Authorization + Signature</h3>
                       <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
-                        <pre className="text-xs overflow-x-auto font-mono leading-relaxed">
-{`{
-  "authorization": {
-    "from": "${stepData.authorization.from}",
-    "to": "${stepData.authorization.to}",
-    "value": "${stepData.authorization.value}",
-    "validAfter": "${stepData.authorization.validAfter}",
-    "validBefore": "${stepData.authorization.validBefore}",
-    "nonce": "${stepData.authorization.nonce}"
-  },`}
-<span className="bg-emerald-500/30 text-emerald-300">{`
-  "signature": "${stepData.signature}"`}</span>
-{`
-}`}
+                        <pre className="text-xs overflow-x-auto font-mono leading-relaxed whitespace-pre">
+{JSON.stringify({
+  authorization: stepData.authorization,
+  signature: stepData.signature
+}, null, 2)}
                         </pre>
                       </div>
                     </div>
@@ -917,11 +908,11 @@ export default function TutorialPage() {
                 <div className="mb-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-2">Before Encoding (JSON)</h3>
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
-                    <pre className="text-xs text-slate-300 overflow-x-auto font-mono">
-{`{
-  "authorization": {...},
-  "signature": "${stepData.signature?.substring(0, 40)}..."
-}`}
+                    <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
+{JSON.stringify({
+  authorization: stepData.authorization,
+  signature: stepData.signature
+}, null, 2)}
                     </pre>
                   </div>
                 </div>
@@ -936,9 +927,9 @@ export default function TutorialPage() {
                 <div className="mb-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-2">After Encoding (Base64)</h3>
                   <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4">
-                    <pre className="text-xs text-cyan-300 break-words whitespace-pre-wrap font-mono">
-                      {stepData.xPaymentHeader}
-                    </pre>
+                    <div className="text-xs text-cyan-300 font-mono break-all">
+{stepData.xPaymentHeader}
+                    </div>
                   </div>
                 </div>
                 <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-4">
@@ -961,16 +952,16 @@ export default function TutorialPage() {
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4 font-mono text-sm">
                     <div className="text-cyan-400">GET /premium/content HTTP/1.1</div>
                     <div className="text-slate-400">Host: merchant.example.com</div>
-                    <div className="text-emerald-400 mt-2 break-all">X-PAYMENT: {stepData.xPaymentHeader.substring(0, 50)}...</div>
+                    <div className="text-emerald-400 mt-2 break-all">X-PAYMENT: {stepData.xPaymentHeader}</div>
                   </div>
                 </div>
                 <div className="mb-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-2">X-PAYMENT Header Content (Decoded)</h3>
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
-                    <pre className="text-xs text-slate-300 overflow-x-auto font-mono">
+                    <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
 {JSON.stringify({
   authorization: stepData.authorization,
-  signature: stepData.signature?.substring(0, 40) + '...'
+  signature: stepData.signature
 }, null, 2)}
                     </pre>
                   </div>
@@ -1001,14 +992,14 @@ export default function TutorialPage() {
                 <div className="mb-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-2">Request Body</h3>
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
-                    <pre className="text-xs text-slate-300 overflow-x-auto font-mono">
+                    <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
 {JSON.stringify({
   x402Version: 1,
   paymentPayload: {
     x402Version: 1,
     payload: {
       authorization: stepData.authorization,
-      signature: stepData.signature?.substring(0, 40) + '...'
+      signature: stepData.signature
     }
   },
   paymentRequirements: stepData.paymentRequirements
@@ -1050,14 +1041,14 @@ export default function TutorialPage() {
                 <div className="mb-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-2">Request Body</h3>
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
-                    <pre className="text-xs text-slate-300 overflow-x-auto font-mono">
+                    <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
 {JSON.stringify({
   x402Version: 1,
   paymentPayload: {
     x402Version: 1,
     payload: {
       authorization: stepData.authorization,
-      signature: stepData.signature?.substring(0, 40) + '...'
+      signature: stepData.signature
     }
   },
   paymentRequirements: stepData.paymentRequirements

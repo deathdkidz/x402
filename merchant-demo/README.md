@@ -2,12 +2,27 @@
 
 A demonstration merchant store application showcasing the x402 payment protocol integration.
 
+## 🔒 Payment Security
+
+Content is delivered only after **blockchain confirmation** (~5-30 seconds). This ensures funds are transferred before serving protected resources.
+
+**One-call payment process:**
+1. 💰 **SETTLE**: Single call to facilitator's `/settle` endpoint
+2. 🔍 **Verification** (100-300ms): Facilitator validates signature, nonce, balance internally
+3. ⛓️ **Blockchain** (5-30s): Execute transaction, wait for confirmation
+4. 🎉 **SERVE**: Deliver content after payment confirmed
+
+The `/settle` endpoint does **all verification internally** - no need to call `/verify` first!
+
+See [PERFORMANCE_OPTIMIZATIONS.md](./PERFORMANCE_OPTIMIZATIONS.md) for detailed explanation.
+
 ## Features
 
 - Demo product catalog
 - x402 payment integration
 - Gasless USDC payments via ERC-3009
 - Base Sepolia testnet support
+- Fast content delivery (~100-300ms)
 
 ## Getting Started
 

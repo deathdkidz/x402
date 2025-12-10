@@ -153,8 +153,10 @@ async function verifyPayment(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`
+        'Authorization': `Bearer ${API_KEY}`,
+        'Connection': 'keep-alive'
       },
+      keepalive: true,
       body: JSON.stringify({
         x402Version: 1,
         paymentPayload: {
@@ -193,8 +195,10 @@ async function settlePayment(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`
+        'Authorization': `Bearer ${API_KEY}`,
+        'Connection': 'keep-alive'
       },
+      keepalive: true,
       body: JSON.stringify({
         x402Version: 1,
         paymentPayload: {
@@ -307,22 +311,11 @@ export async function handleX402Payment(
     maxTimeoutSeconds: 3600
   };
 
-  // Verify payment
-  const verification = await verifyPayment(payment, requirements);
-  if (!verification.isValid) {
-    return {
-      error: true,
-      response: new NextResponse(
-        JSON.stringify({
-          error: 'Payment Verification Failed',
-          message: verification.reason || 'Invalid payment signature or insufficient funds'
-        }),
-        { status: 402, headers: { 'Content-Type': 'application/json' } }
-      )
-    };
-  }
-
-  // Settle payment
+  // Settle payment with facilitator
+  // The /settle endpoint performs ALL verification + execution:
+  // - Validates signature, nonce, balance, amount, time window
+  // - Submits to blockchain and waits for confirmation
+  // - Returns success only after funds are transferred
   const settlement = await settlePayment(payment, requirements);
   if (!settlement.success) {
     return {
@@ -341,13 +334,13 @@ export async function handleX402Payment(
   // Return headers to include in success response
   return {
     error: false,
-    payer: verification.payer,
+    payer: payment.authorization?.from,
     txHash: settlement.txHash,
     headers: {
       'X-PAYMENT-RESPONSE': JSON.stringify({
         status: settlement.status || 'completed',
         transactionHash: settlement.txHash,
-        payer: verification.payer,
+        payer: payment.authorization?.from,
         network: requirements.network
       })
     }

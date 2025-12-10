@@ -1,0 +1,28 @@
+{
+  "x402Version": 1,
+  "paymentPayload": {
+    "x402Version": 1,
+    "payload": {
+      "authorization": {
+        "from": "0x706044A25A845e7dC2286835Fcf5cf59D8B2A84b",
+        "to": "0x67B662afAc6AE778134803aeB9a32d4fF0ECe84C",
+        "value": "10000",
+        "validAfter": "1765398955",
+        "validBefore": "1765402555",
+        "nonce": "0x9e14ae7116f156b2d6dce05aaa7e0bdf0faa5b349510d3276eb41cd2a3cb75cb"
+      },
+      "signature": "0x87dfbf6e1fb76e6222ed7b8d34738c63a2e6ccb1a63c9b7bd70373bae0cd277102fdae60465318b69d8bac5dc3eaa39f38d86e4af3f06355107ccca2bcd5e2e21c"
+    }
+  },
+  "paymentRequirements": {
+    "scheme": "erc3009",
+    "network": "Base Sepolia",
+    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    "payTo": "0x67B662afAc6AE778134803aeB9a32d4fF0ECe84C",
+    "maxAmountRequired": "10000",
+    "resource": "/premium/content",
+    "description": "Premium cat image access",
+    "mimeType": "image/jpeg",
+    "maxTimeoutSeconds": 3600
+  }
+}
