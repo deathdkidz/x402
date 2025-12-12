@@ -125,7 +125,7 @@ Verifies a payment signature without executing the blockchain transaction.
     }
   },
   "paymentRequirements": {
-    "scheme": "erc3009",
+    "scheme": "exact",
     "network": "Base Sepolia",
     "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     "payTo": "0x530f81f36d55118d8e829a1f8b15a4d910f43b6e",

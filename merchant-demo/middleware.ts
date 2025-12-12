@@ -58,10 +58,9 @@ async function verifyPayment(payment: any, requirements: any): Promise<boolean> 
         'Connection': 'keep-alive'
       },
       body: JSON.stringify({
-        x402Version: 1,
-        paymentPayload: {
-          x402Version: 1,
-          payload: payment
+        payment: {
+          scheme: 'exact',
+          ...payment
         },
         paymentRequirements: requirements
       }),
@@ -109,10 +108,9 @@ async function settlePayment(payment: any, requirements: any): Promise<{ success
       // Enable HTTP keep-alive for connection reuse
       keepalive: true,
       body: JSON.stringify({
-        x402Version: 1,
-        paymentPayload: {
-          x402Version: 1,
-          payload: payment
+        payment: {
+          scheme: 'exact',
+          ...payment
         },
         paymentRequirements: requirements
       })

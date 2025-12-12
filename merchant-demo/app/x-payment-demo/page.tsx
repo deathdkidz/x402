@@ -330,7 +330,7 @@ export default function XPaymentDemo() {
           payload: paymentPayload
         },
         paymentRequirements: {
-          scheme: 'erc3009',
+          scheme: 'exact',
           network: selectedNetwork,
           asset: 'USDC',
           payTo: merchantAddress,

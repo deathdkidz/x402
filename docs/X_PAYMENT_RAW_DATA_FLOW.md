@@ -213,7 +213,7 @@ Content-Length: 1024
     }
   },
   "paymentRequirements": {
-    "scheme": "erc3009",
+    "scheme": "exact",
     "network": "base-sepolia",
     "asset": "USDC",
     "payTo": "0x1234567890123456789012345678901234567890",
@@ -301,7 +301,7 @@ Content-Length: 1024
     }
   },
   "paymentRequirements": {
-    "scheme": "erc3009",
+    "scheme": "exact",
     "network": "base-sepolia",
     "asset": "USDC",
     "payTo": "0x1234567890123456789012345678901234567890",
@@ -556,7 +556,7 @@ curl -X POST http://localhost:8080/verify \
       "payload": '"$PAYMENT_PAYLOAD"'
     },
     "paymentRequirements": {
-      "scheme": "erc3009",
+      "scheme": "exact",
       "network": "base-sepolia",
       "asset": "USDC",
       "payTo": "0x1234567890123456789012345678901234567890",

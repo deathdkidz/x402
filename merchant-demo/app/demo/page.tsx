@@ -169,7 +169,7 @@ export default function DemoPage() {
 
       // Create payment requirements that match what we signed
       const paymentRequirements = {
-        scheme: 'erc3009',
+        scheme: 'exact',
         network: networkConfig.network,
         asset: tokenConfig.address,
         payTo: merchantAddress,
@@ -180,10 +180,11 @@ export default function DemoPage() {
         maxTimeoutSeconds: 3600
       };
 
-      // Create X-PAYMENT header with requirements for middleware
+      // Create X-PAYMENT header payload (per x402 spec)
       const xPaymentData = {
         x402Version: 1,
-        requirements: paymentRequirements, // Include the requirements the user signed for
+        scheme: 'exact',
+        network: paymentRequirements.network,
         payload: {
           authorization: authorizationForPayload,
           signature

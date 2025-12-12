@@ -89,7 +89,7 @@ await webhookService.sendWebhook(url, secret, {
 // User wants to buy premium article
 const paymentRequest = {
   paymentRequirements: {
-    scheme: 'erc3009',
+    scheme: 'exact',
     network: 'base-sepolia',
     asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
     payTo: merchantAddress,

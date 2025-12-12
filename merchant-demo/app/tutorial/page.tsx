@@ -54,8 +54,8 @@ const STEPS = [
   },
   {
     id: 4,
-    title: 'Step 4: Client Encodes to Base64',
-    description: 'Authorization and signature are encoded to base64 for HTTP header'
+    title: 'Step 4: Client Encodes X-PAYMENT',
+    description: 'Protocol metadata, authorization, and signature are wrapped and base64 encoded for the HTTP header'
   },
   {
     id: 5,
@@ -167,7 +167,7 @@ export default function TutorialPage() {
 
           const token = network.tokens.find(t => t.address === selectedToken) || network.tokens[0];
           const paymentRequirements = {
-            scheme: 'erc3009',
+            scheme: 'exact',
             network: selectedNetwork,
             asset: token.address,
             payTo: recipientAddress,
@@ -177,7 +177,7 @@ export default function TutorialPage() {
             mimeType: 'image/jpeg',
             maxTimeoutSeconds: 3600
           };
-          const x402Header = `X-402 version=1 scheme=erc3009 network=${selectedNetwork} asset=${token.address} payto=${recipientAddress} amount=10000 resource=/premium/content`;
+          const x402Header = `X-402 version=1 scheme=exact network=${selectedNetwork} asset=${token.address} payto=${recipientAddress} amount=10000 resource=/premium/content`;
           setStepData(prev => ({ ...prev, paymentRequirements, x402PaymentRequired: x402Header }));
         }
 
@@ -201,8 +201,13 @@ export default function TutorialPage() {
         // Step 4: Generate base64 encoding
         if (currentStep === 4 && !stepData.xPaymentHeader && stepData.authorization && stepData.signature) {
           const payload = {
-            authorization: stepData.authorization,
-            signature: stepData.signature
+            x402Version: 1,
+            scheme: 'exact',
+            network: stepData.paymentRequirements?.network || selectedNetwork,
+            payload: {
+              authorization: stepData.authorization,
+              signature: stepData.signature
+            }
           };
           const base64Encoded = Buffer.from(JSON.stringify(payload)).toString('base64');
           setStepData(prev => ({ ...prev, xPaymentHeader: base64Encoded }));
@@ -882,8 +887,13 @@ export default function TutorialPage() {
                       <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
                         <pre className="text-xs overflow-x-auto font-mono leading-relaxed whitespace-pre">
 {JSON.stringify({
-  authorization: stepData.authorization,
-  signature: stepData.signature
+  x402Version: 1,
+  scheme: 'exact',
+  network: stepData.paymentRequirements?.network || selectedNetwork,
+  payload: {
+    authorization: stepData.authorization,
+    signature: stepData.signature
+  }
 }, null, 2)}
                         </pre>
                       </div>
@@ -910,8 +920,13 @@ export default function TutorialPage() {
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
                     <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
 {JSON.stringify({
-  authorization: stepData.authorization,
-  signature: stepData.signature
+  x402Version: 1,
+  scheme: 'exact',
+  network: stepData.paymentRequirements?.network || selectedNetwork,
+  payload: {
+    authorization: stepData.authorization,
+    signature: stepData.signature
+  }
 }, null, 2)}
                     </pre>
                   </div>
@@ -938,7 +953,7 @@ export default function TutorialPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <p className="text-sm text-cyan-300">
-                      The authorization and signature are combined into a JSON object and encoded to base64. This ensures safe transmission in HTTP headers.
+                      The header wraps protocol metadata plus the authorization and signature into a single JSON object, which is then base64 encoded for safe transmission in HTTP headers.
                     </p>
                   </div>
                 </div>
@@ -960,8 +975,13 @@ export default function TutorialPage() {
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
                     <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
 {JSON.stringify({
-  authorization: stepData.authorization,
-  signature: stepData.signature
+  x402Version: 1,
+  scheme: 'exact',
+  network: stepData.paymentRequirements?.network || selectedNetwork,
+  payload: {
+    authorization: stepData.authorization,
+    signature: stepData.signature
+  }
 }, null, 2)}
                     </pre>
                   </div>
@@ -972,7 +992,7 @@ export default function TutorialPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                     <p className="text-sm text-purple-300">
-                      Client retries the same request, now including the <strong>X-PAYMENT</strong> header with the signed authorization. The server will decode this header to extract the payment details.
+                      Client retries the same request, now including the <strong>X-PAYMENT</strong> header with protocol metadata and the signed authorization. The server will decode this header to extract the payment details.
                     </p>
                   </div>
                 </div>

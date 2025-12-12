@@ -37,6 +37,6 @@ export const protectedResources: Record<string, ProtectedResource> = {
 export const defaultConfig = {
   network: 'Base Sepolia', // Must match facilitator's network name exactly
   asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // USDC on Base Sepolia
-  scheme: 'erc3009',
+  scheme: 'exact',
   maxTimeoutSeconds: 3600,
 };

@@ -117,7 +117,7 @@ X-PAYMENT: eyJhdXRob3JpemF0aW9u...
   "x402Version": 1,
   "paymentPayload": {...},
   "paymentRequirements": {
-    "scheme": "erc3009",
+    "scheme": "exact",
     "network": "base-sepolia",
     "asset": "USDC",
     "payTo": "0x123...",

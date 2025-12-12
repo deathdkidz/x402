@@ -167,7 +167,7 @@ Authorization: Bearer sk_live_abc123def456...
     }
   },
   "paymentRequirements": {
-    "scheme": "erc3009",
+    "scheme": "exact",
     "network": "base-sepolia",
     "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     "payTo": "0x1234567890123456789012345678901234567890",
@@ -297,7 +297,7 @@ Authorization: Bearer sk_live_abc123def456...
     }
   },
   "paymentRequirements": {
-    "scheme": "erc3009",
+    "scheme": "exact",
     "network": "base-sepolia",
     "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     "payTo": "0x1234567890123456789012345678901234567890",

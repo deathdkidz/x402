@@ -36,7 +36,7 @@
  *        "payload": { ...decoded X-PAYMENT... }
  *      },
  *      "paymentRequirements": {
- *        "scheme": "erc3009",
+ *        "scheme": "exact",
  *        "network": "base-sepolia",
  *        "asset": "USDC",
  *        "payTo": "0xMerchantAddress...",
@@ -134,7 +134,24 @@ const MERCHANT_ADDRESS = process.env.X402_MERCHANT_ADDRESS || '';
 function decodePaymentHeader(header: string): PaymentPayload | null {
   try {
     const decoded = Buffer.from(header, 'base64').toString('utf-8');
-    return JSON.parse(decoded);
+    const parsed = JSON.parse(decoded);
+
+    if (parsed && typeof parsed === 'object') {
+      if (parsed.payload && typeof parsed.payload === 'object') {
+        const { authorization, signature } = parsed.payload as Partial<PaymentPayload>;
+        if (authorization && signature) {
+          return { authorization, signature } as PaymentPayload;
+        }
+      }
+
+      const { authorization, signature } = parsed as Partial<PaymentPayload>;
+      if (authorization && signature) {
+        return { authorization, signature } as PaymentPayload;
+      }
+    }
+
+    console.error('Unsupported X-PAYMENT header structure');
+    return null;
   } catch (error) {
     console.error('Failed to decode X-PAYMENT header:', error);
     return null;
@@ -300,7 +317,7 @@ export async function handleX402Payment(
 
   // Build payment requirements
   const requirements: PaymentRequirements = {
-    scheme: 'erc3009',
+    scheme: 'exact',
     network: config.network || 'Base Sepolia', // Must match facilitator's network name exactly
     asset: config.asset || '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
     payTo: MERCHANT_ADDRESS,
