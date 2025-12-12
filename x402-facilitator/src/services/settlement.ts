@@ -78,8 +78,12 @@ export class SettlementService {
     requirements: PaymentRequirements,
     merchantAddress: string
   ): Promise<SettleResponse> {
+    // Normalize network name first for proper provider lookup
+    const normalizedNetworkCheck = this.validateNetwork(requirements.network);
+    const networkForProvider = normalizedNetworkCheck.normalizedNetwork || requirements.network;
+    
     // Get provider for the specified network
-    const provider = this.getProvider(requirements.network);
+    const provider = this.getProvider(networkForProvider);
     
     // Get next available paymaster wallet from pool (round-robin), connected to network provider
     const paymasterWallet = paymasterPool.getNextWallet(provider);
@@ -100,9 +104,10 @@ export class SettlementService {
       if (!networkCheck.success) {
         return networkCheck.response;
       }
+      const normalizedNetwork = networkCheck.normalizedNetwork!;
 
       // Safety Check 1.5: Validate token is supported on the network
-      const tokenCheck = this.validateToken(requirements.network, requirements.asset);
+      const tokenCheck = this.validateToken(normalizedNetwork, requirements.asset);
       if (!tokenCheck.success) {
         return tokenCheck.response;
       }
@@ -129,11 +134,13 @@ export class SettlementService {
       }
 
       // Safety Check 5: Verify signature matches payer
+      // Use normalized network for domain lookup
+      const normalizedRequirements = { ...requirements, network: normalizedNetwork };
       const sigCheck = await this.verifySignature(
         payer,
         signature!,
         authorization!,
-        requirements
+        normalizedRequirements
       );
       if (!sigCheck.success) {
         return sigCheck.response;
@@ -944,21 +951,26 @@ export class SettlementService {
   /**
    * Validate network is supported
    */
-  private validateNetwork(network: string): { success: boolean; response: SettleResponse } {
+  private validateNetwork(network: string): { success: boolean; response: SettleResponse; normalizedNetwork?: string } {
     const allNetworks = [...config.mainnetNetworks, ...config.testnetNetworks];
-    if (!allNetworks.includes(network)) {
+    // Normalize network name to title case for case-insensitive comparison
+    const normalizedNetwork = network.split(/[-_\s]+/).map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ');
+    
+    if (!allNetworks.includes(normalizedNetwork)) {
       logger.warn(`❌ Unsupported network in settlement: ${network}`);
       return {
         success: false,
         response: {
           success: false,
-          network,
+          network: normalizedNetwork,
           errorReason: `Network '${network}' is not supported. Supported networks: ${allNetworks.join(', ')}`,
         },
       };
     }
-    logger.debug(`✓ Network validation passed: ${network}`);
-    return { success: true, response: { success: true, network } };
+    logger.debug(`✓ Network validation passed: ${normalizedNetwork}`);
+    return { success: true, response: { success: true, network: normalizedNetwork }, normalizedNetwork };
   }
 
   /**

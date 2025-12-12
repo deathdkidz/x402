@@ -48,9 +48,10 @@ export class VerificationService {
       if (!networkCheck.isValid) {
         return networkCheck;
       }
+      const normalizedNetwork = networkCheck.normalizedNetwork!;
 
-      // Layer 1.5: Validate token is supported on the network
-      const tokenCheck = this.validateToken(requirements.network, requirements.asset);
+      // Layer 1.5: Validate token support
+      const tokenCheck = this.validateToken(normalizedNetwork, requirements.asset);
       if (!tokenCheck.isValid) {
         return tokenCheck;
       }
@@ -64,11 +65,13 @@ export class VerificationService {
       const { payer, signature, authorization } = extractionResult;
 
       // Layer 3: Reconstruct and verify message signature
+      // Use normalized network for domain lookup
+      const normalizedRequirements = { ...requirements, network: normalizedNetwork };
       const signatureCheck = await this.verifySignature(
         payer!,
         signature!,
         authorization!,
-        requirements
+        normalizedRequirements
       );
       if (!signatureCheck.isValid) {
         return signatureCheck;
@@ -91,7 +94,7 @@ export class VerificationService {
         payer!,
         requirements.asset,
         requirements.maxAmountRequired,
-        requirements.network
+        normalizedNetwork
       );
       if (!balanceCheck.isValid) {
         return balanceCheck;
@@ -124,17 +127,22 @@ export class VerificationService {
   /**
    * Layer 1: Validate network is supported
    */
-  private validateNetwork(network: string): VerifyResponse {
+  private validateNetwork(network: string): VerifyResponse & { normalizedNetwork?: string } {
     const allNetworks = [...config.mainnetNetworks, ...config.testnetNetworks];
-    if (!allNetworks.includes(network)) {
+    // Normalize network name to title case for case-insensitive comparison
+    const normalizedNetwork = network.split(/[-_\s]+/).map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ');
+    
+    if (!allNetworks.includes(normalizedNetwork)) {
       logger.warn(`Unsupported network: ${network}`);
       return {
         isValid: false,
         invalidReason: `Network '${network}' is not supported. Supported networks: ${allNetworks.join(', ')}`,
       };
     }
-    logger.debug(`✓ Network validation passed: ${network}`);
-    return { isValid: true };
+    logger.debug(`✓ Network validation passed: ${normalizedNetwork}`);
+    return { isValid: true, normalizedNetwork };
   }
 
   /**

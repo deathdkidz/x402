@@ -432,15 +432,20 @@ export default function TutorialPage() {
                 'Authorization': `Bearer ${apiKey}`
               },
               body: JSON.stringify({
-                x402Version: 1,
                 paymentPayload: {
                   x402Version: 1,
+                  scheme: 'exact',
+                  network: stepData.paymentRequirements?.network || selectedNetwork,
                   payload: {
                     authorization: stepData.authorization,
                     signature: stepData.signature
                   }
                 },
-                paymentRequirements: stepData.paymentRequirements
+                paymentRequirements: {
+                  ...(stepData.paymentRequirements || {}),
+                  scheme: 'exact',
+                  network: stepData.paymentRequirements?.network || selectedNetwork
+                }
               })
             });
 
@@ -465,24 +470,29 @@ export default function TutorialPage() {
             break;
           }
 
-          const settleResponse = await fetch(`${facilitatorUrl}/settle`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-              x402Version: 1,
-              paymentPayload: {
-                x402Version: 1,
-                payload: {
-                  authorization: stepData.authorization,
-                  signature: stepData.signature
-                }
+            const settleResponse = await fetch(`${facilitatorUrl}/settle`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
               },
-              paymentRequirements: stepData.paymentRequirements
-            })
-          });
+              body: JSON.stringify({
+                paymentPayload: {
+                  x402Version: 1,
+                  scheme: 'exact',
+                  network: stepData.paymentRequirements?.network || selectedNetwork,
+                  payload: {
+                    authorization: stepData.authorization,
+                    signature: stepData.signature
+                  }
+                },
+                paymentRequirements: {
+                  ...(stepData.paymentRequirements || {}),
+                  scheme: 'exact',
+                  network: stepData.paymentRequirements?.network || selectedNetwork
+                }
+              })
+            });
 
           const settleData = await settleResponse.json();
           const newSettlementStatus = deriveSettlementStatus(settleData);
@@ -1169,31 +1179,23 @@ export default function TutorialPage() {
                 <div className="mb-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-2">HTTP Request to Facilitator</h3>
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
-                    <pre className="text-xs text-yellow-200 font-mono whitespace-pre-wrap break-words">
-{(() => {
-  const requestBody = JSON.stringify({
+                    <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
+{JSON.stringify({
+  paymentPayload: {
     x402Version: 1,
-    paymentPayload: {
-      x402Version: 1,
-      payload: {
-        authorization: stepData.authorization,
-        signature: stepData.signature
-      }
-    },
-    paymentRequirements: stepData.paymentRequirements
-  }, null, 2);
-  return formatHttpRequest(
-    `POST ${verifyPath} HTTP/1.1`,
-    {
-      Host: facilitatorHost,
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer [API_KEY]',
-      'Content-Length': computeContentLength(requestBody)
-    },
-    requestBody
-  );
-})()}
+    scheme: 'exact',
+    network: stepData.paymentRequirements?.network || selectedNetwork,
+    payload: {
+      authorization: stepData.authorization,
+      signature: stepData.signature
+    }
+  },
+  paymentRequirements: {
+    ...(stepData.paymentRequirements || {}),
+    scheme: 'exact',
+    network: stepData.paymentRequirements?.network || selectedNetwork
+  }
+}, null, 2)}
                     </pre>
                   </div>
                 </div>
@@ -1223,31 +1225,23 @@ export default function TutorialPage() {
                 <div className="mb-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-2">HTTP Request to Facilitator</h3>
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
-                    <pre className="text-xs text-yellow-200 font-mono whitespace-pre-wrap break-words">
-{(() => {
-  const requestBody = JSON.stringify({
+                    <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
+{JSON.stringify({
+  paymentPayload: {
     x402Version: 1,
-    paymentPayload: {
-      x402Version: 1,
-      payload: {
-        authorization: stepData.authorization,
-        signature: stepData.signature
-      }
-    },
-    paymentRequirements: stepData.paymentRequirements
-  }, null, 2);
-  return formatHttpRequest(
-    `POST ${settlePath} HTTP/1.1`,
-    {
-      Host: facilitatorHost,
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer [API_KEY]',
-      'Content-Length': computeContentLength(requestBody)
-    },
-    requestBody
-  );
-})()}
+    scheme: 'exact',
+    network: stepData.paymentRequirements?.network || selectedNetwork,
+    payload: {
+      authorization: stepData.authorization,
+      signature: stepData.signature
+    }
+  },
+  paymentRequirements: {
+    ...(stepData.paymentRequirements || {}),
+    scheme: 'exact',
+    network: stepData.paymentRequirements?.network || selectedNetwork
+  }
+}, null, 2)}
                     </pre>
                   </div>
                 </div>
