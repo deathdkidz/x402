@@ -129,7 +129,15 @@ export class VerificationService {
    */
   private validateNetwork(network: string): VerifyResponse & { normalizedNetwork?: string } {
     const allNetworks = [...config.mainnetNetworks, ...config.testnetNetworks];
-    // Normalize network name to title case for case-insensitive comparison
+    
+    // Try exact match first (case-insensitive)
+    const exactMatch = allNetworks.find(n => n.toLowerCase() === network.toLowerCase());
+    if (exactMatch) {
+      logger.debug(`✓ Network validation passed (exact match): ${exactMatch}`);
+      return { isValid: true, normalizedNetwork: exactMatch };
+    }
+    
+    // Fallback: Normalize network name to title case for case-insensitive comparison
     const normalizedNetwork = network.split(/[-_\s]+/).map(word => 
       word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
     ).join(' ');
