@@ -16,11 +16,12 @@ const MERCHANT_ADDRESS = process.env.NEXT_PUBLIC_MERCHANT_ADDRESS || '';
 /**
  * Decode X-PAYMENT header
  */
-function decodePaymentHeader(header: string): { payload: any; requirements?: any } | null {
+function decodePaymentHeader(header: string): { payload: any; raw: any; requirements?: any } | null {
   try {
     const decoded = Buffer.from(header, 'base64').toString('utf-8');
     const parsed = JSON.parse(decoded);
     return {
+      raw: parsed,
       payload: parsed.payload || parsed,
       requirements: parsed.requirements
     };
@@ -48,8 +49,17 @@ function getContentType(path: string): string {
  * Verify payment with facilitator
  * Uses HTTP keep-alive for faster connections
  */
-async function verifyPayment(payment: any, requirements: any): Promise<boolean> {
+async function verifyPayment(
+  payment: any,
+  requirements: any,
+  paymentPayloadOverride?: any
+): Promise<{ isValid: boolean; payer?: string; raw?: any; reason?: string }> {
   try {
+    const paymentPayloadBody = paymentPayloadOverride || {
+      x402Version: 1,
+      payload: payment
+    };
+
     const response = await fetch(`${FACILITATOR_URL}/verify`, {
       method: 'POST',
       headers: {
@@ -58,10 +68,8 @@ async function verifyPayment(payment: any, requirements: any): Promise<boolean> 
         'Connection': 'keep-alive'
       },
       body: JSON.stringify({
-        payment: {
-          scheme: 'exact',
-          ...payment
-        },
+        x402Version: 1,
+        paymentPayload: paymentPayloadBody,
         paymentRequirements: requirements
       }),
       // Enable HTTP keep-alive for connection reuse
@@ -76,19 +84,25 @@ async function verifyPayment(payment: any, requirements: any): Promise<boolean> 
         statusText: response.statusText,
         body: responseText,
         sentPayload: JSON.stringify({
-          payment: payment,
-          requirements: requirements
+          x402Version: 1,
+          paymentPayload: paymentPayloadBody,
+          paymentRequirements: requirements
         }, null, 2)
       });
-      return false;
+      return { isValid: false, reason: `HTTP ${response.status}` };
     }
 
     const result = JSON.parse(responseText);
     console.log('📋 Verification response:', result);
-    return result.isValid || result.is_valid || false;
+    return {
+      isValid: result.isValid || result.is_valid || false,
+      payer: result.payer,
+      raw: result,
+      reason: result.invalidReason || result.invalid_reason
+    };
   } catch (error) {
     console.error('Payment verification error:', error);
-    return false;
+    return { isValid: false, reason: error instanceof Error ? error.message : 'Unknown verification error' };
   }
 }
 
@@ -96,8 +110,17 @@ async function verifyPayment(payment: any, requirements: any): Promise<boolean> 
  * Settle payment with facilitator
  * Waits for blockchain confirmation before returning
  */
-async function settlePayment(payment: any, requirements: any): Promise<{ success: boolean; status?: string; message?: string }> {
+async function settlePayment(
+  payment: any,
+  requirements: any,
+  paymentPayloadOverride?: any
+): Promise<{ success: boolean; status?: string; message?: string; transaction?: string; flashblockHash?: string; raw?: any }> {
   try {
+    const paymentPayloadBody = paymentPayloadOverride || {
+      x402Version: 1,
+      payload: payment
+    };
+
     const response = await fetch(`${FACILITATOR_URL}/settle`, {
       method: 'POST',
       headers: {
@@ -108,17 +131,16 @@ async function settlePayment(payment: any, requirements: any): Promise<{ success
       // Enable HTTP keep-alive for connection reuse
       keepalive: true,
       body: JSON.stringify({
-        payment: {
-          scheme: 'exact',
-          ...payment
-        },
+        x402Version: 1,
+        paymentPayload: paymentPayloadBody,
         paymentRequirements: requirements
       })
     });
 
     if (!response.ok) {
-      console.error('Settlement failed:', response.status, await response.text());
-      return { success: false };
+      const errorText = await response.text();
+      console.error('Settlement failed:', response.status, errorText);
+      return { success: false, message: `HTTP ${response.status}: ${errorText}` };
     }
 
     const result = await response.json();
@@ -130,12 +152,15 @@ async function settlePayment(payment: any, requirements: any): Promise<{ success
     
     return {
       success: result.success || false,
-      status: result.status,
-      message: result.message || result.errorReason
+      status: result.status || result.state,
+      message: result.message || result.errorReason || result.error_reason,
+      transaction: result.transaction || result.transactionHash || result.txHash,
+      flashblockHash: result.flashblockHash || result.flashblock_id || result.flashblockId,
+      raw: result
     };
   } catch (error) {
     console.error('Payment settlement error:', error);
-    return { success: false };
+    return { success: false, message: error instanceof Error ? error.message : 'Unknown settlement error' };
   }
 }
 
@@ -194,7 +219,7 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  const { payload: payment, requirements: paymentRequirements } = paymentData;
+  const { payload: payment, requirements: paymentRequirements, raw } = paymentData;
 
   // Use requirements from payment header if provided, otherwise build from config
   let requirements;
@@ -221,24 +246,32 @@ export async function middleware(request: NextRequest) {
     console.log('⚠️  Using requirements from config (fallback)');
   }
 
-  // SETTLE - Submit payment to facilitator for blockchain execution
-  // The /settle endpoint performs ALL verification internally:
-  // ✅ Signature validation (cryptographic check)
-  // ✅ Nonce check (prevents double-spending via Redis + on-chain)
-  // ✅ Balance verification (ensures payer has funds)
-  // ✅ Amount validation (matches requirement)
-  // ✅ Time window validation (validAfter/validBefore)
-  // ✅ Recipient validation (payTo matches)
-  // Then executes the blockchain transaction and waits for confirmation
+  // Verify payment before settling to provide immediate feedback
+  console.log('🔍 Verifying payment with facilitator...');
+  const verificationResult = await verifyPayment(payment, requirements, raw?.paymentPayload);
+
+  if (!verificationResult.isValid) {
+    console.log('❌ Payment verification failed');
+    console.log('   Reason:', verificationResult.reason || 'Unknown verification failure');
+    return new NextResponse(
+      JSON.stringify({
+        error: 'Payment Verification Failed',
+        message: verificationResult.reason || 'Verification rejected by facilitator'
+      }),
+      { status: 402, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
+  console.log('✅ Verification succeeded. Proceeding to settlement.');
   console.log('💰 Settling payment on blockchain (includes verification + execution)...');
   console.log('   Network:', requirements.network);
   console.log('   Amount:', requirements.maxAmountRequired);
   console.log('   PayTo:', requirements.payTo);
-  
-  const settlementResult = await settlePayment(payment, requirements);
-  
+
+  const settlementResult = await settlePayment(payment, requirements, raw?.paymentPayload);
+
   if (!settlementResult.success) {
-    console.log('❌ Payment rejected by facilitator');
+    console.log('❌ Payment rejected by facilitator during settlement');
     console.log('   Reason:', settlementResult.message || 'Unknown error');
     return new NextResponse(
       JSON.stringify({ 
@@ -249,23 +282,27 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // Settlement successful - funds transferred on blockchain
-  if (settlementResult.status === 'completed') {
+  const settlementStatus = (settlementResult.status || '').toLowerCase();
+  if (settlementStatus === 'completed' || settlementStatus === 'settled' || settlementStatus === 'confirmed') {
     console.log('✅ Payment confirmed on blockchain');
-  } else if (settlementResult.status === 'pending') {
-    console.log('⏳ Transaction submitted to blockchain, awaiting confirmation');
+  } else if (settlementStatus === 'preconfirmed') {
+    console.log('⚡ Flashblock preconfirmation received. Await final confirmation for irreversible settlement.');
+  } else {
+    console.log('⏳ Settlement in progress. Status:', settlementResult.status);
   }
 
-  console.log('🎉 Payment successful - serving protected content');
+  console.log('🎉 Payment accepted - serving protected content');
 
-  // Payment successful - allow access to the resource
-  // Add X-PAYMENT-RESPONSE header to indicate successful payment
-  const response = NextResponse.next();
-  response.headers.set('X-PAYMENT-RESPONSE', JSON.stringify({
-    status: 'completed',
+  const paymentResponsePayload = {
+    status: settlementResult.status || (settlementResult.success ? 'completed' : 'pending'),
     resource: path,
-    payer: payment.authorization?.from
-  }));
+    payer: payment.authorization?.from || verificationResult.payer,
+    transactionHash: settlementResult.transaction,
+    flashblockHash: settlementResult.flashblockHash
+  };
+
+  const response = NextResponse.next();
+  response.headers.set('X-PAYMENT-RESPONSE', Buffer.from(JSON.stringify(paymentResponsePayload)).toString('base64'));
 
   return response;
 }
