@@ -128,6 +128,22 @@ const config: Config = {
         },
       ],
     },
+    'HyperEVM': {
+      chainId: 999,
+      rpcUrl: process.env.HYPEREVM_RPC || 'wss://hyperliquid-mainnet.g.alchemy.com/v2/demo',
+      tokens: [
+        {
+          symbol: 'USDC',
+          name: 'USDC',
+          address: '0xb88339CB7199b77E23DB6E890353E22632Ba630f',
+          decimals: 6,
+          eip712: {
+            name: 'USDC',
+            version: '2',
+          },
+        },
+      ],
+    },
     'Base Sepolia': {
       chainId: 84532,
       rpcUrl: process.env.BASE_SEPOLIA_RPC || 'https://base-sepolia.g.alchemy.com/v2/demo',
@@ -152,6 +168,22 @@ const config: Config = {
           symbol: 'USDC',
           name: 'USD Coin',
           address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+          decimals: 6,
+          eip712: {
+            name: 'USDC',
+            version: '2',
+          },
+        },
+      ],
+    },
+    'HyperEVM Testnet': {
+      chainId: 998,
+      rpcUrl: process.env.HYPEREVM_TESTNET_RPC || 'wss://hyperliquid-testnet.g.alchemy.com/v2/demo',
+      tokens: [
+        {
+          symbol: 'USDC',
+          name: 'USDC',
+          address: '0x2B3370eE501B4a559b57D449569354196457D8Ab',
           decimals: 6,
           eip712: {
             name: 'USDC',

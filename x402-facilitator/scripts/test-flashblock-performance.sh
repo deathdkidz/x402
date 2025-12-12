@@ -1,7 +1,47 @@
 #!/bin/bash
 
-# Test Flashblock Performance Improvement
-# Measures settlement latency with new flashblock-optimized polling
+# ╔═══════════════════════════════════════════════════════════════════╗
+# ║         FLASHBLOCK OPTIMIZATION PERFORMANCE TEST                  ║
+# ╚═══════════════════════════════════════════════════════════════════╝
+#
+# Analyzes settlement performance with flashblock-optimized polling.
+# Shows improvement from standard ethers.js polling to rapid preconfirmations.
+#
+# USAGE:
+#   ./test-flashblock-performance.sh
+#
+# ENVIRONMENT VARIABLES:
+#   FACILITATOR_URL    - Facilitator to test (default: https://localhost:3402)
+#
+# WHAT IT TESTS:
+#   - Flashblock preconfirmation latency (100ms polling for 1.5s)
+#   - Settlement completion time
+#   - Improvement over standard polling
+#
+# EXPECTED RESULTS:
+#   Before:  ~1.6s settlement (standard ethers.js polling)
+#   After:   ~400-600ms settlement (flashblock-aware)
+#   Improvement: 60-70% faster
+#
+# HOW TO USE:
+#   1. Run script to check recent settlements
+#   2. Make test payment through merchant demo
+#   3. Watch logs: pm2 logs x402-facilitator --lines 50
+#   4. Look for: "⚡ Flashblock preconfirmation received in XXXms"
+#
+# EXAMPLES:
+#   ./test-flashblock-performance.sh
+#   pm2 logs x402-facilitator | grep "Flashblock"
+#
+# REQUIREMENTS:
+#   - PM2 with x402-facilitator running
+#   - Recent settlement activity in logs
+#   - Base Sepolia flashblock support
+#
+# NOTES:
+#   - Flashblock only available on Base Sepolia (testnet)
+#   - Production networks use standard polling
+#   - Analyze PM2 logs for detailed timing data
 
 echo "🧪 Testing Flashblock Performance Optimization"
 echo "=============================================="

@@ -1,8 +1,47 @@
 #!/bin/bash
 
-# Alert Script for x402 Facilitator
-# Sends notifications when critical thresholds are exceeded
-# Supports: Slack, Discord, Email, Webhook
+# ╔═══════════════════════════════════════════════════════════════════╗
+# ║              FACILITATOR ALERTING SYSTEM                          ║
+# ╚═══════════════════════════════════════════════════════════════════╝
+#
+# Monitors critical metrics and sends alerts when thresholds are exceeded.
+# Integrates with Slack, Discord, Email, and custom webhooks.
+#
+# USAGE:
+#   ./monitor-alerts.sh
+#   ./monitor-alerts.sh --once    # Run once without loop
+#
+# ENVIRONMENT VARIABLES:
+#   SLACK_WEBHOOK_URL          - Slack webhook for notifications
+#   DISCORD_WEBHOOK_URL        - Discord webhook for notifications
+#   ALERT_EMAIL                - Email address for alerts
+#   CUSTOM_WEBHOOK_URL         - Custom webhook endpoint
+#   ALERT_MEMORY_THRESHOLD     - Memory % (default: 80)
+#   ALERT_CPU_THRESHOLD        - CPU % (default: 90)
+#   ALERT_MYSQL_THRESHOLD      - MySQL connections (default: 180)
+#   ALERT_DISK_THRESHOLD       - Disk % (default: 85)
+#   ALERT_PENDING_TX           - Pending transactions (default: 100)
+#   SERVER_NAME                - Server identifier (default: x402-facilitator)
+#
+# EXAMPLES:
+#   ./monitor-alerts.sh
+#   SLACK_WEBHOOK_URL=https://hooks.slack.com/... ./monitor-alerts.sh
+#
+# SETUP AS CRON:
+#   */2 * * * * /srv/x402/x402-facilitator/scripts/monitor-alerts.sh
+#
+# MONITORED METRICS:
+#   - System memory usage
+#   - CPU usage
+#   - MySQL connection count
+#   - Disk space
+#   - Pending transactions
+#   - Process health (PM2)
+#
+# REQUIREMENTS:
+#   - curl for webhook notifications
+#   - mail command for email alerts
+#   - MySQL credentials in environment
 
 set -e
 

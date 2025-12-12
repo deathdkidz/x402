@@ -1,7 +1,43 @@
+#!/usr/bin/env node
+
+/**
+ * ╔═══════════════════════════════════════════════════════════════════╗
+ * ║             MERCHANT TIER UPDATE SCRIPT                           ║
+ * ╚═══════════════════════════════════════════════════════════════════╝
+ * 
+ * Update rate limiting tiers for merchants in the database.
+ * 
+ * USAGE:
+ *   node update-merchant-tier.mjs <auth_address> <tier> [custom limits]
+ * 
+ * AVAILABLE TIERS:
+ *   free       - 60 verify/min, 20 settle/min
+ *   basic      - 120 verify/min, 40 settle/min
+ *   pro        - 300 verify/min, 100 settle/min
+ *   enterprise - 1000 verify/min, 500 settle/min
+ *   custom     - Specify your own limits
+ * 
+ * EXAMPLES:
+ *   # Upgrade merchant to pro tier
+ *   node update-merchant-tier.mjs 0x1234...abcd pro
+ * 
+ *   # Set custom limits (500 verify/min, 200 settle/min, 60s window)
+ *   node update-merchant-tier.mjs 0x1234...abcd custom 500 200 60
+ * 
+ * REQUIREMENTS:
+ *   - Database credentials in .env file
+ *   - Valid merchant auth_address
+ */
+
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+dotenv.config({ path: join(__dirname, '..', '.env') });
 
 const TIER_PRESETS = {
   free: {

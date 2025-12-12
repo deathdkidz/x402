@@ -1,7 +1,40 @@
 #!/bin/bash
 
-# Facilitator Performance Benchmark
-# Measures latency and throughput of payment settlement
+# ╔═══════════════════════════════════════════════════════════════════╗
+# ║        COMPREHENSIVE FACILITATOR PERFORMANCE BENCHMARK            ║
+# ╚═══════════════════════════════════════════════════════════════════╝
+#
+# Measures latency and throughput across all facilitator endpoints.
+# Tests health checks, verify, and settlement under various loads.
+#
+# USAGE:
+#   ./benchmark-performance.sh
+#
+# ENVIRONMENT VARIABLES:
+#   FACILITATOR_URL    - Facilitator to test (default: https://api.netpay.id)
+#   TEST_API_KEY       - API key for authenticated tests
+#
+# EXAMPLES:
+#   ./benchmark-performance.sh
+#   FACILITATOR_URL=http://localhost:3402 ./benchmark-performance.sh
+#   TEST_API_KEY=your_key ./benchmark-performance.sh
+#
+# TESTS PERFORMED:
+#   1. Health endpoint latency (10 requests)
+#   2. Verify endpoint latency (requires API key)
+#   3. Settlement latency (requires API key)
+#   4. Concurrent request handling
+#   5. Error rate under load
+#
+# REQUIREMENTS:
+#   - curl, bc, date commands
+#   - API key for authenticated tests
+#   - Network access to facilitator
+#
+# OUTPUT:
+#   - Average latencies for each endpoint
+#   - Success/failure rates
+#   - Performance summary and recommendations
 
 # Don't use set -e as it conflicts with (( arithmetic )) operations
 set -u  # Exit on undefined variables

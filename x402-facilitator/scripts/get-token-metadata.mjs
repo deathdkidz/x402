@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { ethers } from 'ethers';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+dotenv.config({ path: join(__dirname, '..', '.env') });
 
 dotenv.config();
 
@@ -24,8 +31,8 @@ const RPC_URLS = {
   'Base Sepolia': process.env.BASE_SEPOLIA_RPC,
   'Ethereum': process.env.ETHEREUM_RPC,
   'Ethereum Sepolia': process.env.ETHEREUM_SEPOLIA_RPC,
-  'BSC': process.env.BSC_RPC,
-  'BSC Testnet': process.env.BSC_TESTNET_RPC,
+  'HyperEVM': process.env.HYPEREVM_RPC,
+  'HyperEVM Testnet': process.env.HYPEREVM_TESTNET_RPC
 };
 
 // Chain IDs
@@ -34,8 +41,8 @@ const CHAIN_IDS = {
   'Base Sepolia': 84532,
   'Ethereum': 1,
   'Ethereum Sepolia': 11155111,
-  'BSC': 56,
-  'BSC Testnet': 97,
+  'HyperEVM': 999,
+  'HyperEVM Testnet': 998,
 };
 
 async function getTokenMetadata(tokenAddress, network) {
@@ -159,8 +166,8 @@ function parseArgs() {
     console.log('  - Base Sepolia');
     console.log('  - Ethereum');
     console.log('  - Ethereum Sepolia');
-    console.log('  - BSC');
-    console.log('  - BSC Testnet');
+    console.log('  - HyperEVM');
+    console.log('  - HyperEVM Testnet');
     console.log('');
     console.log('Example:');
     console.log('  node get-token-metadata.mjs 0x036CbD53842c5426634e7929541eC2318f3dCF7e "Base Sepolia"');

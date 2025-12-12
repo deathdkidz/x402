@@ -1,0 +1,44 @@
+{
+  "Base Sepolia": {
+    "rpcUrl": "BASE_SEPOLIA_RPC",
+    "chainId": 84532,
+    "explorer": "https://sepolia.basescan.org",
+    "gasToken": "ETH",
+    "type": "testnet"
+  },
+  "Ethereum Sepolia": {
+    "rpcUrl": "ETHEREUM_SEPOLIA_RPC",
+    "chainId": 11155111,
+    "explorer": "https://sepolia.etherscan.io",
+    "gasToken": "ETH",
+    "type": "testnet"
+  },
+  "HyperEVM Testnet": {
+    "rpcUrl": "HYPEREVM_TESTNET_RPC",
+    "chainId": 998,
+    "explorer": "https://testnet.purrsec.com",
+    "gasToken": "HYPE",
+    "type": "testnet"
+  },
+  "Base": {
+    "rpcUrl": "BASE_RPC",
+    "chainId": 8453,
+    "explorer": "https://basescan.org",
+    "gasToken": "ETH",
+    "type": "mainnet"
+  },
+  "Ethereum": {
+    "rpcUrl": "ETHEREUM_RPC",
+    "chainId": 1,
+    "explorer": "https://etherscan.io",
+    "gasToken": "ETH",
+    "type": "mainnet"
+  },
+  "HyperEVM": {
+    "rpcUrl": "HYPEREVM_RPC",
+    "chainId": 999,
+    "explorer": "https://explorer.hyperliquid.xyz",
+    "gasToken": "HYPE",
+    "type": "mainnet"
+  }
+}

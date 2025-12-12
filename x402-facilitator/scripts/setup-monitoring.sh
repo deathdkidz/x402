@@ -1,6 +1,47 @@
 #!/bin/bash
 
-# Setup monitoring cronjobs for x402 Facilitator
+# ╔═══════════════════════════════════════════════════════════════════╗
+# ║         MONITORING SETUP & CRON CONFIGURATION                     ║
+# ╚═══════════════════════════════════════════════════════════════════╝
+#
+# One-time setup script to configure automated monitoring cronjobs.
+# Sets up system monitoring and alerting to run automatically.
+#
+# USAGE:
+#   ./setup-monitoring.sh
+#
+# WHAT IT DOES:
+#   1. Makes monitoring scripts executable
+#   2. Creates log files in /var/log
+#   3. Configures cronjobs for:
+#      - System monitoring (every 5 minutes)
+#      - Alert checks (every 2 minutes)
+#      - Log rotation (daily at midnight)
+#   4. Prompts before overwriting existing cronjobs
+#
+# CRONJOBS INSTALLED:
+#   */5 * * * *  - monitor-system.sh
+#   */2 * * * *  - monitor-alerts.sh
+#   0 0 * * *    - Log cleanup (7 day retention)
+#
+# EXAMPLES:
+#   ./setup-monitoring.sh
+#
+# REQUIREMENTS:
+#   - crontab access
+#   - Write access to /var/log
+#   - Monitoring scripts in same directory
+#
+# POST-SETUP:
+#   - Check crontab: crontab -l
+#   - View logs: tail -f /var/log/x402-monitor.log
+#   - View alerts: tail -f /var/log/x402-alerts.log
+#   - Remove: crontab -e (manually delete entries)
+#
+# NOTES:
+#   - Safe to run multiple times (prompts before overwrite)
+#   - Logs are auto-rotated after 7 days
+#   - Configure alert webhooks in .env before first run
 
 set -e
 

@@ -1,7 +1,50 @@
 #!/bin/bash
 
-# System Monitoring Script for x402 Facilitator
-# Tracks memory, CPU, MySQL connections, Redis, and Node.js health
+# ╔═══════════════════════════════════════════════════════════════════╗
+# ║           SYSTEM HEALTH MONITORING DASHBOARD                      ║
+# ╚═══════════════════════════════════════════════════════════════════╝
+#
+# Comprehensive system health check for the x402 facilitator.
+# Displays real-time metrics for all critical components.
+#
+# USAGE:
+#   ./monitor-system.sh
+#
+# ENVIRONMENT VARIABLES:
+#   MYSQL_USER                 - MySQL username (default: root)
+#   MYSQL_PASSWORD             - MySQL password
+#   MYSQL_HOST                 - MySQL host (default: localhost)
+#   MYSQL_PORT                 - MySQL port (default: 3306)
+#   MYSQL_DB                   - Database name (default: x402_facilitator)
+#   REDIS_HOST                 - Redis host (default: localhost)
+#   REDIS_PORT                 - Redis port (default: 6379)
+#   LOG_FILE                   - Log file path
+#   ALERT_MEMORY_THRESHOLD     - Alert if memory > % (default: 80)
+#   ALERT_MYSQL_THRESHOLD      - Alert if connections > N (default: 180)
+#
+# EXAMPLES:
+#   ./monitor-system.sh
+#   watch -n 30 ./monitor-system.sh    # Auto-refresh every 30s
+#
+# MONITORED COMPONENTS:
+#   1. System Resources (CPU, Memory, Disk)
+#   2. MySQL Database (connections, queries, slow queries)
+#   3. Redis Cache (memory, hit rate, operations)
+#   4. PM2 Processes (status, memory, restarts)
+#   5. Network Connections
+#   6. Transaction Queue Status
+#
+# OUTPUT:
+#   - Colored status indicators (Green=OK, Yellow=Warning, Red=Critical)
+#   - Real-time metrics dashboard
+#   - Alert messages for threshold violations
+#   - Logged to file for historical analysis
+#
+# REQUIREMENTS:
+#   - mysql client installed
+#   - redis-cli installed
+#   - pm2 for process management
+#   - jq for JSON parsing
 
 set -e
 

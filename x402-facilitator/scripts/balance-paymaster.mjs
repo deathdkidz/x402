@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 import { ethers } from 'ethers';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import fs from 'fs';
+import readline from 'readline';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+dotenv.config({ path: join(__dirname, '..', '.env') });
 
 // Help text
 const HELP_TEXT = `
@@ -23,6 +30,11 @@ MODES:
   2. Fund Consolidation
      - Consolidates all funds to a single wallet
      - Use: --consolidate=<ADDRESS>
+     
+  3. Add External Funds (Interactive)
+     - Add funds from external wallet
+     - Distribute across paymaster wallets
+     - Run without arguments for interactive mode
 
 OPTIONS:
   --execute                    Execute transactions (default is dry-run)
@@ -31,57 +43,61 @@ OPTIONS:
 
 NETWORK:
   - Specify network name (e.g., "Base Sepolia", "Ethereum", "BSC")
-  - If omitted, checks all configured networks
+  - If omitted, checks all configured networks or shows interactive menu
 
 EXAMPLES:
-  # Check balances (all networks, dry-run)
+  # Interactive mode (recommended)
   node balance-paymaster.mjs
 
-  # Rebalance specific network (dry-run)
+  # Check balances (all networks, dry-run)
   node balance-paymaster.mjs "Ethereum Sepolia"
 
   # Rebalance specific network (execute)
   node balance-paymaster.mjs --execute "Base Sepolia"
 
-  # Consolidate funds (dry-run)
-  node balance-paymaster.mjs --consolidate=0x1234... "Base Sepolia"
-
   # Consolidate funds (execute)
   node balance-paymaster.mjs --consolidate=0x1234... --execute "Ethereum Sepolia"
-
-  # Consolidate all networks to one wallet
-  node balance-paymaster.mjs --consolidate=0x1234... --execute
 
 `;
 
 // Configuration
-const TESTNET_NETWORKS = (process.env.TESTNET_NETWORKS || '').split(',').map(n => n.trim()).filter(n => n.length > 0);
-const MAINNET_NETWORKS = (process.env.MAINNET_NETWORKS || '').split(',').map(n => n.trim()).filter(n => n.length > 0);
-const ALL_NETWORKS = [...TESTNET_NETWORKS, ...MAINNET_NETWORKS];
+// ============================================================================
+// CONFIGURATION - Networks
+// ============================================================================
+// Networks are now managed via networks.json
+// To add/edit/remove networks, use: node manage-networks.mjs
+// ============================================================================
+
+// Load network configurations from JSON
+let NETWORKS_CONFIG = {};
+let RPC_URLS = {};
+let GAS_TOKENS = {};
+let ALL_NETWORKS = [];
+
+try {
+  const networksPath = join(__dirname, 'config', 'networks.json');
+  const networksData = fs.readFileSync(networksPath, 'utf8');
+  NETWORKS_CONFIG = JSON.parse(networksData);
+  
+  // Build RPC_URLS and GAS_TOKENS from networks.json
+  Object.entries(NETWORKS_CONFIG).forEach(([name, config]) => {
+    RPC_URLS[name] = process.env[config.rpcUrl]; // Get RPC from env variable
+    GAS_TOKENS[name] = config.gasToken;
+    ALL_NETWORKS.push(name);
+  });
+  
+  console.log(`📡 Loaded ${ALL_NETWORKS.length} network(s) from networks.json`);
+} catch (error) {
+  console.error('❌ Error loading networks.json:', error.message);
+  console.log('   Run: node manage-networks.mjs to configure networks');
+  process.exit(1);
+}
+
 const PAYMASTER_PRIVATE_KEYS = process.env.PAYMASTER_PRIVATE_KEYS.split(',').map(k => k.trim());
 
-// RPC URLs
-const RPC_URLS = {
-  'Base Sepolia': process.env.BASE_SEPOLIA_RPC,
-
-  'Ethereum Sepolia': process.env.ETHEREUM_SEPOLIA_RPC,
-  'BSC Testnet': process.env.BSC_TESTNET_RPC,
-  'Base': process.env.BASE_RPC,
-  'Ethereum': process.env.ETHEREUM_RPC,
-  'BSC': process.env.BSC_RPC,
-};
-
-// Gas tokens
-const GAS_TOKENS = {
-  'Base Sepolia': 'ETH',
-  'Ethereum Sepolia': 'ETH',
-  'BSC Testnet': 'BNB',
-  'Base': 'ETH',
-  'Ethereum': 'ETH',
-  'BSC': 'BNB',
-};
-
-// Threshold for rebalancing (in ETH/BNB)
+// ============================================================================
+// CONFIGURATION - Rebalancing Parameters
+// ============================================================================
 const REBALANCE_THRESHOLD = process.env.REBALANCE_THRESHOLD || '0.01'; // Default 0.01 ETH difference
 const MIN_BALANCE_TO_KEEP = process.env.MIN_BALANCE_TO_KEEP || '0.005'; // Keep at least 0.005 ETH in source wallet
 const USE_BATCHING = process.env.USE_BATCHING !== 'false'; // Enable batching by default
@@ -92,11 +108,21 @@ const BATCH_TRANSFER_ABI = [
   'function batchTransfer(address[] recipients, uint256[] amounts) payable',
 ];
 
-// Known batch transfer contracts (if available)
-const BATCH_CONTRACTS = {
-  'Base Sepolia': '0xe6158F16A2781241703cc8005229c8e1ADd866De',
-  'Ethereum Sepolia': '0x725487b8d800AA6155ed21d25470991139770616',
-};
+// ============================================================================
+// Load batch transfer contracts from batch-contracts.json
+// These contracts enable gas-efficient multi-recipient transfers
+// Deploy to new networks using: node deploy-batch-contract.mjs
+// ============================================================================
+let BATCH_CONTRACTS = {};
+try {
+  const batchContractsPath = join(__dirname, 'config', 'batch-contracts.json');
+  const batchContractsData = fs.readFileSync(batchContractsPath, 'utf8');
+  BATCH_CONTRACTS = JSON.parse(batchContractsData);
+  console.log(`📋 Loaded batch contracts for ${Object.keys(BATCH_CONTRACTS).length} network(s)`);
+} catch (error) {
+  console.log('⚠️  No batch-contracts.json found, batch transfers will not be available');
+  console.log('   Deploy batch contracts using: node deploy-batch-contract.mjs');
+}
 
 async function checkBalances(network) {
   const rpcUrl = RPC_URLS[network];
@@ -237,6 +263,348 @@ async function rebalanceIfNeeded(networkData, dryRun = true) {
   }
   
   console.log(`\n✓ Rebalancing complete!`);
+}
+
+// Prompt for input
+function question(rl, query) {
+  return new Promise((resolve) => {
+    rl.question(query, (answer) => {
+      resolve(answer.trim());
+    });
+  });
+}
+
+// Add external funds to paymaster wallets
+async function addExternalFunds(networkData, dryRun = true, rl = null) {
+  const { network, gasToken, provider, balances } = networkData;
+  
+  console.log(`\n${'═'.repeat(70)}`);
+  console.log(`💵 Add External Funds & Distribute`);
+  console.log('═'.repeat(70));
+  console.log(`Network: ${network}`);
+  
+  // Create readline interface only if not provided (for backward compatibility)
+  const needsOwnRl = !rl;
+  if (needsOwnRl) {
+    rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+  }
+  
+  try {
+    console.log(`\nCurrent Paymaster Wallets:`);
+    balances.forEach((b, i) => {
+      console.log(`  [${i + 1}] ${b.address}: ${b.balanceFormatted} ${gasToken}`);
+    });
+    
+    console.log(`\n${'─'.repeat(70)}`);
+    console.log(`Enter funding wallet details:`);
+    console.log('─'.repeat(70));
+    
+    const privateKey = await question(rl, '\nPrivate key (with or without 0x): ');
+    
+    if (!privateKey) {
+      console.log('\n❌ Private key is required');
+      if (needsOwnRl) rl.close();
+      return;
+    }
+    
+    // Format and validate private key
+    const formattedKey = privateKey.startsWith('0x') ? privateKey : '0x' + privateKey;
+    if (formattedKey.length !== 66) {
+      console.log('\n❌ Invalid private key length (should be 64 hex characters)');
+      if (needsOwnRl) rl.close();
+      return;
+    }
+    
+    // Create wallet
+    const fundingWallet = new ethers.Wallet(formattedKey, provider);
+    const fundingBalance = await provider.getBalance(fundingWallet.address);
+    const fundingBalanceFormatted = ethers.formatEther(fundingBalance);
+    
+    console.log(`\n✅ Funding Wallet Loaded:`);
+    console.log(`   Address: ${fundingWallet.address}`);
+    console.log(`   Balance: ${fundingBalanceFormatted} ${gasToken}`);
+    
+    if (fundingBalance === 0n) {
+      console.log(`\n❌ Funding wallet has zero balance`);
+      if (needsOwnRl) rl.close();
+      return;
+    }
+    
+    // Ask how much to distribute
+    console.log(`\n${'─'.repeat(70)}`);
+    const amountStr = await question(rl, `Amount to distribute (max: ${fundingBalanceFormatted} ${gasToken}): `);
+    
+    if (!amountStr) {
+      console.log('\n❌ Amount is required');
+      if (needsOwnRl) rl.close();
+      return;
+    }
+    
+    let totalToDistribute;
+    try {
+      totalToDistribute = ethers.parseEther(amountStr);
+    } catch (error) {
+      console.log('\n❌ Invalid amount format');
+      if (needsOwnRl) rl.close();
+      return;
+    }
+    
+    // Calculate distribution
+    const perWalletAmount = totalToDistribute / BigInt(balances.length);
+    const perWalletFormatted = ethers.formatEther(perWalletAmount);
+    
+    // Prepare batch transfer data for gas estimation
+    const recipients = balances.map(b => b.address);
+    const amounts = balances.map(() => perWalletAmount);
+    
+    // Estimate gas costs (check if batch contract is available first)
+    const batchContractAddress = BATCH_CONTRACTS[network];
+    let gasEstimate;
+    let totalGasCost;
+    let useBatch = false;
+    
+    const feeData = await provider.getFeeData();
+    const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || 0n;
+    
+    if (batchContractAddress && balances.length > 1) {
+      // Try to estimate using batch contract
+      try {
+        const batchContract = new ethers.Contract(
+          batchContractAddress,
+          BATCH_TRANSFER_ABI,
+          fundingWallet
+        );
+        
+        gasEstimate = await batchContract.batchTransfer.estimateGas(recipients, amounts, {
+          value: totalToDistribute,
+        });
+        
+        totalGasCost = gasEstimate * gasPrice;
+        useBatch = true;
+        console.log(`\n💡 Batch contract available - using optimized gas estimation`);
+      } catch (error) {
+        console.log(`\n⚠️  Batch contract estimation failed, using individual transfer estimate`);
+        gasEstimate = BigInt(GAS_LIMIT_SIMPLE_TRANSFER) * BigInt(balances.length);
+        totalGasCost = gasEstimate * gasPrice;
+      }
+    } else {
+      // Use individual transfer estimation
+      gasEstimate = BigInt(GAS_LIMIT_SIMPLE_TRANSFER) * BigInt(balances.length);
+      totalGasCost = gasEstimate * gasPrice;
+    }
+    
+    const buffer = totalGasCost / 5n; // 20% buffer
+    const totalNeeded = totalToDistribute + totalGasCost + buffer;
+    
+    if (fundingBalance < totalNeeded) {
+      console.log(`\n❌ Insufficient balance:`);
+      console.log(`   Requested: ${ethers.formatEther(totalToDistribute)} ${gasToken}`);
+      console.log(`   Gas costs: ~${ethers.formatEther(totalGasCost + buffer)} ${gasToken} (${useBatch ? 'batch' : 'individual'})`);
+      console.log(`   Total needed: ${ethers.formatEther(totalNeeded)} ${gasToken}`);
+      console.log(`   Available: ${fundingBalanceFormatted} ${gasToken}`);
+      if (needsOwnRl) rl.close();
+      return;
+    }
+    
+    console.log(`\n${'─'.repeat(70)}`);
+    console.log(`Distribution Plan:`);
+    console.log(`  Total to distribute: ${ethers.formatEther(totalToDistribute)} ${gasToken}`);
+    console.log(`  Number of wallets: ${balances.length}`);
+    console.log(`  Per wallet: ${perWalletFormatted} ${gasToken}`);
+    console.log(`  Method: ${useBatch ? '📦 Batch Transfer (1 tx)' : '📤 Individual Transfers (' + balances.length + ' txs)'}`)
+    console.log(`  Estimated gas: ~${ethers.formatEther(totalGasCost + buffer)} ${gasToken}`);
+    console.log(`  Remaining in funding wallet: ~${ethers.formatEther(fundingBalance - totalNeeded)} ${gasToken}`);
+    console.log('─'.repeat(70));
+    
+    balances.forEach((b, i) => {
+      const newBalance = b.balance + perWalletAmount;
+      console.log(`  [${i + 1}] ${b.address}`);
+      console.log(`      Current: ${b.balanceFormatted} ${gasToken}`);
+      console.log(`      After: ${ethers.formatEther(newBalance)} ${gasToken} (+${perWalletFormatted})`);
+    });
+    
+    console.log('─'.repeat(70));
+    
+    if (needsOwnRl) rl.close();
+    
+    if (dryRun) {
+      console.log(`\n⚠️  DRY RUN MODE - No transactions will be sent`);
+      console.log(`   Run with --execute flag to perform actual distribution`);
+      return;
+    }
+    
+    // Execute distribution
+    console.log(`\n🚀 Executing Distribution...`);
+    
+    // Reuse batchContractAddress from earlier (already declared in gas estimation section)
+    if (batchContractAddress && balances.length > 1) {
+      console.log(`\n📦 Using Batch Transfer (${balances.length} recipients in 1 transaction)`);
+      console.log(`   Batch Contract: ${batchContractAddress}`);
+      
+      try {
+        // Reuse recipients and amounts arrays from earlier (already declared in gas estimation section)
+        
+        // Create contract instance
+        const batchContract = new ethers.Contract(
+          batchContractAddress,
+          BATCH_TRANSFER_ABI,
+          fundingWallet
+        );
+        
+        // Estimate gas
+        const gasEstimate = await batchContract.batchTransfer.estimateGas(recipients, amounts, {
+          value: totalToDistribute,
+        });
+        
+        const feeData = await provider.getFeeData();
+        const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || 0n;
+        const gasCost = gasEstimate * gasPrice;
+        
+        const individualGasEstimate = BigInt(GAS_LIMIT_SIMPLE_TRANSFER) * BigInt(balances.length);
+        const savings = Number(individualGasEstimate - gasEstimate);
+        
+        console.log(`\n   Gas estimate: ${gasEstimate.toString()} units`);
+        console.log(`   Gas cost: ${ethers.formatEther(gasCost)} ${gasToken}`);
+        console.log(`   Individual transfers would use: ${individualGasEstimate.toString()} units`);
+        console.log(`   Gas savings: ${savings} units (${((savings / Number(individualGasEstimate)) * 100).toFixed(1)}%)`);
+        
+        // Execute batch transfer
+        console.log(`\n   Sending batch transaction...`);
+        const tx = await batchContract.batchTransfer(recipients, amounts, {
+          value: totalToDistribute,
+          gasLimit: gasEstimate + (gasEstimate / 10n), // Add 10% buffer
+        });
+        
+        console.log(`   📤 TX sent: ${tx.hash}`);
+        console.log(`   ⏳ Waiting for confirmation...`);
+        
+        const receipt = await tx.wait();
+        
+        if (receipt.status === 1) {
+          console.log(`\n${'═'.repeat(70)}`);
+          console.log(`✅ Batch Distribution Complete!`);
+          console.log(`   Block: ${receipt.blockNumber}`);
+          console.log(`   Gas used: ${receipt.gasUsed.toString()} units`);
+          console.log(`   Recipients: ${balances.length}`);
+          console.log(`   Amount per wallet: ${perWalletFormatted} ${gasToken}`);
+          console.log('═'.repeat(70));
+          return;
+        } else {
+          console.log(`\n   ❌ Batch transfer failed, falling back to individual transfers...`);
+        }
+        
+      } catch (error) {
+        console.error(`\n   ❌ Batch transfer error: ${error.message}`);
+        console.log(`   Falling back to individual transfers...`);
+      }
+    } else if (!batchContractAddress) {
+      console.log(`\n⚠️  No batch contract deployed on ${network}`);
+      console.log(`   Deploy one using: node deploy-batch-contract.mjs`);
+      console.log(`   Using individual transfers...`);
+    }
+    
+    // Fallback: Individual transfers
+    console.log(`\n📤 Using Individual Transfers (${balances.length} transactions)`);
+    
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (let i = 0; i < balances.length; i++) {
+      const recipient = balances[i];
+      
+      console.log(`\n[${i + 1}/${balances.length}] Sending to wallet [${recipient.index}]`);
+      console.log(`  From: ${fundingWallet.address}`);
+      console.log(`  To: ${recipient.address}`);
+      console.log(`  Amount: ${perWalletFormatted} ${gasToken}`);
+      
+      try {
+        const tx = await fundingWallet.sendTransaction({
+          to: recipient.address,
+          value: perWalletAmount,
+          gasLimit: GAS_LIMIT_SIMPLE_TRANSFER,
+        });
+        
+        console.log(`  📤 TX sent: ${tx.hash}`);
+        console.log(`  ⏳ Waiting for confirmation...`);
+        
+        const receipt = await tx.wait();
+        
+        if (receipt.status === 1) {
+          console.log(`  ✅ Confirmed in block ${receipt.blockNumber}`);
+          console.log(`  ⛽ Gas used: ${receipt.gasUsed.toString()} units`);
+          successCount++;
+        } else {
+          console.log(`  ❌ Transaction failed`);
+          failCount++;
+        }
+        
+      } catch (error) {
+        console.log(`  ❌ Error: ${error.message}`);
+        failCount++;
+      }
+    }
+    
+    console.log(`\n${'═'.repeat(70)}`);
+    console.log(`Distribution Complete!`);
+    console.log(`  ✅ Success: ${successCount}`);
+    console.log(`  ❌ Failed: ${failCount}`);
+    console.log('═'.repeat(70));
+    
+  } catch (error) {
+    console.error(`\n❌ Error: ${error.message}`);
+    if (needsOwnRl) rl.close();
+  }
+}
+
+// Interactive main menu
+async function showMainMenu(rl) {
+  console.clear();
+  console.log('╔' + '═'.repeat(68) + '╗');
+  console.log('║' + ' '.repeat(15) + 'PAYMASTER BALANCE MANAGER' + ' '.repeat(28) + '║');
+  console.log('╚' + '═'.repeat(68) + '╝\n');
+  
+  console.log(`Loaded ${PAYMASTER_PRIVATE_KEYS.length} paymaster wallet(s)\n`);
+  console.log(`Networks available: ${ALL_NETWORKS.length}\n`);
+  
+  console.log('Select Mode:\n');
+  console.log('1. Check Balances (View only)');
+  console.log('2. Rebalance Paymaster Wallets');
+  console.log('3. Add External Funds & Distribute');
+  console.log('4. Consolidate to Single Wallet');
+  console.log('0. Exit\n');
+  
+  const choice = await question(rl, 'Select option: ');
+  
+  return choice;
+}
+
+// Select network interactively
+async function selectNetworkInteractive(rl) {
+  console.log('\n📡 Available Networks:\n');
+  
+  ALL_NETWORKS.forEach((name, index) => {
+    console.log(`  ${index + 1}. ${name}`);
+  });
+  console.log(`  ${ALL_NETWORKS.length + 1}. All networks`);
+  console.log(`  0. Cancel\n`);
+  
+  const choice = await question(rl, 'Select network: ');
+  
+  const idx = parseInt(choice);
+  
+  if (idx === 0) {
+    return null;
+  } else if (idx > 0 && idx <= ALL_NETWORKS.length) {
+    return [ALL_NETWORKS[idx - 1]];
+  } else if (idx === ALL_NETWORKS.length + 1) {
+    return ALL_NETWORKS;
+  } else {
+    console.log('\n❌ Invalid selection');
+    return null;
+  }
 }
 
 async function consolidateToWallet(networkData, targetAddress, dryRun = true) {
@@ -513,6 +881,89 @@ async function main() {
     process.exit(0);
   }
   
+  // Check if running in interactive mode (no arguments)
+  if (args.length === 0) {
+    // Interactive mode - create ONE readline interface for the entire session
+    const mainRl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+    
+    try {
+      while (true) {
+        const mode = await showMainMenu(mainRl);
+        
+        if (mode === '0') {
+          console.log('\n👋 Goodbye!\n');
+          mainRl.close();
+          process.exit(0);
+        }
+        
+        const networks = await selectNetworkInteractive(mainRl);
+        
+        if (!networks) {
+          continue;
+        }
+        
+        let execute = false;
+        if (mode !== '1') {
+          const confirmExecute = await question(mainRl, '\nExecute transactions? (yes/no) [no]: ');
+          execute = confirmExecute.toLowerCase() === 'yes' || confirmExecute.toLowerCase() === 'y';
+        }
+        
+        const providers = [];
+        
+        for (const network of networks) {
+          try {
+            const networkData = await checkBalances(network);
+            
+            if (networkData) {
+              providers.push(networkData.provider);
+              
+              if (mode === '1') {
+                // Just view balances
+                await question(mainRl, '\nPress Enter to continue...');
+              } else if (mode === '2') {
+                // Rebalance
+                await rebalanceIfNeeded(networkData, !execute);
+                await question(mainRl, '\nPress Enter to continue...');
+              } else if (mode === '3') {
+                // Add external funds
+                await addExternalFunds(networkData, !execute, mainRl);
+                await question(mainRl, '\nPress Enter to continue...');
+              } else if (mode === '4') {
+                // Consolidate
+                const targetAddr = await question(mainRl, '\nTarget address for consolidation: ');
+                
+                if (ethers.isAddress(targetAddr)) {
+                  await consolidateToWallet(networkData, targetAddr, !execute);
+                } else {
+                  console.log('\n❌ Invalid address');
+                }
+                
+                await question(mainRl, '\nPress Enter to continue...');
+              }
+            }
+          } catch (error) {
+            console.error(`\n✗ Error checking ${network}:`, error.message);
+          }
+        }
+        
+        // Cleanup
+        for (const provider of providers) {
+          if (provider instanceof ethers.WebSocketProvider) {
+            try {
+              await provider.destroy();
+            } catch (e) { /* ignore */ }
+          }
+        }
+      }
+    } finally {
+      mainRl.close();
+    }
+  }
+  
+  // Command-line mode (original behavior)
   const execute = args.includes('--execute');
   const consolidateArg = args.find(arg => arg.startsWith('--consolidate='));
   const networkFilter = args.find(arg => !arg.startsWith('--'));
@@ -525,7 +976,7 @@ async function main() {
   console.log('║' + ' '.repeat(15) + 'PAYMASTER BALANCE MANAGER' + ' '.repeat(28) + '║');
   console.log('╚' + '═'.repeat(68) + '╝');
   
-  console.log(`\nLoaded ${PAYMASTER_PRIVATE_KEYS.length} paymaster wallets`);
+  console.log(`\nLoaded ${PAYMASTER_PRIVATE_KEYS.length} paymaster wallet(s)`);
   
   if (consolidateMode) {
     console.log(`\n💰 MODE: Fund Consolidation`);

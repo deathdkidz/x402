@@ -1,6 +1,37 @@
 #!/bin/bash
 
-# Quick Performance Summary
+# ╔═══════════════════════════════════════════════════════════════════╗
+# ║            QUICK PERFORMANCE SUMMARY                              ║
+# ╚═══════════════════════════════════════════════════════════════════╝
+#
+# Fast performance overview with minimal dependencies.
+# Provides quick snapshot of system health and performance metrics.
+#
+# USAGE:
+#   ./quick-performance.sh
+#
+# WHAT IT SHOWS:
+#   1. API latency (external HTTPS)
+#   2. Actual performance from PM2 logs
+#   3. Database statistics (total, 24h, pending transactions)
+#   4. Redis cache statistics
+#   5. PM2 process status
+#
+# EXAMPLES:
+#   ./quick-performance.sh
+#   watch -n 10 ./quick-performance.sh    # Auto-refresh
+#
+# REQUIREMENTS:
+#   - curl, bc for API testing
+#   - mysql client for database stats
+#   - redis-cli for cache stats
+#   - pm2 and jq for process info
+#   - Network access to api.netpay.id
+#
+# NOTES:
+#   - Hardcoded for Base Sepolia performance
+#   - Shows 5 sample requests for latency average
+#   - Uses production API endpoint by default
 
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║  x402 Facilitator - Performance Summary                 ║"

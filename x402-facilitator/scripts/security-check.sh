@@ -1,7 +1,52 @@
 #!/bin/bash
 
-# Fast Security Check for x402 Facilitator
-# Detects common malware, suspicious processes, unauthorized access, and security issues
+# ╔═══════════════════════════════════════════════════════════════════╗
+# ║            SECURITY AUDIT & MALWARE DETECTION                     ║
+# ╚═══════════════════════════════════════════════════════════════════╝
+#
+# Comprehensive security scan for the x402 facilitator server.
+# Detects malware, suspicious processes, unauthorized access, and misconfigurations.
+#
+# USAGE:
+#   ./security-check.sh
+#   ./security-check.sh --verbose    # Show detailed output
+#
+# CHECKS PERFORMED:
+#   1. Suspicious processes (cryptominers, backdoors, scanners)
+#   2. Unauthorized SSH access attempts
+#   3. File integrity (critical files, ownership)
+#   4. Network connections (suspicious ports, foreign IPs)
+#   5. Environment security (.env permissions, exposed keys)
+#   6. Database security (MySQL root access, weak passwords)
+#   7. System security (open ports, firewall status)
+#   8. Log file analysis (error patterns, attack signatures)
+#
+# EXAMPLES:
+#   ./security-check.sh
+#   ./security-check.sh > security-report.txt    # Save report
+#   watch -n 300 ./security-check.sh             # Run every 5 minutes
+#
+# KNOWN MALWARE DETECTED:
+#   - Cryptominers (xmrig, minerd, kinsing)
+#   - Backdoors (wget to suspicious IPs)
+#   - Port scanners (masscan, nmap abuse)
+#   - Web shells, rootkits
+#
+# OUTPUT:
+#   - Green ✓  = All OK
+#   - Yellow ⚠️ = Warning (review needed)
+#   - Red ⚠️   = Critical issue found
+#   - Final summary with issue count
+#
+# REQUIREMENTS:
+#   - Root/sudo access for full system scan
+#   - netstat, ps, awk, grep commands
+#   - Access to system logs (/var/log)
+#
+# NOTES:
+#   - Run regularly via cron for continuous monitoring
+#   - Review warnings carefully (may be false positives)
+#   - Follow up on critical alerts immediately
 
 set -e
 
