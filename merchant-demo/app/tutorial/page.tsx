@@ -929,16 +929,13 @@ export default function TutorialPage() {
                       }`}>
                         <pre className="text-xs text-red-200 font-mono whitespace-pre-wrap break-words">
 {(() => {
-  const paymentRequirementsJson = JSON.stringify(stepData.paymentRequirements, null, 2);
   const encodedHeader = Buffer.from(JSON.stringify(stepData.paymentRequirements)).toString('base64');
   return formatHttpResponse(
     'HTTP/1.1 402 Payment Required',
     {
-      'Content-Type': 'application/json',
-      'Content-Length': computeContentLength(paymentRequirementsJson),
+      'Content-Length': '0',
       'X-402': encodedHeader
-    },
-    paymentRequirementsJson
+    }
   );
 })()}
                         </pre>
@@ -960,7 +957,7 @@ export default function TutorialPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <div className="text-sm text-blue-300">
-                          The <strong>X-402 header</strong> contains base64-encoded payment requirements. The server encodes the payment details as JSON, then base64-encodes it for transmission in the HTTP header.
+                          The <strong>X-402 header</strong> contains base64-encoded payment requirements. Servers can omit the response body entirely and rely on this header when the client understands the X-402 protocol.
                         </div>
                       </div>
                     </div>

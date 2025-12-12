@@ -188,7 +188,8 @@ export default function DemoPage() {
         payload: {
           authorization: authorizationForPayload,
           signature
-        }
+        },
+        requirements: paymentRequirements
       };
       const xPaymentHeader = Buffer.from(JSON.stringify(xPaymentData)).toString('base64');
 
