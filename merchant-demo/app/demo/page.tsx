@@ -5,6 +5,40 @@ import { useAccount, useSignTypedData } from 'wagmi';
 import Link from 'next/link';
 import WalletConnect from '../components/WalletConnect';
 
+// Helper function to get block explorer URL
+const getExplorerUrl = (network: string, txHash: string): string => {
+  if (!txHash || !network) {
+    console.warn('Missing txHash or network:', { network, txHash });
+    return '';
+  }
+  
+  // Normalize network name (handle both "base-sepolia" and "Base Sepolia" formats)
+  const normalizedNetwork = network.toLowerCase().replace(/\s+/g, '-');
+  
+  const explorers: Record<string, string> = {
+    'ethereum': 'https://etherscan.io/tx/',
+    'ethereum-sepolia': 'https://sepolia.etherscan.io/tx/',
+    'base': 'https://basescan.org/tx/',
+    'base-sepolia': 'https://sepolia.basescan.org/tx/',
+    'polygon': 'https://polygonscan.com/tx/',
+    'polygon-amoy': 'https://amoy.polygonscan.com/tx/',
+    'optimism': 'https://optimistic.etherscan.io/tx/',
+    'optimism-sepolia': 'https://sepolia-optimism.etherscan.io/tx/',
+    'arbitrum': 'https://arbiscan.io/tx/',
+    'arbitrum-sepolia': 'https://sepolia.arbiscan.io/tx/',
+    'hyperevm': 'https://hyperevmscan.io/tx/',
+    'hyperevm-testnet': 'https://testnet.purrsec.com/tx/',
+  };
+  
+  const explorerUrl = explorers[normalizedNetwork];
+  if (!explorerUrl) {
+    console.warn('No explorer found for network:', network, 'normalized:', normalizedNetwork);
+    return '';
+  }
+  
+  return explorerUrl + txHash;
+};
+
 interface NetworkConfig {
   network: string;
   chainId: number;
@@ -34,6 +68,7 @@ export default function DemoPage() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [transactionHash, setTransactionHash] = useState('');
 
   const facilitatorUrl = process.env.NEXT_PUBLIC_FACILITATOR_URL || 'http://localhost:8080';
   const merchantAddress = process.env.NEXT_PUBLIC_MERCHANT_ADDRESS || '';
@@ -182,14 +217,10 @@ export default function DemoPage() {
 
       // Create X-PAYMENT header payload (per x402 spec)
       const xPaymentData = {
-        x402Version: 1,
-        scheme: 'exact',
-        network: paymentRequirements.network,
         payload: {
           authorization: authorizationForPayload,
           signature
-        },
-        requirements: paymentRequirements
+        }
       };
       const xPaymentHeader = Buffer.from(JSON.stringify(xPaymentData)).toString('base64');
 
@@ -205,6 +236,20 @@ export default function DemoPage() {
         // Payment accepted - get the image
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
+        
+        // Try to get transaction hash from X-PAYMENT-RESPONSE header
+        const paymentResponse = response.headers.get('x-payment-response');
+        if (paymentResponse) {
+          try {
+            const decoded = JSON.parse(Buffer.from(paymentResponse, 'base64').toString('utf-8'));
+            if (decoded.transactionHash) {
+              setTransactionHash(decoded.transactionHash);
+            }
+          } catch (e) {
+            console.error('Failed to decode payment response:', e);
+          }
+        }
+        
         setImageUrl(url);
         setStep('unlocked');
       } else if (response.status === 402) {
@@ -225,6 +270,7 @@ export default function DemoPage() {
       URL.revokeObjectURL(imageUrl);
     }
     setImageUrl('');
+    setTransactionHash('');
     setStep('locked');
     setError('');
   };
@@ -439,6 +485,40 @@ export default function DemoPage() {
                   />
                 )}
               </div>
+
+              {/* Transaction Info */}
+              {transactionHash && (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 mb-6">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="flex-1">
+                      <p className="text-emerald-300 text-sm font-semibold mb-2">Payment Confirmed On-Chain</p>
+                      <p className="text-xs text-emerald-200/80 mb-2">Transaction Hash:</p>
+                      {(() => {
+                        const explorerUrl = getExplorerUrl(selectedNetwork, transactionHash);
+                        if (explorerUrl) {
+                          return (
+                            <a 
+                              href={explorerUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-mono text-xs break-all text-cyan-400 hover:text-cyan-300 underline inline-flex items-center gap-1"
+                            >
+                              {transactionHash}
+                              <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
+                          );
+                        }
+                        return <span className="font-mono text-xs break-all text-slate-300">{transactionHash}</span>;
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Reset Button */}
               <button

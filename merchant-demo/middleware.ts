@@ -56,7 +56,6 @@ async function verifyPayment(
 ): Promise<{ isValid: boolean; payer?: string; raw?: any; reason?: string }> {
   try {
     const paymentPayloadBody = paymentPayloadOverride || {
-      x402Version: 1,
       payload: payment
     };
 
@@ -117,7 +116,6 @@ async function settlePayment(
 ): Promise<{ success: boolean; status?: string; message?: string; transaction?: string; flashblockHash?: string; raw?: any }> {
   try {
     const paymentPayloadBody = paymentPayloadOverride || {
-      x402Version: 1,
       payload: payment
     };
 
@@ -248,7 +246,7 @@ export async function middleware(request: NextRequest) {
 
   // Verify payment before settling to provide immediate feedback
   console.log('🔍 Verifying payment with facilitator...');
-  const verificationResult = await verifyPayment(payment, requirements, raw?.paymentPayload);
+  const verificationResult = await verifyPayment(payment, requirements, raw);
 
   if (!verificationResult.isValid) {
     console.log('❌ Payment verification failed');
@@ -268,7 +266,7 @@ export async function middleware(request: NextRequest) {
   console.log('   Amount:', requirements.maxAmountRequired);
   console.log('   PayTo:', requirements.payTo);
 
-  const settlementResult = await settlePayment(payment, requirements, raw?.paymentPayload);
+  const settlementResult = await settlePayment(payment, requirements, raw);
 
   if (!settlementResult.success) {
     console.log('❌ Payment rejected by facilitator during settlement');

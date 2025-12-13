@@ -32,6 +32,40 @@ interface StepData {
   x402PaymentRequired?: string;
 }
 
+// Helper function to get block explorer URL
+const getExplorerUrl = (network: string, txHash: string): string => {
+  if (!txHash || !network) {
+    console.warn('Missing txHash or network:', { network, txHash });
+    return '';
+  }
+  
+  // Normalize network name (handle both "base-sepolia" and "Base Sepolia" formats)
+  const normalizedNetwork = network.toLowerCase().replace(/\s+/g, '-');
+  
+  const explorers: Record<string, string> = {
+    'ethereum': 'https://etherscan.io/tx/',
+    'ethereum-sepolia': 'https://sepolia.etherscan.io/tx/',
+    'base': 'https://basescan.org/tx/',
+    'base-sepolia': 'https://sepolia.basescan.org/tx/',
+    'polygon': 'https://polygonscan.com/tx/',
+    'polygon-amoy': 'https://amoy.polygonscan.com/tx/',
+    'optimism': 'https://optimistic.etherscan.io/tx/',
+    'optimism-sepolia': 'https://sepolia-optimism.etherscan.io/tx/',
+    'arbitrum': 'https://arbiscan.io/tx/',
+    'arbitrum-sepolia': 'https://sepolia.arbiscan.io/tx/',
+    'hyperevm': 'https://hyperevmscan.io/tx/',
+    'hyperevm-testnet': 'https://testnet.purrsec.com/tx/',
+  };
+  
+  const explorerUrl = explorers[normalizedNetwork];
+  if (!explorerUrl) {
+    console.warn('No explorer found for network:', network, 'normalized:', normalizedNetwork);
+    return '';
+  }
+  
+  return explorerUrl + txHash;
+};
+
 const STEPS = [
   {
     id: 0,
@@ -216,9 +250,6 @@ export default function TutorialPage() {
       return null;
     }
     return {
-      x402Version: 1,
-      scheme: 'exact',
-      network: stepData.paymentRequirements?.network || selectedNetwork,
       payload: {
         authorization: stepData.authorization,
         signature: stepData.signature
@@ -1281,9 +1312,20 @@ export default function TutorialPage() {
                             </p>
                           )}
                           {transactionHash && (
-                            <p className="mt-2 font-mono text-xs break-all text-slate-100/80">
-                              Transaction: {transactionHash}
-                            </p>
+                            <div className="mt-2">
+                              <p className="font-mono text-xs text-slate-100/80 mb-1">Transaction:</p>
+                              <a 
+                                href={getExplorerUrl(selectedNetwork, transactionHash)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-mono text-xs break-all text-cyan-400 hover:text-cyan-300 underline inline-flex items-center gap-1"
+                              >
+                                {transactionHash}
+                                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </a>
+                            </div>
                           )}
                           {isPreconfirmed && flashblockHash && (
                             <p className="mt-1 font-mono text-xs break-all text-slate-100/80">
