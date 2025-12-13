@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { PaymentPayload, PaymentRequirements, SettleResponse, ExactPaymentPayload } from '../types/index.js';
+import { PaymentPayload, PaymentRequirements, SettleResponse } from '../types/index.js';
 import config, { getRpcUrl, getEIP712Domain, getTokenByAddress } from '../config/index.js';
 import logger from '../utils/logger.js';
 import db from './database.js';
@@ -8,6 +8,7 @@ import { transactionQueue } from './transactionQueue.js';
 import webhookService from './webhook.js';
 import paymasterPool from './paymasterPool.js';
 import providerPool from './providerPool.js';
+import priceService from './priceService.js';
 
 // ERC-3009 ABI for gasless transfers with authorization
 const ERC3009_ABI = [
@@ -480,7 +481,8 @@ export class SettlementService {
             blockNumber: receipt.blockNumber ? BigInt(receipt.blockNumber) : undefined,
           });
           
-          logger.info(`⛽ Gas used: ${gasUsed.toString()} units @ ${ethers.formatUnits(effectiveGasPrice, 'gwei')} gwei, Cost: ${gasCostGwei} gwei (${gasCostNative} ${this.getGasToken(requirements.network)})`);
+          const gasCostFormatted = priceService.formatWithPrice(requirements.network, gasCostWei);
+          logger.info(`⛽ Gas used: ${gasUsed.toString()} units @ ${ethers.formatUnits(effectiveGasPrice, 'gwei')} gwei, Cost: ${gasCostGwei} gwei (${gasCostFormatted})`);
           logger.info(`   Paid by paymaster: ${paymasterWallet.address}`);
         } catch (gasError) {
           logger.warn('Failed to track gas usage:', gasError);
@@ -660,14 +662,11 @@ export class SettlementService {
    * Extract payer from payload
    */
   private extractPayer(payload: PaymentPayload): { success: boolean; payer?: string; response: SettleResponse } {
-    let payer: string | undefined;
-
-    if (payload.payload && typeof payload.payload === 'object' && 'authorization' in payload.payload) {
-      const exactPayload = payload.payload as ExactPaymentPayload;
-      payer = exactPayload.authorization.from?.trim();
-      
-      // Debug logging
-      logger.debug(`🔍 Raw payer from payload: "${exactPayload.authorization.from}" (type: ${typeof exactPayload.authorization.from})`);
+    const payer = payload.authorization?.from?.trim();
+    
+    // Debug logging
+    if (payload.authorization?.from) {
+      logger.debug(`🔍 Raw payer from payload: "${payload.authorization.from}" (type: ${typeof payload.authorization.from})`);
       logger.debug(`   Trimmed payer: "${payer}"`);
     }
 
@@ -697,15 +696,11 @@ export class SettlementService {
     signature?: string;
     response: SettleResponse 
   } {
-    let authorization: any;
-    let signature: string | undefined;
-
-    if (payload.payload && typeof payload.payload === 'object') {
-      const exactPayload = payload.payload as ExactPaymentPayload;
-      authorization = exactPayload.authorization;
-      signature = exactPayload.signature;
-      
-      // Debug logging
+    const authorization = payload.authorization;
+    const signature = payload.signature;
+    
+    // Debug logging
+    if (authorization) {
       logger.debug(`🔍 Authorization extracted:`, {
         from: authorization?.from,
         to: authorization?.to,
@@ -933,8 +928,7 @@ export class SettlementService {
    * Generate unique key for transaction tracking
    */
   private getTransactionKey(payload: PaymentPayload, requirements: PaymentRequirements): string {
-    const exactPayload = payload.payload as ExactPaymentPayload;
-    return `${exactPayload.authorization.from}-${requirements.asset}-${exactPayload.authorization.nonce}`;
+    return `${payload.authorization.from}-${requirements.asset}-${payload.authorization.nonce}`;
   }
 
   /**
@@ -1200,6 +1194,7 @@ export class SettlementService {
           const gasCostWei = gasUsed * effectiveGasPrice;
           const gasCostNative = ethers.formatEther(gasCostWei);
           const gasCostGwei = ethers.formatUnits(gasCostWei, 'gwei');
+          const gasCostFormatted = priceService.formatWithPrice(requirements.network, gasCostWei);
           
           await db.saveGasTracking({
             transactionId: transactionId || undefined,
@@ -1218,7 +1213,7 @@ export class SettlementService {
             blockNumber: receipt.blockNumber ? BigInt(receipt.blockNumber) : undefined,
           });
           
-          logger.info(`⛽ Gas used: ${gasUsed.toString()} units @ ${ethers.formatUnits(effectiveGasPrice, 'gwei')} gwei`);
+          logger.info(`⛽ Gas used: ${gasUsed.toString()} units @ ${ethers.formatUnits(effectiveGasPrice, 'gwei')} gwei, Cost: ${gasCostGwei} gwei (${gasCostFormatted})`);
         } catch (gasError) {
           logger.warn('Failed to track gas usage:', gasError);
         }

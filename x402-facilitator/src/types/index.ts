@@ -23,14 +23,9 @@ export interface EIP3009Authorization {
   extra?: Record<string, any>;
 }
 
-export interface ExactPaymentPayload {
+export interface PaymentPayload {
   authorization: EIP3009Authorization;
   signature: string;
-}
-
-export interface PaymentPayload {
-  x402Version: number;
-  payload: ExactPaymentPayload | any;
 }
 
 export interface VerifyResponse {

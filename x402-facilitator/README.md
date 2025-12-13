@@ -273,18 +273,15 @@ x-api-key: YOUR_MERCHANT_API_KEY
 {
   "x402Version": 1,
   "paymentPayload": {
-    "x402Version": 1,
-    "payload": {
-      "authorization": {
-        "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-        "to": "0xYourMerchantAddress",
-        "value": "1000000",
-        "validAfter": "0",
-        "validBefore": "9999999999",
-        "nonce": "0x1234..."
-      },
-      "signature": "0x..."
-    }
+    "authorization": {
+      "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+      "to": "0xYourMerchantAddress",
+      "value": "1000000",
+      "validAfter": "0",
+      "validBefore": "9999999999",
+      "nonce": "0x1234..."
+    },
+    "signature": "0x..."
   },
   "paymentRequirements": {
     "scheme": "exact",

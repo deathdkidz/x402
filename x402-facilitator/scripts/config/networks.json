@@ -37,7 +37,7 @@
   "HyperEVM": {
     "rpcUrl": "HYPEREVM_RPC",
     "chainId": 999,
-    "explorer": "https://explorer.hyperliquid.xyz",
+    "explorer": "https://hyperevmscan.io",
     "gasToken": "HYPE",
     "type": "mainnet"
   }

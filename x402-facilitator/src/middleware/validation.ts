@@ -4,7 +4,8 @@ import logger from '../utils/logger.js';
 
 // Validation schemas
 const paymentRequirementsSchema = Joi.object({
-  scheme: Joi.string().required(),
+  // Currently only 'exact' scheme is supported. Future schemes can be added here (e.g., 'upto', 'deferred')
+  scheme: Joi.string().valid('exact').required(),
   network: Joi.string().required(),
   asset: Joi.string().required(),
   payTo: Joi.string().required(),
@@ -28,11 +29,8 @@ const authorizationSchema = Joi.object({
 });
 
 const paymentPayloadSchema = Joi.object({
-  x402Version: Joi.number().required(),
-  payload: Joi.object({
-    authorization: authorizationSchema.required(),
-    signature: Joi.string().required(),
-  }).required(),
+  authorization: authorizationSchema.required(),
+  signature: Joi.string().required(),
 });
 
 const verifyRequestSchema = Joi.object({
@@ -63,7 +61,17 @@ export const validate = (schema: Joi.ObjectSchema) => {
         message: detail.message,
       }));
 
-      logger.warn('Validation failed', { errors, ip: req.ip });
+      logger.warn('Validation failed', { 
+        errors, 
+        ip: req.ip,
+        errorCount: errors.length,
+        fields: errors.map(e => e.field).join(', ')
+      });
+      
+      // Log detailed validation errors
+      errors.forEach(err => {
+        logger.warn(`  ❌ Field '${err.field}': ${err.message}`);
+      });
 
       res.status(400).json({
         error: 'Validation Error',

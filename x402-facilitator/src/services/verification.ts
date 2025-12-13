@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { PaymentPayload, PaymentRequirements, VerifyResponse, ExactPaymentPayload } from '../types/index.js';
+import { PaymentPayload, PaymentRequirements, VerifyResponse } from '../types/index.js';
 import config, { getRpcUrl, getEIP712Domain, getTokenByAddress } from '../config/index.js';
 import logger from '../utils/logger.js';
 import providerPool from './providerPool.js';
@@ -179,16 +179,9 @@ export class VerificationService {
     signature?: string;
     authorization?: any;
   } {
-    let payer: string | undefined;
-    let signature: string | undefined;
-    let authorization: any;
-
-    if (payload.payload && typeof payload.payload === 'object' && 'authorization' in payload.payload) {
-      const exactPayload = payload.payload as ExactPaymentPayload;
-      payer = exactPayload.authorization.from;
-      authorization = exactPayload.authorization;
-      signature = exactPayload.signature;
-    }
+    const payer = payload.authorization?.from;
+    const signature = payload.signature;
+    const authorization = payload.authorization;
 
     if (!payer || !signature) {
       logger.warn('Missing payer address or signature in payload');

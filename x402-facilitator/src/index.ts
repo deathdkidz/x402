@@ -17,6 +17,7 @@ import redis from './services/redis.js';
 import transactionMonitor from './services/transactionMonitor.js';
 import paymasterPool from './services/paymasterPool.js';
 import providerPool from './services/providerPool.js';
+import priceService from './services/priceService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -179,6 +180,13 @@ const startServer = async () => {
     logger.info('✅ Transaction monitor started');
   } catch (error) {
     logger.warn('⚠️ Transaction monitor failed to start:', error);
+  }
+
+  // Start price service for gas cost USD estimates
+  try {
+    await priceService.start();
+  } catch (error) {
+    logger.warn('⚠️ Price service failed to start:', error);
   }
 };
 

@@ -23,6 +23,11 @@ interface TokenConfig {
 interface NetworkConfig {
   chainId: number;
   rpcUrl: string;
+  nativeToken: {
+    symbol: string;
+    name: string;
+    cmcSlug: string;
+  };
   tokens: TokenConfig[];
 }
 
@@ -43,6 +48,7 @@ interface Config {
   rateLimitMaxRequests: number;
   logLevel: string;
   redisUrl: string;
+  coinmarketcapApiKey: string;
   database: {
     host: string;
     port: number;
@@ -99,6 +105,7 @@ const config: Config = {
     'Base': {
       chainId: 8453,
       rpcUrl: process.env.BASE_SEPOLIA_RPC || 'wss://base-mainnet.g.alchemy.com/v2/demo',
+      nativeToken: { symbol: 'ETH', name: 'Ethereum', cmcSlug: 'ethereum' },
       tokens: [
         {
           symbol: 'USDC',
@@ -115,6 +122,7 @@ const config: Config = {
     'Ethereum': {
       chainId: 11155111,
       rpcUrl: process.env.ETHEREUM_SEPOLIA_RPC || 'https://eth-sepolia.g.alchemy.com/v2/demo',
+      nativeToken: { symbol: 'ETH', name: 'Ethereum', cmcSlug: 'ethereum' },
       tokens: [
         {
           symbol: 'USDC',
@@ -131,6 +139,7 @@ const config: Config = {
     'HyperEVM': {
       chainId: 999,
       rpcUrl: process.env.HYPEREVM_RPC || 'wss://hyperliquid-mainnet.g.alchemy.com/v2/demo',
+      nativeToken: { symbol: 'HYPE', name: 'Hyperliquid', cmcSlug: 'hyperliquid' },
       tokens: [
         {
           symbol: 'USDC',
@@ -147,6 +156,7 @@ const config: Config = {
     'Base Sepolia': {
       chainId: 84532,
       rpcUrl: process.env.BASE_SEPOLIA_RPC || 'https://base-sepolia.g.alchemy.com/v2/demo',
+      nativeToken: { symbol: 'ETH', name: 'Ethereum', cmcSlug: 'ethereum' },
       tokens: [
         {
           symbol: 'USDC',
@@ -163,6 +173,7 @@ const config: Config = {
     'Ethereum Sepolia': {
       chainId: 11155111,
       rpcUrl: process.env.ETHEREUM_SEPOLIA_RPC || 'https://eth-sepolia.g.alchemy.com/v2/demo',
+      nativeToken: { symbol: 'ETH', name: 'Ethereum', cmcSlug: 'ethereum' },
       tokens: [
         {
           symbol: 'USDC',
@@ -178,8 +189,7 @@ const config: Config = {
     },
     'HyperEVM Testnet': {
       chainId: 998,
-      rpcUrl: process.env.HYPEREVM_TESTNET_RPC || 'wss://hyperliquid-testnet.g.alchemy.com/v2/demo',
-      tokens: [
+      rpcUrl: process.env.HYPEREVM_TESTNET_RPC || 'wss://hyperliquid-testnet.g.alchemy.com/v2/demo',      nativeToken: { symbol: 'HYPE', name: 'Hyperliquid', cmcSlug: 'hyperliquid' },      tokens: [
         {
           symbol: 'USDC',
           name: 'USDC',
@@ -197,6 +207,7 @@ const config: Config = {
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
   logLevel: process.env.LOG_LEVEL || 'info',
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+  coinmarketcapApiKey: process.env.COINMARKETCAP_API_KEY || '99ea85515cef40ecb1f0db989a0dc293',
   httpsPort: parseInt(process.env.HTTPS_PORT || '8443', 10),
   useHttps: process.env.USE_HTTPS === 'true',
   sslCertPath: process.env.SSL_CERT_PATH,

@@ -129,18 +129,15 @@ curl -X POST $FACILITATOR_URL/verify \
   -d '{
     "x402Version": 1,
     "paymentPayload": {
-      "x402Version": 1,
-      "payload": {
-        "authorization": {
-          "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-          "to": "0x1234567890123456789012345678901234567890",
-          "value": "10000",
-          "validAfter": "1733270400",
-          "validBefore": "1733274000",
-          "nonce": "0xa1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
-        },
-        "signature": "0x<your_signature_here>"
-      }
+      "authorization": {
+        "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        "to": "0x1234567890123456789012345678901234567890",
+        "value": "10000",
+        "validAfter": "1733270400",
+        "validBefore": "1733274000",
+        "nonce": "0xa1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+      },
+      "signature": "0x<your_signature_here>"
     },
     "paymentRequirements": {
       "scheme": "exact",
@@ -239,18 +236,15 @@ curl -X POST $FACILITATOR_URL/verify \
   -d '{
     "x402Version": 1,
     "paymentPayload": {
-      "x402Version": 1,
-      "payload": {
-        "authorization": {
-          "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-          "to": "0xMerchantAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-          "value": "10000",
-          "validAfter": "1733270400",
-          "validBefore": "1733274000",
-          "nonce": "0xa1b2c3d4..."
-        },
-        "signature": "0x<valid_signature_for_merchantA>"
-      }
+      "authorization": {
+        "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        "to": "0xMerchantAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "value": "10000",
+        "validAfter": "1733270400",
+        "validBefore": "1733274000",
+        "nonce": "0xa1b2c3d4..."
+      },
+      "signature": "0x<valid_signature_for_merchantA>"
     },
     "paymentRequirements": {
       "scheme": "exact",
@@ -282,12 +276,10 @@ curl -X POST $FACILITATOR_URL/verify \
   -H "Authorization: Bearer $API_KEY" \
   -d '{
     "paymentPayload": {
-      "payload": {
-        "authorization": {
-          "value": "10000"
-        },
-        "signature": "0x..."
-      }
+      "authorization": {
+        "value": "10000"
+      },
+      "signature": "0x..."
     },
     "paymentRequirements": {
       "maxAmountRequired": "50000"
@@ -311,11 +303,9 @@ curl -X POST $FACILITATOR_URL/verify \
   -H "Authorization: Bearer $API_KEY" \
   -d '{
     "paymentPayload": {
-      "payload": {
-        "authorization": {
-          "validAfter": "1000000000",
-          "validBefore": "1000001000"
-        }
+      "authorization": {
+        "validAfter": "1000000000",
+        "validBefore": "1000001000"
       }
     }
   }' | jq
@@ -337,10 +327,8 @@ curl -X POST $FACILITATOR_URL/verify \
   -H "Authorization: Bearer $API_KEY" \
   -d '{
     "paymentPayload": {
-      "payload": {
-        "authorization": {...},
-        "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
-      }
+      "authorization": {...},
+      "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     }
   }' | jq
 ```

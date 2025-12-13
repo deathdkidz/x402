@@ -32,6 +32,7 @@
   "license": "ISC",
   "dependencies": {
     "@tanstack/react-query": "^5.90.11",
+    "axios": "^1.13.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "ethers": "^6.9.0",
