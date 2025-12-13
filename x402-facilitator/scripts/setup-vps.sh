@@ -436,17 +436,33 @@ init_database() {
     
     cd "$FACILITATOR_DIR"
     
-    # Run migrations if they exist
-    if [ -d "migrations" ]; then
-        for migration in migrations/*.sql; do
-            if [ -f "$migration" ]; then
-                log_info "Running migration: $(basename $migration)"
-                mysql -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" < "$migration"
-            fi
-        done
-        log_success "Database migrations completed"
+    # Run init-database.sql if it exists
+    if [ -f "scripts/init-database.sql" ]; then
+        log_info "Running database initialization script..."
+        mysql -u root -p"$DB_PASSWORD" < scripts/init-database.sql
+        
+        if [ $? -eq 0 ]; then
+            log_success "Database initialized successfully"
+        else
+            log_error "Database initialization failed"
+            return 1
+        fi
     else
-        log_warning "No migrations folder found"
+        log_warning "init-database.sql not found at scripts/init-database.sql"
+        
+        # Fallback to old migration method
+        if [ -d "migrations" ]; then
+            log_info "Falling back to migrations folder..."
+            for migration in migrations/*.sql; do
+                if [ -f "$migration" ]; then
+                    log_info "Running migration: $(basename $migration)"
+                    mysql -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" < "$migration"
+                fi
+            done
+            log_success "Database migrations completed"
+        else
+            log_warning "No database initialization method found"
+        fi
     fi
 }
 
