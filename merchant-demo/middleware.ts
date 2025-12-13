@@ -15,15 +15,24 @@ const MERCHANT_ADDRESS = process.env.NEXT_PUBLIC_MERCHANT_ADDRESS || '';
 
 /**
  * Decode X-PAYMENT header
+ * Client sends: { authorization: {...}, signature: "...", network: "...", asset: "..." }
  */
-function decodePaymentHeader(header: string): { payload: any; raw: any; requirements?: any } | null {
+function decodePaymentHeader(header: string): { authorization: any; signature: string; network?: string; asset?: string } | null {
   try {
     const decoded = Buffer.from(header, 'base64').toString('utf-8');
     const parsed = JSON.parse(decoded);
+    
+    // Client should send authorization and signature directly
+    if (!parsed.authorization || !parsed.signature) {
+      console.error('Invalid X-PAYMENT structure: missing authorization or signature');
+      return null;
+    }
+    
     return {
-      raw: parsed,
-      payload: parsed.payload || parsed,
-      requirements: parsed.requirements
+      authorization: parsed.authorization,
+      signature: parsed.signature,
+      network: parsed.network,
+      asset: parsed.asset
     };
   } catch (error) {
     console.error('Failed to decode X-PAYMENT header:', error);
@@ -50,15 +59,10 @@ function getContentType(path: string): string {
  * Uses HTTP keep-alive for faster connections
  */
 async function verifyPayment(
-  payment: any,
-  requirements: any,
-  paymentPayloadOverride?: any
+  paymentPayload: { authorization: any; signature: string },
+  requirements: any
 ): Promise<{ isValid: boolean; payer?: string; raw?: any; reason?: string }> {
   try {
-    const paymentPayloadBody = paymentPayloadOverride || {
-      payload: payment
-    };
-
     const response = await fetch(`${FACILITATOR_URL}/verify`, {
       method: 'POST',
       headers: {
@@ -68,7 +72,7 @@ async function verifyPayment(
       },
       body: JSON.stringify({
         x402Version: 1,
-        paymentPayload: paymentPayloadBody,
+        paymentPayload: paymentPayload,
         paymentRequirements: requirements
       }),
       // Enable HTTP keep-alive for connection reuse
@@ -84,7 +88,7 @@ async function verifyPayment(
         body: responseText,
         sentPayload: JSON.stringify({
           x402Version: 1,
-          paymentPayload: paymentPayloadBody,
+          paymentPayload: paymentPayload,
           paymentRequirements: requirements
         }, null, 2)
       });
@@ -110,15 +114,10 @@ async function verifyPayment(
  * Waits for blockchain confirmation before returning
  */
 async function settlePayment(
-  payment: any,
-  requirements: any,
-  paymentPayloadOverride?: any
+  paymentPayload: { authorization: any; signature: string },
+  requirements: any
 ): Promise<{ success: boolean; status?: string; message?: string; transaction?: string; flashblockHash?: string; raw?: any }> {
   try {
-    const paymentPayloadBody = paymentPayloadOverride || {
-      payload: payment
-    };
-
     const response = await fetch(`${FACILITATOR_URL}/settle`, {
       method: 'POST',
       headers: {
@@ -130,7 +129,7 @@ async function settlePayment(
       keepalive: true,
       body: JSON.stringify({
         x402Version: 1,
-        paymentPayload: paymentPayloadBody,
+        paymentPayload: paymentPayload,
         paymentRequirements: requirements
       })
     });
@@ -209,44 +208,34 @@ export async function middleware(request: NextRequest) {
   }
 
   // Decode payment
-  const paymentData = decodePaymentHeader(xPaymentHeader);
-  if (!paymentData || !paymentData.payload) {
+  const paymentPayload = decodePaymentHeader(xPaymentHeader);
+  if (!paymentPayload || !paymentPayload.authorization || !paymentPayload.signature) {
     return new NextResponse(
       JSON.stringify({ error: 'Invalid Payment Header' }),
       { status: 400, headers: { 'Content-Type': 'application/json' } }
     );
   }
 
-  const { payload: payment, requirements: paymentRequirements, raw } = paymentData;
+  // Build payment requirements from payment payload and config
+  // Extract merchant address from the payment authorization (who should receive the payment)
+  const merchantAddress = paymentPayload.authorization?.to || MERCHANT_ADDRESS;
 
-  // Use requirements from payment header if provided, otherwise build from config
-  let requirements;
-  if (paymentRequirements) {
-    // Client sent the exact requirements they signed for
-    requirements = paymentRequirements;
-    console.log('✅ Using requirements from payment header');
-  } else {
-    // Fallback: Extract merchant address from the payment authorization
-    const merchantAddress = payment.authorization?.to || MERCHANT_ADDRESS;
-
-    // Build payment requirements for verification
-    requirements = {
-      scheme: defaultConfig.scheme,
-      network: protection.network || defaultConfig.network,
-      asset: protection.asset || defaultConfig.asset,
-      payTo: merchantAddress,
-      maxAmountRequired: protection.amount,
-      resource: path,
-      description: protection.description,
-      mimeType: getContentType(path),
-      maxTimeoutSeconds: defaultConfig.maxTimeoutSeconds
-    };
-    console.log('⚠️  Using requirements from config (fallback)');
-  }
+  // Use network and asset from payment payload, fallback to config if not provided
+  const requirements = {
+    scheme: defaultConfig.scheme,
+    network: paymentPayload.network || protection.network || defaultConfig.network,
+    asset: paymentPayload.asset || protection.asset || defaultConfig.asset,
+    payTo: merchantAddress,
+    maxAmountRequired: protection.amount,
+    resource: path,
+    description: protection.description,
+    mimeType: getContentType(path),
+    maxTimeoutSeconds: defaultConfig.maxTimeoutSeconds
+  };
 
   // Verify payment before settling to provide immediate feedback
   console.log('🔍 Verifying payment with facilitator...');
-  const verificationResult = await verifyPayment(payment, requirements, raw);
+  const verificationResult = await verifyPayment(paymentPayload, requirements);
 
   if (!verificationResult.isValid) {
     console.log('❌ Payment verification failed');
@@ -266,7 +255,7 @@ export async function middleware(request: NextRequest) {
   console.log('   Amount:', requirements.maxAmountRequired);
   console.log('   PayTo:', requirements.payTo);
 
-  const settlementResult = await settlePayment(payment, requirements, raw);
+  const settlementResult = await settlePayment(paymentPayload, requirements);
 
   if (!settlementResult.success) {
     console.log('❌ Payment rejected by facilitator during settlement');
@@ -294,7 +283,7 @@ export async function middleware(request: NextRequest) {
   const paymentResponsePayload = {
     status: settlementResult.status || (settlementResult.success ? 'completed' : 'pending'),
     resource: path,
-    payer: payment.authorization?.from || verificationResult.payer,
+    payer: paymentPayload.authorization?.from || verificationResult.payer,
     transactionHash: settlementResult.transaction,
     flashblockHash: settlementResult.flashblockHash
   };

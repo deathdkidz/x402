@@ -69,6 +69,7 @@ export default function DemoPage() {
   const [error, setError] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [transactionHash, setTransactionHash] = useState('');
+  const [paymentNetwork, setPaymentNetwork] = useState('');
 
   const facilitatorUrl = process.env.NEXT_PUBLIC_FACILITATOR_URL || 'http://localhost:8080';
   const merchantAddress = process.env.NEXT_PUBLIC_MERCHANT_ADDRESS || '';
@@ -216,11 +217,12 @@ export default function DemoPage() {
       };
 
       // Create X-PAYMENT header payload (per x402 spec)
+      // Client sends authorization, signature, and payment context (network/asset)
       const xPaymentData = {
-        payload: {
-          authorization: authorizationForPayload,
-          signature
-        }
+        authorization: authorizationForPayload,
+        signature,
+        network: networkConfig.network,
+        asset: tokenConfig.address
       };
       const xPaymentHeader = Buffer.from(JSON.stringify(xPaymentData)).toString('base64');
 
@@ -236,6 +238,9 @@ export default function DemoPage() {
         // Payment accepted - get the image
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
+        
+        // Save the network used for this payment
+        setPaymentNetwork(networkConfig.network);
         
         // Try to get transaction hash from X-PAYMENT-RESPONSE header
         const paymentResponse = response.headers.get('x-payment-response');
@@ -271,6 +276,7 @@ export default function DemoPage() {
     }
     setImageUrl('');
     setTransactionHash('');
+    setPaymentNetwork('');
     setStep('locked');
     setError('');
   };
@@ -497,7 +503,7 @@ export default function DemoPage() {
                       <p className="text-emerald-300 text-sm font-semibold mb-2">Payment Confirmed On-Chain</p>
                       <p className="text-xs text-emerald-200/80 mb-2">Transaction Hash:</p>
                       {(() => {
-                        const explorerUrl = getExplorerUrl(selectedNetwork, transactionHash);
+                        const explorerUrl = getExplorerUrl(paymentNetwork, transactionHash);
                         if (explorerUrl) {
                           return (
                             <a 

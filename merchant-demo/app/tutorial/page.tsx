@@ -250,10 +250,8 @@ export default function TutorialPage() {
       return null;
     }
     return {
-      payload: {
-        authorization: stepData.authorization,
-        signature: stepData.signature
-      }
+      authorization: stepData.authorization,
+      signature: stepData.signature
     };
   };
 
@@ -463,14 +461,10 @@ export default function TutorialPage() {
                 'Authorization': `Bearer ${apiKey}`
               },
               body: JSON.stringify({
+                x402Version: 1,
                 paymentPayload: {
-                  x402Version: 1,
-                  scheme: 'exact',
-                  network: stepData.paymentRequirements?.network || selectedNetwork,
-                  payload: {
-                    authorization: stepData.authorization,
-                    signature: stepData.signature
-                  }
+                  authorization: stepData.authorization,
+                  signature: stepData.signature
                 },
                 paymentRequirements: {
                   ...(stepData.paymentRequirements || {}),
@@ -508,14 +502,10 @@ export default function TutorialPage() {
                 'Authorization': `Bearer ${apiKey}`
               },
               body: JSON.stringify({
+                x402Version: 1,
                 paymentPayload: {
-                  x402Version: 1,
-                  scheme: 'exact',
-                  network: stepData.paymentRequirements?.network || selectedNetwork,
-                  payload: {
-                    authorization: stepData.authorization,
-                    signature: stepData.signature
-                  }
+                  authorization: stepData.authorization,
+                  signature: stepData.signature
                 },
                 paymentRequirements: {
                   ...(stepData.paymentRequirements || {}),
@@ -1209,14 +1199,10 @@ export default function TutorialPage() {
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
                     <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
 {JSON.stringify({
+  x402Version: 1,
   paymentPayload: {
-    x402Version: 1,
-    scheme: 'exact',
-    network: stepData.paymentRequirements?.network || selectedNetwork,
-    payload: {
-      authorization: stepData.authorization,
-      signature: stepData.signature
-    }
+    authorization: stepData.authorization,
+    signature: stepData.signature
   },
   paymentRequirements: {
     ...(stepData.paymentRequirements || {}),
@@ -1255,14 +1241,10 @@ export default function TutorialPage() {
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
                     <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
 {JSON.stringify({
+  x402Version: 1,
   paymentPayload: {
-    x402Version: 1,
-    scheme: 'exact',
-    network: stepData.paymentRequirements?.network || selectedNetwork,
-    payload: {
-      authorization: stepData.authorization,
-      signature: stepData.signature
-    }
+    authorization: stepData.authorization,
+    signature: stepData.signature
   },
   paymentRequirements: {
     ...(stepData.paymentRequirements || {}),

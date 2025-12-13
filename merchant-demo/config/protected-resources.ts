@@ -17,6 +17,12 @@ export const protectedResources: Record<string, ProtectedResource> = {
   '/dancing-cat.gif': {
     amount: '10000',              // 0.01 USDC
     description: 'Premium Dancing Cat GIF',
+    // No network/asset restriction - client can choose any supported network
+  },
+  '/data': {
+    amount: '15000',              // 0.015 USDC
+    description: 'Access to Protected API Data',
+    // No network/asset restriction - client can choose any supported network
   },
   
   // Additional protected resources can be added here

@@ -108,6 +108,8 @@ X-PAYMENT: eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweDc0MmQzNUNjNjYzNEMwNTMyOTI1YTNiO
 }
 ```
 
+**Note:** Client sends only `authorization` and `signature` in X-PAYMENT header. The middleware wraps this with version and requirements when calling the facilitator.
+
 ---
 
 ### **Step 3: Server Decodes X-PAYMENT**
@@ -153,18 +155,15 @@ Authorization: Bearer sk_live_abc123def456...
 {
   "x402Version": 1,
   "paymentPayload": {
-    "x402Version": 1,
-    "payload": {
-      "authorization": {
-        "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-        "to": "0x1234567890123456789012345678901234567890",
-        "value": "10000",
-        "validAfter": "1733270400",
-        "validBefore": "1733274000",
-        "nonce": "0xa1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
-      },
-      "signature": "0x1b2c3d4e5f6789...130_hex_characters"
-    }
+    "authorization": {
+      "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+      "to": "0x1234567890123456789012345678901234567890",
+      "value": "10000",
+      "validAfter": "1733270400",
+      "validBefore": "1733274000",
+      "nonce": "0xa1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+    },
+    "signature": "0x1b2c3d4e5f6789...130_hex_characters"
   },
   "paymentRequirements": {
     "scheme": "exact",
@@ -180,7 +179,7 @@ Authorization: Bearer sk_live_abc123def456...
 }
 ```
 
-**Size:** ~850 bytes (uncompressed JSON)
+**Size:** ~750 bytes (uncompressed JSON)
 
 ---
 
