@@ -30,9 +30,9 @@ if (!fs.existsSync(logsDir)) {
 
 const app: Application = express();
 
-// Trust proxy - Disabled since Cloudflare proxy is off
-// Direct connections for lower latency
-app.set('trust proxy', false);
+// Trust proxy - Enable for Nginx reverse proxy
+// Nginx on localhost will forward real client IP via X-Forwarded-For
+app.set('trust proxy', 'loopback');
 
 // Security middleware
 app.use(helmet());
