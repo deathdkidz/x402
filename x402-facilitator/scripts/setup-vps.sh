@@ -352,9 +352,15 @@ ETHEREUM_SEPOLIA_USDC=0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238
 BASE_USDC=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 ETHEREUM_USDC=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 
-# Rate Limiting
-RATE_LIMIT_WINDOW_MS=60000
-RATE_LIMIT_MAX_REQUESTS=100
+# Rate Limiting - Global fallback limits (per-merchant tier limits in database)
+RATE_LIMIT_WINDOW_MS=5000              # 5 seconds window
+RATE_LIMIT_MAX_REQUESTS=50             # General endpoints max requests
+
+# Endpoint-specific rate limits (IP-based fallback)
+VERIFY_RATE_LIMIT_WINDOW_MS=5000       # 5 second window for verify
+VERIFY_RATE_LIMIT_MAX=30               # 30 verify requests per 5 seconds
+SETTLE_RATE_LIMIT_WINDOW_MS=5000       # 5 second window for settle
+SETTLE_RATE_LIMIT_MAX=10               # 10 settle requests per 5 seconds
 
 # Logging
 LOG_LEVEL=info
