@@ -37,11 +37,6 @@ export class VerificationService {
     payload: PaymentPayload,
     requirements: PaymentRequirements
   ): Promise<VerifyResponse> {
-    logger.info('=== STARTING PAYMENT VERIFICATION ===');
-    logger.info(`Network: ${requirements.network}`);
-    logger.info(`Asset: ${requirements.asset}`);
-    logger.info(`Amount: ${requirements.maxAmountRequired}`);
-
     try {
       // Layer 1: Validate network
       const networkCheck = this.validateNetwork(requirements.network);
@@ -49,6 +44,11 @@ export class VerificationService {
         return networkCheck;
       }
       const normalizedNetwork = networkCheck.normalizedNetwork!;
+
+      logger.info('=== STARTING PAYMENT VERIFICATION ===');
+      logger.info(`Network: ${normalizedNetwork}`);
+      logger.info(`Asset: ${requirements.asset}`);
+      logger.info(`Amount: ${requirements.maxAmountRequired}`);
 
       // Layer 1.5: Validate token support
       const tokenCheck = this.validateToken(normalizedNetwork, requirements.asset);

@@ -129,7 +129,7 @@ router.post(
 
     logger.info('=== VERIFY REQUEST RECEIVED ===');
     logger.info(`From IP: ${req.ip}`);
-    logger.info(`Network: ${paymentRequirements.network}`);
+    logger.info(`Network (raw): ${paymentRequirements.network}`);
     logger.info(`Asset: ${paymentRequirements.asset}`);
     logger.info(`Amount: ${paymentRequirements.maxAmountRequired}`);
 
@@ -198,7 +198,7 @@ router.post(
     logger.info('=== SETTLE REQUEST RECEIVED ===');
     logger.info(`From IP: ${req.ip}`);
     logger.info(`Merchant: ${req.merchant?.auth_address}`);
-    logger.info(`Network: ${paymentRequirements.network}`);
+    logger.info(`Network (raw): ${paymentRequirements.network}`);
     logger.info(`Asset: ${paymentRequirements.asset}`);
     logger.info(`Amount: ${paymentRequirements.maxAmountRequired}`);
 

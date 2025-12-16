@@ -63,9 +63,19 @@ class DatabaseService {
       queueLimit: config.database.queueLimit,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10000,
+      // Advanced connection pool optimizations
+      maxIdle: 10, // Max idle connections to keep
+      idleTimeout: 60000, // Close idle connections after 60s
+      timezone: '+00:00', // Use UTC
+      connectTimeout: 10000, // 10s connection timeout
+      // Performance optimizations
+      multipleStatements: false, // Security: prevent SQL injection
+      dateStrings: false, // Return dates as Date objects
+      supportBigNumbers: true, // Handle BIGINT properly
+      bigNumberStrings: false, // Return BigInt as numbers when safe
     });
 
-    logger.info(`MySQL connection pool created (${config.database.connectionLimit} connections, queue limit: ${config.database.queueLimit})`);
+    logger.info(`MySQL connection pool created (${config.database.connectionLimit} connections, queue limit: ${config.database.queueLimit}, maxIdle: 10)`);
   }
 
   /**

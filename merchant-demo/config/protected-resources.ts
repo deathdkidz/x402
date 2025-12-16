@@ -8,8 +8,8 @@
 export interface ProtectedResource {
   amount: string;           // Amount in smallest unit (e.g., 10000 = 0.01 USDC)
   description: string;      // Description shown in payment UI
-  network?: string;         // Default: 'base-sepolia'
-  asset?: string;          // Token address, default: USDC on base-sepolia
+  network?: string;         // Network name - accepts any format: 'Base Sepolia', 'base-sepolia', 'BASE-SEPOLIA', etc.
+  asset?: string;          // Token address, default: USDC on Base Sepolia
 }
 
 export const protectedResources: Record<string, ProtectedResource> = {
@@ -41,7 +41,7 @@ export const protectedResources: Record<string, ProtectedResource> = {
  * Default configuration for protected resources
  */
 export const defaultConfig = {
-  network: 'Base Sepolia', // Must match facilitator's network name exactly
+  network: 'Base Sepolia', // Flexible format: 'Base Sepolia', 'base-sepolia', 'BASE SEPOLIA', etc.
   asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // USDC on Base Sepolia
   scheme: 'exact',
   maxTimeoutSeconds: 3600,

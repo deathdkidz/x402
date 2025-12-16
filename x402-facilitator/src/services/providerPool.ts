@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { getRpcUrl, getAllSupportedNetworks } from '../config/index.js';
+import { getRpcUrl, getAllSupportedNetworks, normalizeNetworkName } from '../config/index.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -108,12 +108,13 @@ class ProviderPool {
    * Get provider for a network (from pool)
    */
   getProvider(network: string): ethers.JsonRpcProvider | ethers.WebSocketProvider {
-    const provider = this.providers.get(network);
+    const normalizedNetwork = normalizeNetworkName(network);
+    const provider = this.providers.get(normalizedNetwork);
     
     if (!provider) {
       // Fallback: create a new HTTP provider on-the-fly
       logger.warn(`⚠️ ${network}: Provider not in pool, creating temporary HTTP provider`);
-      const rpcUrl = getRpcUrl(network);
+      const rpcUrl = getRpcUrl(normalizedNetwork);
       return new ethers.JsonRpcProvider(rpcUrl);
     }
     
@@ -124,7 +125,8 @@ class ProviderPool {
    * Check if a network has an active provider
    */
   hasProvider(network: string): boolean {
-    return this.providers.has(network);
+    const normalizedNetwork = normalizeNetworkName(network);
+    return this.providers.has(normalizedNetwork);
   }
 
   /**

@@ -238,20 +238,57 @@ const config: Config = {
   settleRateLimitMax: parseInt(process.env.SETTLE_RATE_LIMIT_MAX || '10', 10),
 };
 
+/**
+ * Normalize network name to match configured network names
+ * Handles different formats: 'Base Sepolia', 'base-sepolia', 'base sepolia', 'BaSe SePolia', etc.
+ * 
+ * @param network - Network name in any format
+ * @returns Normalized network name that matches config, or original if no match
+ */
+export const normalizeNetworkName = (network: string): string => {
+  const allNetworks = [...config.mainnetNetworks, ...config.testnetNetworks];
+  
+  // Try exact match first (case-insensitive)
+  const exactMatch = allNetworks.find(n => n.toLowerCase() === network.toLowerCase());
+  if (exactMatch) {
+    return exactMatch;
+  }
+  
+  // Fallback: Normalize to title case (handles hyphens, underscores, spaces)
+  // 'base-sepolia' -> 'Base Sepolia'
+  // 'base_sepolia' -> 'Base Sepolia'
+  // 'BaSe SePolia' -> 'Base Sepolia'
+  const normalizedNetwork = network.split(/[-_\s]+/).map(word => 
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ');
+  
+  // Check if normalized version exists in config
+  const normalizedMatch = allNetworks.find(n => n === normalizedNetwork);
+  if (normalizedMatch) {
+    return normalizedMatch;
+  }
+  
+  // Return original if no match (will fail later with proper error)
+  return network;
+};
+
 // Helper functions to access network/token data
 export const getNetworkConfig = (network: string): NetworkConfig | undefined => {
-  return config.networks[network];
+  const normalizedNetwork = normalizeNetworkName(network);
+  return config.networks[normalizedNetwork];
 };
 
 export const getTokenByAddress = (network: string, tokenAddress: string): TokenConfig | undefined => {
-  const networkConfig = config.networks[network];
+  const normalizedNetwork = normalizeNetworkName(network);
+  const networkConfig = config.networks[normalizedNetwork];
   return networkConfig?.tokens.find(t => t.address.toLowerCase() === tokenAddress.toLowerCase());
 };
 
 export const getRpcUrl = (network: string): string => {
-  const networkConfig = config.networks[network];
+  const normalizedNetwork = normalizeNetworkName(network);
+  const networkConfig = config.networks[normalizedNetwork];
   if (!networkConfig?.rpcUrl) {
-    throw new Error(`No RPC URL configured for network: ${network}`);
+    throw new Error(`No RPC URL configured for network: ${normalizedNetwork}`);
   }
   return networkConfig.rpcUrl;
 };
@@ -269,8 +306,9 @@ export const createProvider = (network: string): ethers.JsonRpcProvider | ethers
 };
 
 export const getEIP712Domain = (network: string, tokenAddress: string) => {
+  const normalizedNetwork = normalizeNetworkName(network);
   const token = getTokenByAddress(network, tokenAddress);
-  const networkConfig = config.networks[network];
+  const networkConfig = config.networks[normalizedNetwork];
   
   if (!token?.eip712 || !networkConfig) {
     return undefined;

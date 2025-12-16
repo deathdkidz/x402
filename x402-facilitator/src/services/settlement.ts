@@ -92,7 +92,7 @@ export class SettlementService {
     logger.info(`Using paymaster wallet: ${paymasterWallet.address}`);
     logger.info(`Settling payment to merchant: ${merchantAddress}`);
     logger.info('=== STARTING PAYMENT SETTLEMENT ===');
-    logger.info(`Network: ${requirements.network}`);
+    logger.info(`Network: ${networkForProvider}`);
     logger.info(`Asset: ${requirements.asset}`);
     logger.info(`Amount: ${requirements.maxAmountRequired}`);
 
@@ -464,7 +464,8 @@ export class SettlementService {
           const gasCostNative = ethers.formatEther(gasCostWei);
           const gasCostGwei = ethers.formatUnits(gasCostWei, 'gwei');
           
-          await db.saveGasTracking({
+          // ⚡ OPTIMIZATION: Save gas tracking async (don't block response)
+          db.saveGasTracking({
             transactionId: transactionId || undefined,
             merchantId,
             operationType: 'settlement',
@@ -600,28 +601,30 @@ export class SettlementService {
     } catch (error) {
       logger.error('❌ Settlement error:', error);
       
-      // Track failed operation (no gas consumed if tx didn't submit)
-      try {
-        let merchantId: number | undefined;
+      // ⚡ OPTIMIZATION: Track failed operation async (don't block error response)
+      (async () => {
         try {
-          const merchant = await db.getMerchantByAddress(merchantAddress);
-          merchantId = merchant?.id;
-        } catch (e) {
-          // Ignore if merchant lookup fails
+          let merchantId: number | undefined;
+          try {
+            const merchant = await db.getMerchantByAddress(merchantAddress);
+            merchantId = merchant?.id;
+          } catch (e) {
+            // Ignore if merchant lookup fails
+          }
+          
+          await db.saveGasTracking({
+            transactionId: transactionId || undefined,
+            merchantId,
+            operationType: 'settlement',
+            network: requirements.network,
+            gasToken: this.getGasToken(requirements.network),
+            status: 'failed',
+            errorMessage: error instanceof Error ? error.message : 'Unknown error',
+            });
+        } catch (gasError) {
+          logger.warn('Failed to track failed gas operation:', gasError);
         }
-        
-        await db.saveGasTracking({
-          transactionId: transactionId || undefined,
-          merchantId,
-          operationType: 'settlement',
-          network: requirements.network,
-          gasToken: this.getGasToken(requirements.network),
-          status: 'failed',
-          errorMessage: error instanceof Error ? error.message : 'Unknown error',
-        });
-      } catch (gasError) {
-        logger.warn('Failed to track failed gas operation:', gasError);
-      }
+      })().catch(err => logger.error('Gas tracking background task failed:', err));
       
       // Update transaction status to failed if we saved it as pending
       if (transactionId) {
@@ -1380,6 +1383,10 @@ export class SettlementService {
   /**
    * Send webhook notification to merchant
    */
+  /**
+   * Send webhook notification to merchant (async, non-blocking)
+   * ⚡ OPTIMIZATION: This method initiates webhook delivery but doesn't wait for it
+   */
   private async sendWebhookNotification(
     transactionId: number,
     merchantAddress: string,
@@ -1388,44 +1395,47 @@ export class SettlementService {
     transactionHash: string,
     status: 'pending' | 'completed' | 'failed'
   ): Promise<void> {
-    try {
-      // Get merchant webhook configuration
-      const merchant = await db.getMerchantByAddress(merchantAddress);
-      if (!merchant || !merchant.webhook_url) {
-        return; // No webhook configured
-      }
-
-      // Check if merchant wants this event type
-      const wantedEvents = merchant.webhook_events.split(',');
-      const eventName = `transaction.${status}` as const;
-      if (!wantedEvents.includes(eventName)) {
-        logger.debug(`Merchant does not subscribe to ${eventName} events`);
-        return;
-      }
-
-      // Send webhook
-      await webhookService.sendWebhook(
-        merchant.webhook_url,
-        merchant.webhook_secret,
-        {
-          event: eventName,
-          transactionId,
-          transactionHash,
-          merchantAddress,
-          payerAddress,
-          amount: requirements.maxAmountRequired,
-          asset: requirements.asset,
-          network: requirements.network,
-          resource: requirements.resource,
-          description: requirements.description,
-          mimeType: requirements.mimeType,
-          status,
-          timestamp: Math.floor(Date.now() / 1000),
+    // Fire and forget - don't block settlement response
+    (async () => {
+      try {
+        // Get merchant webhook configuration
+        const merchant = await db.getMerchantByAddress(merchantAddress);
+        if (!merchant || !merchant.webhook_url) {
+          return; // No webhook configured
         }
-      );
-    } catch (error) {
-      logger.error('Failed to send webhook notification from settlement:', error);
-    }
+
+        // Check if merchant wants this event type
+        const wantedEvents = merchant.webhook_events.split(',');
+        const eventName = `transaction.${status}` as const;
+        if (!wantedEvents.includes(eventName)) {
+          logger.debug(`Merchant does not subscribe to ${eventName} events`);
+          return;
+        }
+
+        // Send webhook
+        await webhookService.sendWebhook(
+          merchant.webhook_url,
+          merchant.webhook_secret,
+          {
+            event: eventName,
+            transactionId,
+            transactionHash,
+            merchantAddress,
+            payerAddress,
+            amount: requirements.maxAmountRequired,
+            asset: requirements.asset,
+            network: requirements.network,
+            resource: requirements.resource,
+            description: requirements.description,
+            mimeType: requirements.mimeType,
+            status,
+            timestamp: Math.floor(Date.now() / 1000),
+          }
+        );
+      } catch (error) {
+        logger.error('Failed to send webhook notification from settlement:', error);
+      }
+    })().catch(err => logger.error('Webhook delivery background task failed:', err));
   }
 }
 
