@@ -116,7 +116,7 @@ async function verifyPayment(
 async function settlePayment(
   paymentPayload: { authorization: any; signature: string },
   requirements: any
-): Promise<{ success: boolean; status?: string; message?: string; transaction?: string; flashblockHash?: string; raw?: any }> {
+): Promise<{ success: boolean; status?: string; message?: string; transaction?: string; flashblockHash?: string; payer?: string; raw?: any }> {
   try {
     const response = await fetch(`${FACILITATOR_URL}/settle`, {
       method: 'POST',
@@ -153,6 +153,7 @@ async function settlePayment(
       message: result.message || result.errorReason || result.error_reason,
       transaction: result.transaction || result.transactionHash || result.txHash,
       flashblockHash: result.flashblockHash || result.flashblock_id || result.flashblockId,
+      payer: result.payer,
       raw: result
     };
   } catch (error) {
@@ -233,24 +234,8 @@ export async function middleware(request: NextRequest) {
     maxTimeoutSeconds: defaultConfig.maxTimeoutSeconds
   };
 
-  // Verify payment before settling to provide immediate feedback
-  console.log('🔍 Verifying payment with facilitator...');
-  const verificationResult = await verifyPayment(paymentPayload, requirements);
-
-  if (!verificationResult.isValid) {
-    console.log('❌ Payment verification failed');
-    console.log('   Reason:', verificationResult.reason || 'Unknown verification failure');
-    return new NextResponse(
-      JSON.stringify({
-        error: 'Payment Verification Failed',
-        message: verificationResult.reason || 'Verification rejected by facilitator'
-      }),
-      { status: 402, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
-
-  console.log('✅ Verification succeeded. Proceeding to settlement.');
-  console.log('💰 Settling payment on blockchain (includes verification + execution)...');
+  // Settle payment (includes verification + execution)
+  console.log('💰 Settling payment on blockchain...');
   console.log('   Network:', requirements.network);
   console.log('   Amount:', requirements.maxAmountRequired);
   console.log('   PayTo:', requirements.payTo);
@@ -283,7 +268,7 @@ export async function middleware(request: NextRequest) {
   const paymentResponsePayload = {
     status: settlementResult.status || (settlementResult.success ? 'completed' : 'pending'),
     resource: path,
-    payer: paymentPayload.authorization?.from || verificationResult.payer,
+    payer: paymentPayload.authorization?.from || settlementResult.payer,
     transactionHash: settlementResult.transaction,
     flashblockHash: settlementResult.flashblockHash
   };
