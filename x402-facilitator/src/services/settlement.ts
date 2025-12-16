@@ -357,6 +357,56 @@ export class SettlementService {
       // Track balance before transaction
       const balanceBefore = await provider.getBalance(paymasterAddress);
       
+      // Safety Check 11: Pre-flight simulation to avoid wasting gas on invalid transactions
+      // This catches issues like invalid signatures, insufficient balance, used nonces, etc.
+      try {
+        logger.debug(`🧪 Running pre-flight simulation...`);
+        await tokenContract.transferWithAuthorization.staticCall(
+          payer,
+          payTo,
+          amount,
+          validAfter,
+          validBefore,
+          nonce,
+          sig.v,
+          sig.r,
+          sig.s
+        );
+        logger.debug(`✓ Pre-flight simulation passed`);
+      } catch (simError: any) {
+        const errorMsg = simError.reason || simError.message || 'Unknown error';
+        logger.error(`❌ Pre-flight simulation failed: ${errorMsg}`);
+        logger.warn(`⚡ Gas saved by not broadcasting invalid transaction`);
+        
+        // Check for specific error types to provide helpful messages
+        let userFriendlyError = errorMsg;
+        if (errorMsg.includes('invalid signature')) {
+          userFriendlyError = 'Invalid signature. Ensure EIP-712 signature uses checksummed addresses.';
+        } else if (errorMsg.includes('authorization is used')) {
+          userFriendlyError = 'Authorization already used. This nonce has been consumed.';
+        } else if (errorMsg.includes('insufficient balance')) {
+          userFriendlyError = 'Insufficient token balance in payer wallet.';
+        }
+        
+        // Update transaction status as failed (simulation failure)
+        if (transactionId) {
+          try {
+            await db.updateTransaction(transactionId, 'failed', undefined);
+            logger.info(`💾 Transaction ${transactionId} marked as failed (pre-flight)`);
+          } catch (dbError) {
+            logger.warn('Failed to update transaction status:', dbError);
+          }
+        }
+        
+        return {
+          success: false,
+          network: requirements.network,
+          errorReason: userFriendlyError,
+          payer,
+          status: 'failed',
+        };
+      }
+      
       const tx = await transactionQueue.execute(paymasterAddress, async () => {
         logger.info(`📤 [Queue] Executing transaction for wallet ${paymasterAddress}`);
         return await tokenContract.transferWithAuthorization(
