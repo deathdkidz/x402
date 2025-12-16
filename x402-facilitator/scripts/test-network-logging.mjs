@@ -7,8 +7,8 @@
  * instead of the raw value from merchant payload
  */
 
-const FACILITATOR_URL = 'http://localhost:8080';
-const API_KEY = 'test_key';
+const FACILITATOR_URL = 'https://api.netpay.id';
+const API_KEY = '10426200df51076eeee39dba3963b78ba616b6d490ba6606bb16dfb7974e3036';
 
 console.log('╔═══════════════════════════════════════════════════════════════════╗');
 console.log('║          NETWORK NAME LOGGING TEST                               ║');

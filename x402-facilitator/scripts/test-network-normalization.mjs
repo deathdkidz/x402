@@ -7,7 +7,7 @@
  * It should accept various formats: 'Base Sepolia', 'base-sepolia', 'base sepolia', 'BaSe SePolia', etc.
  */
 
-const FACILITATOR_URL = 'http://localhost:8080';
+const FACILITATOR_URL = 'https://api.netpay.id';
 
 // Test different network name formats
 const testCases = [
