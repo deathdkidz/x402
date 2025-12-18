@@ -17,6 +17,9 @@ const HELP_TEXT = `
 ║                  PAYMASTER BALANCE MANAGER                        ║
 ╚═══════════════════════════════════════════════════════════════════╝
 
+⚠️  RECOMMENDED: Use 'node facilitator-tools.mjs' for interactive mode
+   This script is for CLI automation and scripting.
+
 Manage paymaster wallet balances across multiple networks.
 
 USAGE:
@@ -109,20 +112,17 @@ const BATCH_TRANSFER_ABI = [
 ];
 
 // ============================================================================
-// Load batch transfer contracts from batch-contracts.json
+// Load batch transfer contracts from networks.json
 // These contracts enable gas-efficient multi-recipient transfers
-// Deploy to new networks using: node deploy-batch-contract.mjs
+// Deploy to new networks using: node facilitator-tools.mjs (option 4)
 // ============================================================================
 let BATCH_CONTRACTS = {};
-try {
-  const batchContractsPath = join(__dirname, 'config', 'batch-contracts.json');
-  const batchContractsData = fs.readFileSync(batchContractsPath, 'utf8');
-  BATCH_CONTRACTS = JSON.parse(batchContractsData);
-  console.log(`📋 Loaded batch contracts for ${Object.keys(BATCH_CONTRACTS).length} network(s)`);
-} catch (error) {
-  console.log('⚠️  No batch-contracts.json found, batch transfers will not be available');
-  console.log('   Deploy batch contracts using: node deploy-batch-contract.mjs');
-}
+Object.entries(NETWORKS_CONFIG).forEach(([name, config]) => {
+  if (config.batchContract) {
+    BATCH_CONTRACTS[name] = config.batchContract;
+  }
+});
+console.log(`📋 Loaded batch contracts for ${Object.keys(BATCH_CONTRACTS).length} network(s)`);
 
 async function checkBalances(network) {
   const rpcUrl = RPC_URLS[network];
@@ -178,15 +178,21 @@ async function rebalanceIfNeeded(networkData, dryRun = true) {
   const lowest = balances[balances.length - 1];
   const difference = highest.balance - lowest.balance;
   const differenceFormatted = ethers.formatEther(difference);
-  const threshold = ethers.parseEther(REBALANCE_THRESHOLD);
-  const minKeep = ethers.parseEther(MIN_BALANCE_TO_KEEP);
+  // Per-network overrides if present in networks.json
+  const networkConfig = NETWORKS_CONFIG[network] || {};
+  const threshold = networkConfig.rebalanceThreshold
+    ? ethers.parseEther(String(networkConfig.rebalanceThreshold))
+    : ethers.parseEther(REBALANCE_THRESHOLD);
+  const minKeep = networkConfig.minBalanceToKeep
+    ? ethers.parseEther(String(networkConfig.minBalanceToKeep))
+    : ethers.parseEther(MIN_BALANCE_TO_KEEP);
   
   console.log(`\n${'─'.repeat(70)}`);
   console.log(`Balance Analysis:`);
   console.log(`  Highest: [${highest.index}] ${highest.balanceFormatted} ${gasToken}`);
   console.log(`  Lowest:  [${lowest.index}] ${lowest.balanceFormatted} ${gasToken}`);
   console.log(`  Difference: ${differenceFormatted} ${gasToken}`);
-  console.log(`  Threshold: ${REBALANCE_THRESHOLD} ${gasToken}`);
+  console.log(`  Threshold: ${networkConfig.rebalanceThreshold || REBALANCE_THRESHOLD} ${gasToken}`);
   console.log('─'.repeat(70));
   
   if (difference < threshold) {

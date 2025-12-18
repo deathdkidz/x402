@@ -104,7 +104,7 @@ const config: Config = {
   networks: {
     'Base': {
       chainId: 8453,
-      rpcUrl: process.env.BASE_SEPOLIA_RPC || 'wss://base-mainnet.g.alchemy.com/v2/demo',
+      rpcUrl: process.env.BASE_RPC || 'wss://base-mainnet.g.alchemy.com/v2/demo',
       nativeToken: { symbol: 'ETH', name: 'Ethereum', cmcSlug: 'ethereum' },
       tokens: [
         {
@@ -120,8 +120,8 @@ const config: Config = {
       ],
     },
     'Ethereum': {
-      chainId: 11155111,
-      rpcUrl: process.env.ETHEREUM_SEPOLIA_RPC || 'https://eth-sepolia.g.alchemy.com/v2/demo',
+      chainId: 1,
+      rpcUrl: process.env.ETHEREUM_RPC || 'https://eth-mainnet.g.alchemy.com/v2/demo',
       nativeToken: { symbol: 'ETH', name: 'Ethereum', cmcSlug: 'ethereum' },
       tokens: [
         {
@@ -145,6 +145,23 @@ const config: Config = {
           symbol: 'USDC',
           name: 'USDC',
           address: '0xb88339CB7199b77E23DB6E890353E22632Ba630f',
+          decimals: 6,
+          eip712: {
+            name: 'USDC',
+            version: '2',
+          },
+        },
+      ],
+    },
+    'OP Mainnet': {
+      chainId: 10,
+      rpcUrl: process.env.OP_MAINNET_RPC || 'wss://opt-mainnet.g.alchemy.com/v2/demo',
+      nativeToken : { symbol: 'ETH', name: 'Ethereum', cmcSlug: 'ethereum' },
+      tokens: [
+        {
+          symbol: 'USDC',
+          name: 'USD Coin',
+          address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
           decimals: 6,
           eip712: {
             name: 'USDC',
@@ -194,6 +211,23 @@ const config: Config = {
           symbol: 'USDC',
           name: 'USDC',
           address: '0x2B3370eE501B4a559b57D449569354196457D8Ab',
+          decimals: 6,
+          eip712: {
+            name: 'USDC',
+            version: '2',
+          },
+        },
+      ],
+    },
+    'OP Sepolia': {
+      chainId: 11155420,
+      rpcUrl: process.env.OP_SEPOLIA_RPC || 'https://opt-sepolia.g.alchemy.com/v2/demo',
+      nativeToken: { symbol: 'ETH', name: 'Ethereum', cmcSlug: 'ethereum' },
+      tokens: [
+        {
+          symbol: 'USDC',
+          name: 'USDC',
+          address: '0x5fd84259d66Cd46123540766Be93DFE6D43130D7',
           decimals: 6,
           eip712: {
             name: 'USDC',

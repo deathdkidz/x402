@@ -4,41 +4,79 @@
     "chainId": 84532,
     "explorer": "https://sepolia.basescan.org",
     "gasToken": "ETH",
-    "type": "testnet"
+    "type": "testnet",
+    "batchContract": "0xe6158F16A2781241703cc8005229c8e1ADd866De",
+    "rebalanceThreshold": "0.01",
+    "minBalanceToKeep": "0.005"
   },
   "Ethereum Sepolia": {
     "rpcUrl": "ETHEREUM_SEPOLIA_RPC",
     "chainId": 11155111,
     "explorer": "https://sepolia.etherscan.io",
     "gasToken": "ETH",
-    "type": "testnet"
+    "type": "testnet",
+    "batchContract": "0x725487b8d800AA6155ed21d25470991139770616",
+    "rebalanceThreshold": "0.01",
+    "minBalanceToKeep": "0.005"
   },
   "HyperEVM Testnet": {
     "rpcUrl": "HYPEREVM_TESTNET_RPC",
     "chainId": 998,
     "explorer": "https://testnet.purrsec.com",
     "gasToken": "HYPE",
-    "type": "testnet"
+    "type": "testnet",
+    "batchContract": "0xA07A5d46f7545357A6D53C1ABe7dcdC01C7A8bA3",
+    "rebalanceThreshold": "0.01",
+    "minBalanceToKeep": "0.005"
   },
   "Base": {
     "rpcUrl": "BASE_RPC",
     "chainId": 8453,
     "explorer": "https://basescan.org",
     "gasToken": "ETH",
-    "type": "mainnet"
+    "type": "mainnet",
+    "batchContract": null,
+    "rebalanceThreshold": "0.01",
+    "minBalanceToKeep": "0.005"
   },
   "Ethereum": {
     "rpcUrl": "ETHEREUM_RPC",
     "chainId": 1,
     "explorer": "https://etherscan.io",
     "gasToken": "ETH",
-    "type": "mainnet"
+    "type": "mainnet",
+    "batchContract": null,
+    "rebalanceThreshold": "0.01",
+    "minBalanceToKeep": "0.005"
   },
   "HyperEVM": {
     "rpcUrl": "HYPEREVM_RPC",
     "chainId": 999,
     "explorer": "https://hyperevmscan.io",
     "gasToken": "HYPE",
-    "type": "mainnet"
+    "type": "mainnet",
+    "batchContract": "0x8457a5D6111fce8e67d5289f5505dd21C6BBc01e",
+    "rebalanceThreshold": "0.01",
+    "minBalanceToKeep": "0.005"
+  },
+  "OP Sepolia": {
+    "rpcUrl": "OP_SEPOLIA_RPC",
+    "chainId": 11155420,
+    "explorer": "https://sepolia-optimism.etherscan.io",
+    "gasToken": "ETH",
+    "type": "testnet",
+    "batchContract": "0xF7B3f366aaA6d293E4C391F2E834056dB7f3bE50",
+    "rebalanceThreshold": "0.01",
+    "minBalanceToKeep": "0.005"
+  },
+  "OP Mainnet": {
+    "rpcUrl": "OP_MAINNET_RPC",
+    "chainId": 10,
+    "explorer": "https://optimistic.etherscan.io",
+    "gasToken": "ETH",
+    "type": "mainnet",
+    "batchContract": null,
+    "rebalanceThreshold": "0.01",
+    "minBalanceToKeep": "0.005"
   }
 }

@@ -3,13 +3,12 @@ import { ethers } from 'ethers';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 dotenv.config({ path: join(__dirname, '..', '.env') });
-
-dotenv.config();
 
 // ERC-20 Standard ABI
 const ERC20_ABI = [
@@ -25,25 +24,37 @@ const EIP712_ABI = [
   'function name() view returns (string)',
 ];
 
-// RPC URLs from .env
-const RPC_URLS = {
-  'Base': process.env.BASE_RPC,
-  'Base Sepolia': process.env.BASE_SEPOLIA_RPC,
-  'Ethereum': process.env.ETHEREUM_RPC,
-  'Ethereum Sepolia': process.env.ETHEREUM_SEPOLIA_RPC,
-  'HyperEVM': process.env.HYPEREVM_RPC,
-  'HyperEVM Testnet': process.env.HYPEREVM_TESTNET_RPC
-};
+// ============================================================================
+// CONFIGURATION - Networks
+// ============================================================================
+// Networks are now managed via networks.json
+// To add/edit/remove networks, use: node manage-networks.mjs
+// ============================================================================
 
-// Chain IDs
-const CHAIN_IDS = {
-  'Base': 8453,
-  'Base Sepolia': 84532,
-  'Ethereum': 1,
-  'Ethereum Sepolia': 11155111,
-  'HyperEVM': 999,
-  'HyperEVM Testnet': 998,
-};
+// Load network configurations from JSON
+let NETWORKS_CONFIG = {};
+let RPC_URLS = {};
+let CHAIN_IDS = {};
+let ALL_NETWORKS = [];
+
+try {
+  const networksPath = join(__dirname, 'config', 'networks.json');
+  const networksData = fs.readFileSync(networksPath, 'utf8');
+  NETWORKS_CONFIG = JSON.parse(networksData);
+  
+  // Build RPC_URLS and CHAIN_IDS from networks.json
+  Object.entries(NETWORKS_CONFIG).forEach(([name, config]) => {
+    RPC_URLS[name] = process.env[config.rpcUrl]; // Get RPC from env variable
+    CHAIN_IDS[name] = config.chainId;
+    ALL_NETWORKS.push(name);
+  });
+  
+  console.log(`📡 Loaded ${ALL_NETWORKS.length} network(s) from networks.json\n`);
+} catch (error) {
+  console.error('❌ Error loading networks.json:', error.message);
+  console.log('   Run: node manage-networks.mjs to configure networks');
+  process.exit(1);
+}
 
 async function getTokenMetadata(tokenAddress, network) {
   const rpcUrl = RPC_URLS[network];
@@ -161,17 +172,18 @@ function parseArgs() {
   if (args.length < 2) {
     console.log('Usage: node get-token-metadata.mjs <token_address> <network>');
     console.log('');
-    console.log('Networks:');
-    console.log('  - Base');
-    console.log('  - Base Sepolia');
-    console.log('  - Ethereum');
-    console.log('  - Ethereum Sepolia');
-    console.log('  - HyperEVM');
-    console.log('  - HyperEVM Testnet');
+    console.log('Available Networks:');
+    ALL_NETWORKS.forEach(net => {
+      const status = RPC_URLS[net] ? '✓' : '✗';
+      const type = NETWORKS_CONFIG[net]?.type || '';
+      console.log(`  ${status} ${net} (${type})`);
+    });
     console.log('');
     console.log('Example:');
     console.log('  node get-token-metadata.mjs 0x036CbD53842c5426634e7929541eC2318f3dCF7e "Base Sepolia"');
     console.log('  node get-token-metadata.mjs 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238 "Ethereum Sepolia"');
+    console.log('');
+    console.log('To add/edit networks: node manage-networks.mjs');
     process.exit(1);
   }
 
@@ -198,10 +210,12 @@ async function main() {
   if (!RPC_URLS[network]) {
     console.error(`\n❌ Unknown network: ${network}`);
     console.log('\nAvailable networks:');
-    Object.keys(RPC_URLS).forEach(net => {
+    ALL_NETWORKS.forEach(net => {
       const status = RPC_URLS[net] ? '✓' : '✗';
-      console.log(`  ${status} ${net}`);
+      const type = NETWORKS_CONFIG[net]?.type || '';
+      console.log(`  ${status} ${net} (${type})`);
     });
+    console.log('\nTo add this network: node manage-networks.mjs');
     process.exit(1);
   }
 

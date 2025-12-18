@@ -2,54 +2,54 @@
 
 Utility scripts for managing, monitoring, and testing the x402 payment facilitator.
 
-## � Quick Start
+## 🚀 Quick Start
+
+### Interactive Tool (Recommended)
+```bash
+node facilitator-tools.mjs
+```
+
+**All utilities in one interactive menu:**
+- Network Management
+- Token Metadata Fetcher  
+- Paymaster Balance Checker
+- Contract Deployment
+- Merchant Management
+- Gas Statistics
+
+### Testing
+```bash
+node test-suite.mjs              # Run all tests
+node test-suite.mjs network      # Test network normalization
+node test-suite.mjs validation   # Test validation errors
+node test-suite.mjs signature    # Test EIP-712 signatures
+```
 
 Before using these scripts, ensure:
 1. `.env` file is configured in `/srv/x402/x402-facilitator/`
-2. Required environment variables are set (see [Environment Setup](#-environment-setup))
+2. Required environment variables are set
 3. Scripts have execute permissions: `chmod +x scripts/*.sh`
-### First Time Setup
-
-```bash
-cd /srv/x402/x402-facilitator/scripts
-
-# 1. Manage networks (add/edit/remove blockchain networks)
-node manage-networks.mjs
-
-# 2. Manage paymaster balances (interactive mode)
-node balance-paymaster.mjs
-
-# 3. Deploy batch contracts (optional, for gas savings)
-node deploy-batch-contract.mjs
-```
 
 ### 📁 File Structure
 
 ```
 scripts/
-├── config/                     # Configuration files (auto-created)
-│   ├── networks.json          # Network configurations
-│   └── batch-contracts.json   # Deployed contract addresses
-├── manage-networks.mjs        # Network manager (interactive)
-├── balance-paymaster.mjs      # Balance manager (interactive)
-├── deploy-batch-contract.mjs  # Contract deployer (interactive)
+├── config/
+│   └── networks.json          # Single source of truth (includes batch contracts)
+├── facilitator-tools.mjs      # Unified interactive tool (NEW)
+├── test-suite.mjs             # Consolidated test suite (NEW)
+├── balance-paymaster.mjs      # Paymaster balance manager
+├── init-database.sql          # Database schema
 └── README.md                  # This file
 ```
-## �📋 Quick Reference
+## 📋 Quick Reference
 
-### Merchant Management
+### Unified Tools (Use These)
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| `manage-networks.mjs` | Manage network configurations | `node manage-networks.mjs` |
-| `generate-merchant-v2.mjs` | Create new merchant accounts | `node generate-merchant-v2.mjs [private_key]` |
-| `update-merchant-tier.mjs` | Update merchant rate limits | `node update-merchant-tier.mjs <address> <tier>` |
-
-### Financial Operations
-| Script | Purpose | Usage |
-|--------|---------|-------|
-| `balance-paymaster.mjs` | Manage paymaster wallet balances | `node balance-paymaster.mjs [--execute] [network]` |
-| `deploy-batch-contract.mjs` | Deploy batch transfer contracts | `node deploy-batch-contract.mjs [--network <name>]` |
-| `view-gas-stats.mjs` | View gas usage statistics | `node view-gas-stats.mjs [--today] [--network <name>]` |
+| `facilitator-tools.mjs` | **All-in-one interactive utility** | `node facilitator-tools.mjs` |
+| `test-suite.mjs` | **Consolidated test suite** | `node test-suite.mjs [test-name]` |
+| `balance-paymaster.mjs` | Paymaster balance manager (CLI) | `node balance-paymaster.mjs [--execute] [network]` |
 
 ### Monitoring & Performance
 | Script | Purpose | Usage |
@@ -652,7 +652,7 @@ PAYMASTER_PRIVATE_KEYS=0x...,0x...
 DEPLOYER_PRIVATE_KEY=0x...
 
 # Test Keys (for benchmarks)
-PRIVATE_KEY=0x...
+# Use CLI flags (e.g. --private-key) or interactive prompts instead of storing PRIVATE_KEY in .env
 TEST_API_KEY=your_api_key
 
 # Alerts (optional)
@@ -662,9 +662,8 @@ ALERT_EMAIL=admin@example.com
 ```
 
 **Note on Private Keys:**
-- Scripts now support interactive private key input
-- No need to store sensitive keys in .env
-- Private keys entered interactively are not saved
+- Scripts support interactive private key input or CLI flags (e.g. --private-key)
+- Avoid storing sensitive keys in .env; prefer runtime entry or secure secret stores
 
 ---
 
