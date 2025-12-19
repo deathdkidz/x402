@@ -38,8 +38,11 @@ class ProviderPool {
    * Create and cache a provider for a network
    */
   private async createProvider(network: string): Promise<void> {
+    const normalizedNetwork = normalizeNetworkName(network);
+    // Avoid recreating provider if already present
+    if (this.providers.has(normalizedNetwork)) return;
     try {
-      const rpcUrl = getRpcUrl(network);
+      const rpcUrl = getRpcUrl(normalizedNetwork);
       const isWebSocket = rpcUrl.startsWith('wss://') || rpcUrl.startsWith('ws://');
       
       if (isWebSocket) {
@@ -48,25 +51,25 @@ class ProviderPool {
         // Set up error handlers for WebSocket
         // @ts-ignore - WebSocket event handlers
         wsProvider.websocket.on?.('error', (error: Error) => {
-          logger.error(`WebSocket error for ${network}:`, error.message);
+          logger.error(`WebSocket error for ${normalizedNetwork}:`, error.message);
         });
         
         // @ts-ignore - WebSocket event handlers
         wsProvider.websocket.on?.('close', (code: number, reason: string) => {
-          logger.warn(`WebSocket closed for ${network} (code: ${code}, reason: ${reason})`);
-          this.handleDisconnection(network);
+          logger.warn(`WebSocket closed for ${normalizedNetwork} (code: ${code}, reason: ${reason})`);
+          this.handleDisconnection(normalizedNetwork);
         });
         
-        this.providers.set(network, wsProvider);
-        this.reconnectAttempts.set(network, 0);
+        this.providers.set(normalizedNetwork, wsProvider);
+        this.reconnectAttempts.set(normalizedNetwork, 0);
       } else {
         // HTTP provider - stateless, no connection management needed
         const httpProvider = new ethers.JsonRpcProvider(rpcUrl);
-        this.providers.set(network, httpProvider);
+        this.providers.set(normalizedNetwork, httpProvider);
       }
     } catch (error: any) {
-      logger.error(`   ❌ ${network}: Failed to initialize provider - ${error.message}`);
-      this.reconnectAttempts.set(network, 0);
+      logger.error(`   ❌ ${normalizedNetwork}: Failed to initialize provider - ${error.message}`);
+      this.reconnectAttempts.set(normalizedNetwork, 0);
     }
   }
 
