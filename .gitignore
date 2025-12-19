@@ -39,4 +39,5 @@ temp/
 *.tmp
 
 # Rust specific
-rust/
+target/
+Cargo.lock
