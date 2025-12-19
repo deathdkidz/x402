@@ -289,6 +289,20 @@ impl Redis {
         
         Ok(())
     }
+
+    /// Pre-warm merchant cache with all active merchants
+    pub async fn prewarm_merchants(&self, merchants: &[crate::types::Merchant]) -> Result<usize, RedisError> {
+        let mut cached = 0;
+        for merchant in merchants {
+            if let Ok(json) = serde_json::to_string(merchant) {
+                // Cache by API key (1 hour TTL)
+                if self.cache_merchant(&merchant.api_key, &json, 3600).await.is_ok() {
+                    cached += 1;
+                }
+            }
+        }
+        Ok(cached)
+    }
 }
 
 /// Rate limit check result

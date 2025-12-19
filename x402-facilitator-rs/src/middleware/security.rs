@@ -41,6 +41,7 @@ static ALLOWED_PATHS: Lazy<Vec<Regex>> = Lazy::new(|| {
         Regex::new(r"^/$").unwrap(),                    // Root endpoint
         Regex::new(r"^/health$").unwrap(),              // Health check
         Regex::new(r"^/networks$").unwrap(),            // Networks info
+        Regex::new(r"^/metrics$").unwrap(),             // Prometheus metrics (localhost only)
         Regex::new(r"^/verify$").unwrap(),              // Verify payment
         Regex::new(r"^/settle$").unwrap(),              // Settle payment
         Regex::new(r"^/merchant$").unwrap(),            // Merchant info
@@ -126,7 +127,21 @@ pub async fn security_middleware(
     request: Request,
     next: Next,
 ) -> Response {
-    let ip = addr.ip().to_string();
+    // Get real client IP from proxy headers (Nginx sets these)
+    // Priority: X-Forwarded-For > X-Real-IP > ConnectInfo
+    let ip = request.headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next()) // First IP in chain is the client
+        .map(|s| s.trim().to_string())
+        .or_else(|| {
+            request.headers()
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| addr.ip().to_string());
+    
     let path = request.uri().path();
 
     // Check if IP is banned
@@ -157,6 +172,19 @@ pub async fn security_middleware(
             StatusCode::NOT_FOUND,
             Json(ErrorResponse::new("Not Found", "The requested resource was not found")),
         ).into_response();
+    }
+
+    // Special handling for /metrics - only allow from localhost
+    if path == "/metrics" {
+        if ip == "127.0.0.1" || ip == "::1" {
+            return next.run(request).await;
+        } else {
+            warn!("🔒 Non-localhost metrics access blocked: {}", ip);
+            return (
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse::new("Forbidden", "Metrics endpoint is only accessible from localhost")),
+            ).into_response();
+        }
     }
 
     // Check if path is allowed

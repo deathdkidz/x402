@@ -29,10 +29,13 @@ deadpool-redis = "0.15"
 redis = { version = "0.25", features = ["tokio-comp"] }
 
 # Ethereum/Blockchain
-alloy = { version = "0.5", features = ["full", "signers", "signer-local", "providers", "contract", "sol-types", "json-rpc"] }
+alloy = { version = "0.5", features = ["full", "signers", "signer-local", "providers", "contract", "sol-types", "json-rpc", "transport-ws", "reqwest-rustls-tls"] }
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# TLS (for WebSocket)
+rustls = { version = "0.23", features = ["aws_lc_rs"] }
 
 # Rate limiting
 governor = "0.6"
@@ -65,6 +68,14 @@ uuid = { version = "1", features = ["v4", "serde"] }
 futures = "0.3"
 async-trait = "0.1"
 regex = "1"
+
+# Metrics (Prometheus)
+metrics = "0.23"
+metrics-exporter-prometheus = "0.15"
+
+# WebSocket support for alloy providers
+alloy-transport-ws = "0.5"
+tokio-tungstenite = { version = "0.23", features = ["rustls-tls-native-roots"] }
 
 [profile.release]
 opt-level = 3

@@ -336,12 +336,8 @@ impl VerificationService {
         amount: &str,
         network: &str,
     ) -> Result<(), String> {
-        let provider = self.provider_pool.get_provider(network)
+        let provider_arc = self.provider_pool.get_provider(network)
             .map_err(|e| format!("Failed to get provider: {}", e))?;
-        
-        let provider = match provider.as_ref() {
-            ProviderType::Http(p) => p,
-        };
 
         let payer_address: Address = payer.parse()
             .map_err(|_| "Invalid payer address")?;
@@ -350,14 +346,25 @@ impl VerificationService {
         let required_amount: U256 = amount.parse()
             .map_err(|_| "Invalid amount format")?;
 
-        // Create contract instance and call balanceOf
-        let contract = IERC20::new(token, provider);
-        
-        let balance = contract.balanceOf(payer_address)
-            .call()
-            .await
-            .map_err(|e| format!("Failed to get balance: {}", e))?
-            ._0;
+        // Call balanceOf based on provider type
+        let balance = match provider_arc.as_ref() {
+            ProviderType::Http(p) => {
+                let contract = IERC20::new(token, p);
+                contract.balanceOf(payer_address)
+                    .call()
+                    .await
+                    .map_err(|e| format!("Failed to get balance: {}", e))?
+                    ._0
+            }
+            ProviderType::WebSocket(p) => {
+                let contract = IERC20::new(token, p);
+                contract.balanceOf(payer_address)
+                    .call()
+                    .await
+                    .map_err(|e| format!("Failed to get balance: {}", e))?
+                    ._0
+            }
+        };
 
         if balance < required_amount {
             warn!(

@@ -15,7 +15,8 @@ use tracing::info;
 
 use crate::config::Config;
 use crate::types::*;
-use crate::services::{VerificationService, SettlementService};
+use crate::services::{VerificationService, SettlementService, MetricsService};
+use crate::services::metrics;
 use crate::middleware::{ValidatedJson, AuthenticatedMerchant};
 
 /// Application state shared across routes
@@ -24,6 +25,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub verification_service: Arc<VerificationService>,
     pub settlement_service: Arc<SettlementService>,
+    pub metrics_service: Arc<MetricsService>,
     pub start_time: Instant,
 }
 
@@ -33,6 +35,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/", get(root_handler))
         .route("/health", get(health_handler))
         .route("/networks", get(networks_handler))
+        .route("/metrics", get(metrics_handler))
         .route("/verify", post(verify_handler))
         .route("/settle", post(settle_handler))
         .with_state(Arc::new(state))
@@ -131,6 +134,18 @@ async fn networks_handler(
     })
 }
 
+/// Prometheus metrics endpoint
+async fn metrics_handler(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let metrics_output = state.metrics_service.render();
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain; version=0.0.4; charset=utf-8")],
+        metrics_output,
+    )
+}
+
 /// Verify payment endpoint
 async fn verify_handler(
     State(state): State<Arc<AppState>>,
@@ -138,32 +153,30 @@ async fn verify_handler(
     ValidatedJson(request): ValidatedJson<VerifyRequest>,
 ) -> impl IntoResponse {
     let start_time = Instant::now();
+    let network = request.payment_requirements.network.clone();
     
     info!("=== VERIFY REQUEST RECEIVED ===");
     info!("Merchant: {}", merchant.0.auth_address);
-    info!("Network: {}", request.payment_requirements.network);
+    info!("Network: {}", network);
     info!("Asset: {}", request.payment_requirements.asset);
     info!("Amount: {}", request.payment_requirements.max_amount_required);
-    
-    // Debug: Log full authorization and signature
-    // info!("=== FULL PAYLOAD DEBUG ===");
-    // info!("Authorization.from: {}", request.payment_payload.authorization.from);
-    // info!("Authorization.to: {}", request.payment_payload.authorization.to);
-    // info!("Authorization.value: {}", request.payment_payload.authorization.value);
-    // info!("Authorization.validAfter: {}", request.payment_payload.authorization.valid_after);
-    // info!("Authorization.validBefore: {}", request.payment_payload.authorization.valid_before);
-    // info!("Authorization.nonce: {}", request.payment_payload.authorization.nonce);
-    // info!("Signature: {}", request.payment_payload.signature);
 
     let result = state.verification_service.verify(
         &request.payment_payload,
         &request.payment_requirements,
     ).await;
 
-    let duration = start_time.elapsed().as_millis();
+    let duration_secs = start_time.elapsed().as_secs_f64();
+    
+    // Record metrics
+    metrics::record_verification(&network, result.is_valid);
+    metrics::record_verification_duration(&network, duration_secs);
+    metrics::record_request("/verify", "POST", if result.is_valid { 200 } else { 200 });
+    metrics::record_request_duration("/verify", duration_secs);
+    
     info!(
-        "Verification completed in {}ms: {}",
-        duration,
+        "Verification completed in {:.1}ms: {}",
+        duration_secs * 1000.0,
         if result.is_valid { "SUCCESS" } else { "FAILED" }
     );
 
@@ -177,10 +190,11 @@ async fn settle_handler(
     ValidatedJson(request): ValidatedJson<SettleRequest>,
 ) -> impl IntoResponse {
     let start_time = Instant::now();
+    let network = request.payment_requirements.network.clone();
     
     info!("=== SETTLE REQUEST RECEIVED ===");
     info!("Merchant: {}", merchant.0.auth_address);
-    info!("Network: {}", request.payment_requirements.network);
+    info!("Network: {}", network);
     info!("Asset: {}", request.payment_requirements.asset);
     info!("Amount: {}", request.payment_requirements.max_amount_required);
 
@@ -190,10 +204,21 @@ async fn settle_handler(
         &merchant.0,
     ).await;
 
-    let duration = start_time.elapsed().as_millis();
+    let duration_secs = start_time.elapsed().as_secs_f64();
+    
+    // Record metrics
+    metrics::record_settlement(&network, result.success);
+    metrics::record_settlement_duration(&network, duration_secs);
+    metrics::record_request("/settle", "POST", if result.success { 200 } else { 200 });
+    metrics::record_request_duration("/settle", duration_secs);
+    
+    if result.success {
+        metrics::record_credits_deducted(1);
+    }
+    
     info!(
-        "Settlement completed in {}ms: {}",
-        duration,
+        "Settlement completed in {:.1}ms: {}",
+        duration_secs * 1000.0,
         if result.success { "SUCCESS" } else { "FAILED" }
     );
 

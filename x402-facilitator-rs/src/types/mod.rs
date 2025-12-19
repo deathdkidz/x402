@@ -443,13 +443,13 @@ pub struct Merchant {
     pub id: i64,
     pub auth_address: String,
     pub business_name: Option<String>,
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing, default)]
     pub api_key: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub is_active: bool,
     pub webhook_url: Option<String>,
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing, default)]
     pub webhook_secret: Option<String>,
     pub webhook_events: String,
     pub email: Option<String>,

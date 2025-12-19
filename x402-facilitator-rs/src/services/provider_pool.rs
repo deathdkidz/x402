@@ -1,34 +1,66 @@
-//! Provider Pool
+//! Provider Pool with WebSocket Support
 //! 
 //! Manages persistent RPC provider connections for all configured networks.
-//! Supports both HTTP and WebSocket connections with automatic reconnection.
+//! Supports both HTTP and WebSocket connections with automatic fallback.
+//! 
+//! WebSocket benefits:
+//! - Instant block notifications (no polling)
+//! - Lower latency for transaction confirmations
+//! - Reduced RPC call volume
+//! 
+//! Falls back to HTTP if WebSocket connection fails.
 
 #![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use parking_lot::RwLock;
 
 use tracing::{info, warn, error, debug};
-use alloy::providers::{Provider, ProviderBuilder, RootProvider};
+use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy::transports::http::Http;
+use alloy::pubsub::PubSubFrontend;
 
 use reqwest::Client;
+use tokio::time::timeout;
 
 use crate::config::Config;
+use crate::services::metrics;
 
-/// Provider type enum to handle both HTTP and WS
+/// Provider type enum to handle both HTTP and WebSocket
 pub enum ProviderType {
     Http(RootProvider<Http<Client>>),
-    // WebSocket would require more complex handling with alloy
-    // For now, we'll use HTTP providers which are simpler and reliable
+    WebSocket(RootProvider<PubSubFrontend>),
 }
 
 impl ProviderType {
-    /// Get the underlying provider for calls
+    /// Get the underlying HTTP provider (returns None for WebSocket)
     pub fn as_http(&self) -> Option<&RootProvider<Http<Client>>> {
         match self {
             ProviderType::Http(p) => Some(p),
+            ProviderType::WebSocket(_) => None,
+        }
+    }
+
+    /// Check if this is a WebSocket provider
+    pub fn is_websocket(&self) -> bool {
+        matches!(self, ProviderType::WebSocket(_))
+    }
+
+    /// Get chain ID (works for both types)
+    pub async fn get_chain_id(&self) -> Result<u64, String> {
+        match self {
+            ProviderType::Http(p) => p.get_chain_id().await.map_err(|e| e.to_string()),
+            ProviderType::WebSocket(p) => p.get_chain_id().await.map_err(|e| e.to_string()),
+        }
+    }
+
+    /// Get block number (works for both types)
+    pub async fn get_block_number(&self) -> Result<u64, String> {
+        match self {
+            ProviderType::Http(p) => p.get_block_number().await.map_err(|e| e.to_string()),
+            ProviderType::WebSocket(p) => p.get_block_number().await.map_err(|e| e.to_string()),
         }
     }
 }
@@ -39,6 +71,7 @@ pub struct ProviderPool {
     config: Arc<Config>,
     reconnect_attempts: RwLock<HashMap<String, u32>>,
     max_reconnect_attempts: u32,
+    ws_connect_timeout: Duration,
 }
 
 impl ProviderPool {
@@ -49,6 +82,7 @@ impl ProviderPool {
             config,
             reconnect_attempts: RwLock::new(HashMap::new()),
             max_reconnect_attempts: 5,
+            ws_connect_timeout: Duration::from_secs(10),
         }
     }
 
@@ -80,13 +114,17 @@ impl ProviderPool {
             info!("   ✅ Initialized {} HTTP provider(s)", http_count);
         }
         if ws_count > 0 {
-            info!("   ✅ Connected {} WebSocket connection(s)", ws_count);
+            info!("   🔌 Connected {} WebSocket provider(s)", ws_count);
         }
+        
+        // Record provider stats
+        metrics::record_provider_stats(http_count + ws_count, http_count, ws_count);
         
         Ok(())
     }
 
     /// Create a provider for a specific network
+    /// Tries WebSocket first if URL starts with wss://, falls back to HTTP
     async fn create_provider(&self, network: &str) -> Result<bool, ProviderPoolError> {
         let normalized = self.config.normalize_network_name(network);
         
@@ -98,41 +136,81 @@ impl ProviderPool {
         let rpc_url = self.config.get_rpc_url(&normalized)
             .ok_or_else(|| ProviderPoolError::NetworkNotFound(normalized.clone()))?;
         
-        let is_websocket = rpc_url.starts_with("wss://") || rpc_url.starts_with("ws://");
+        let is_websocket_url = rpc_url.starts_with("wss://") || rpc_url.starts_with("ws://");
         
-        // For now, convert WebSocket URLs to HTTP for simplicity
-        // Full WebSocket support requires more complex connection handling
-        let http_url = if is_websocket {
+        // Try WebSocket first if URL supports it
+        if is_websocket_url {
+            match self.try_create_ws_provider(&normalized, &rpc_url).await {
+                Ok(provider) => {
+                    self.providers.write().insert(normalized.clone(), Arc::new(provider));
+                    self.reconnect_attempts.write().insert(normalized.clone(), 0);
+                    return Ok(true); // true = WebSocket
+                }
+                Err(e) => {
+                    warn!("   ⚠️ {}: WebSocket connection failed ({}), falling back to HTTP", normalized, e);
+                }
+            }
+        }
+        
+        // Create HTTP provider (either as primary or fallback)
+        let http_url = if is_websocket_url {
             rpc_url.replace("wss://", "https://").replace("ws://", "http://")
         } else {
             rpc_url.to_string()
         };
         
+        let provider = self.create_http_provider(&normalized, &http_url).await?;
+        self.providers.write().insert(normalized.clone(), Arc::new(provider));
+        self.reconnect_attempts.write().insert(normalized.clone(), 0);
+        
+        Ok(false) // false = HTTP
+    }
+
+    /// Try to create a WebSocket provider
+    async fn try_create_ws_provider(&self, network: &str, ws_url: &str) -> Result<ProviderType, ProviderPoolError> {
+        let start = Instant::now();
+        
+        // Create WebSocket connection with timeout
+        let ws_connect = WsConnect::new(ws_url);
+        
+        let provider = match timeout(self.ws_connect_timeout, ProviderBuilder::new().on_ws(ws_connect)).await {
+            Ok(Ok(p)) => p,
+            Ok(Err(e)) => {
+                return Err(ProviderPoolError::ConnectionError(format!("WebSocket connect failed: {}", e)));
+            }
+            Err(_) => {
+                return Err(ProviderPoolError::ConnectionError("WebSocket connection timeout".to_string()));
+            }
+        };
+        
+        // Test connection by getting chain ID
+        match provider.get_chain_id().await {
+            Ok(chain_id) => {
+                let duration = start.elapsed();
+                info!("   🔌 {}: WebSocket connected (chain_id: {}, {}ms)", network, chain_id, duration.as_millis());
+                Ok(ProviderType::WebSocket(provider))
+            }
+            Err(e) => {
+                Err(ProviderPoolError::ConnectionError(format!("WebSocket test failed: {}", e)))
+            }
+        }
+    }
+
+    /// Create an HTTP provider
+    async fn create_http_provider(&self, network: &str, http_url: &str) -> Result<ProviderType, ProviderPoolError> {
         let provider = ProviderBuilder::new()
             .on_http(http_url.parse().map_err(|e| ProviderPoolError::ConnectionError(format!("Invalid URL: {}", e)))?);
         
         // Test connection by getting chain ID
         match provider.get_chain_id().await {
             Ok(chain_id) => {
-                debug!("   ✓ {}: Connected (chain_id: {})", normalized, chain_id);
-                
-                self.providers.write().insert(
-                    normalized.clone(),
-                    Arc::new(ProviderType::Http(provider))
-                );
-                
-                self.reconnect_attempts.write().insert(normalized, 0);
-                
-                Ok(is_websocket)
+                debug!("   ✓ {}: HTTP connected (chain_id: {})", network, chain_id);
+                Ok(ProviderType::Http(provider))
             }
             Err(e) => {
-                warn!("   ⚠️ {}: Connection test failed - {}", normalized, e);
+                warn!("   ⚠️ {}: HTTP connection test failed - {}", network, e);
                 // Still add the provider, it might work later
-                self.providers.write().insert(
-                    normalized.clone(),
-                    Arc::new(ProviderType::Http(provider))
-                );
-                Ok(is_websocket)
+                Ok(ProviderType::Http(provider))
             }
         }
     }
@@ -156,11 +234,21 @@ impl ProviderPool {
     /// Get pool statistics
     pub fn get_stats(&self) -> ProviderPoolStats {
         let providers = self.providers.read();
+        let mut http_count = 0;
+        let mut ws_count = 0;
+        
+        for provider in providers.values() {
+            if provider.is_websocket() {
+                ws_count += 1;
+            } else {
+                http_count += 1;
+            }
+        }
         
         ProviderPoolStats {
             total: providers.len(),
-            http: providers.len(), // All are HTTP for now
-            websocket: 0,
+            http: http_count,
+            websocket: ws_count,
             networks: providers.keys().cloned().collect(),
         }
     }
@@ -188,13 +276,27 @@ impl ProviderPool {
         self.providers.write().remove(&normalized);
         
         // Create new one
-        self.create_provider(&normalized).await?;
+        let is_ws = self.create_provider(&normalized).await?;
         
         // Reset attempts on success
         self.reconnect_attempts.write().insert(normalized.clone(), 0);
         
-        info!("✅ {}: Reconnection successful", normalized);
+        info!("✅ {}: Reconnection successful ({})", normalized, if is_ws { "WebSocket" } else { "HTTP" });
+        
+        // Update metrics
+        let stats = self.get_stats();
+        metrics::record_provider_stats(stats.total, stats.http, stats.websocket);
+        
         Ok(())
+    }
+
+    /// Check if network uses WebSocket provider
+    pub fn is_websocket(&self, network: &str) -> bool {
+        let normalized = self.config.normalize_network_name(network);
+        self.providers.read()
+            .get(&normalized)
+            .map(|p| p.is_websocket())
+            .unwrap_or(false)
     }
 }
 

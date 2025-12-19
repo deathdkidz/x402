@@ -89,12 +89,8 @@ impl TransactionMonitor {
 
     /// Check a single transaction's status
     async fn check_transaction(&self, tx: &Transaction, tx_hash: &str) -> Result<(), String> {
-        let provider = self.provider_pool.get_provider(&tx.network)
+        let provider_arc = self.provider_pool.get_provider(&tx.network)
             .map_err(|e| format!("Provider error: {}", e))?;
-        
-        let provider = match provider.as_ref() {
-            ProviderType::Http(p) => p,
-        };
 
         // Parse transaction hash
         let hash_hex = tx_hash.strip_prefix("0x").unwrap_or(tx_hash);
@@ -107,8 +103,13 @@ impl TransactionMonitor {
         
         let hash: FixedBytes<32> = FixedBytes::from_slice(&hash_bytes);
 
-        // Check receipt
-        match provider.get_transaction_receipt(hash).await {
+        // Check receipt based on provider type
+        let receipt_result = match provider_arc.as_ref() {
+            ProviderType::Http(p) => p.get_transaction_receipt(hash).await,
+            ProviderType::WebSocket(p) => p.get_transaction_receipt(hash).await,
+        };
+
+        match receipt_result {
             Ok(Some(receipt)) => {
                 let status = if receipt.status() {
                     "completed"
@@ -172,18 +173,25 @@ impl TransactionMonitor {
         network: &str,
         timeout_secs: u64,
     ) -> Result<(bool, &'static str), String> {
-        let provider = self.provider_pool.get_provider(network)
+        let provider_arc = self.provider_pool.get_provider(network)
             .map_err(|e| format!("Provider error: {}", e))?;
-        
-        let provider = match provider.as_ref() {
-            ProviderType::Http(p) => p,
-        };
 
         // Parse hash
         let hash_hex = tx_hash.strip_prefix("0x").unwrap_or(tx_hash);
         let hash_bytes = hex::decode(hash_hex)
             .map_err(|_| "Invalid transaction hash")?;
         let hash: FixedBytes<32> = FixedBytes::from_slice(&hash_bytes);
+
+        // Helper to get receipt based on provider type
+        let get_receipt = |hash: FixedBytes<32>| {
+            let provider = provider_arc.clone();
+            async move {
+                match provider.as_ref() {
+                    ProviderType::Http(p) => p.get_transaction_receipt(hash).await,
+                    ProviderType::WebSocket(p) => p.get_transaction_receipt(hash).await,
+                }
+            }
+        };
 
         let is_flashblock = Self::is_flashblock_network(network);
         
@@ -196,7 +204,7 @@ impl TransactionMonitor {
             let start = std::time::Instant::now();
             
             while start.elapsed() < flashblock_duration {
-                match provider.get_transaction_receipt(hash).await {
+                match get_receipt(hash).await {
                     Ok(Some(receipt)) => {
                         let elapsed = start.elapsed().as_millis();
                         if receipt.status() {
@@ -223,7 +231,7 @@ impl TransactionMonitor {
         let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs);
         
         while std::time::Instant::now() < deadline {
-            match provider.get_transaction_receipt(hash).await {
+            match get_receipt(hash).await {
                 Ok(Some(receipt)) => {
                     if receipt.status() {
                         info!("✅ Transaction confirmed: {}", tx_hash);

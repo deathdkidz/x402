@@ -65,6 +65,27 @@ impl Database {
         Ok(result.map(|r| r.into()))
     }
 
+    /// Get all active merchants for cache pre-warming
+    pub async fn get_active_merchants(&self) -> Result<Vec<Merchant>, DatabaseError> {
+        let results: Vec<MerchantRow> = sqlx::query_as(
+            r#"
+            SELECT 
+                id, auth_address, business_name, api_key,
+                created_at, updated_at, is_active, webhook_url, webhook_secret,
+                webhook_events, email, profile_image_url,
+                credit_balance, lifetime_credits_purchased, lifetime_credits_used,
+                status, last_active_at
+            FROM merchants 
+            WHERE is_active = TRUE
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(results.into_iter().map(|r| r.into()).collect())
+    }
+
     /// Get merchant by auth address
     pub async fn get_merchant_by_auth_address(&self, auth_address: &str) -> Result<Option<Merchant>, DatabaseError> {
         let lower_address = auth_address.to_lowercase();

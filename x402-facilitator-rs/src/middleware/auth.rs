@@ -29,16 +29,18 @@ pub struct AuthState {
 pub struct AuthenticatedMerchant(pub Merchant);
 
 /// Public paths that don't require authentication
-const PUBLIC_PATHS: &[&str] = &["/", "/health", "/networks"];
+const PUBLIC_PATHS: &[&str] = &["/", "/health", "/networks", "/metrics"];
 
 /// API key authentication middleware
+/// Note: /metrics access control is handled in security.rs (checks real client IP from proxy headers)
 pub async fn api_key_auth(
     State(state): State<Arc<AuthState>>,
     mut request: Request,
     next: Next,
 ) -> Response {
-    // Skip auth for public endpoints
     let path = request.uri().path();
+    
+    // Skip auth for public endpoints (security checks are in security.rs)
     if PUBLIC_PATHS.contains(&path) {
         return next.run(request).await;
     }

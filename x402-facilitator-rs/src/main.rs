@@ -12,8 +12,9 @@ use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
     limit::RequestBodyLimitLayer,
+    compression::CompressionLayer,
 };
-use tracing::{info, error};
+use tracing::{info, warn, error};
 use tokio::signal;
 
 mod config;
@@ -24,12 +25,15 @@ mod routes;
 mod utils;
 
 use config::Config;
-use services::{Database, Redis, ProviderPool, PaymasterPool, VerificationService, SettlementService, TransactionMonitor};
+use services::{Database, Redis, ProviderPool, PaymasterPool, VerificationService, SettlementService, TransactionMonitor, MetricsService};
 use middleware::{AuthState, RateLimitState, SecurityState, start_cleanup_task};
 use routes::{create_router, AppState};
 
 #[tokio::main]
 async fn main() {
+    // Install default crypto provider for rustls (required for WebSocket TLS)
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    
     // Load configuration
     let config = match Config::from_env() {
         Ok(c) => Arc::new(c),
@@ -126,11 +130,32 @@ async fn main() {
     // Start security cleanup task
     start_cleanup_task(security_state.clone(), config.security_cleanup_interval_ms);
 
+    // Pre-warm merchant cache
+    match database.get_active_merchants().await {
+        Ok(merchants) => {
+            match redis.prewarm_merchants(&merchants).await {
+                Ok(count) => info!("🔥 Pre-warmed {} merchant(s) in Redis cache", count),
+                Err(e) => warn!("⚠️ Failed to pre-warm merchant cache: {}", e),
+            }
+        }
+        Err(e) => warn!("⚠️ Failed to load merchants for cache pre-warming: {}", e),
+    }
+
+    // Initialize Prometheus metrics
+    let metrics_service = match MetricsService::new() {
+        Ok(m) => Arc::new(m),
+        Err(e) => {
+            error!("❌ Metrics initialization failed: {}", e);
+            std::process::exit(1);
+        }
+    };
+
     // Create app state
     let app_state = AppState {
         config: config.clone(),
         verification_service,
         settlement_service,
+        metrics_service,
         start_time: Instant::now(),
     };
 
@@ -154,6 +179,7 @@ async fn main() {
             middleware::security_middleware,
         ))
         // Tower HTTP middleware
+        .layer(CompressionLayer::new()) // Gzip/Brotli response compression
         .layer(RequestBodyLimitLayer::new(1024 * 1024)) // 1MB limit
         .layer(TraceLayer::new_for_http())
         .layer(

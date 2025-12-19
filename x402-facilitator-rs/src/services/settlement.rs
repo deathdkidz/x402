@@ -10,8 +10,8 @@
 //! 7. Time window validation
 //! 8. Amount matching validation
 //! 9. Duplicate transaction detection
-//! 10. Pre-settlement balance verification
-//! 11. Replay attack protection (nonce checking)
+//! 10. Pre-settlement balance verification (PARALLEL)
+//! 11. Replay attack protection - nonce checking (PARALLEL)
 //! 12. Gas estimation
 //! 13. Transaction execution
 //! 14. Flashblock fast confirmation (200-500ms for Base/OP networks)
@@ -20,7 +20,7 @@
 #![allow(dead_code)]
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::{info, warn, error, debug};
 use alloy::primitives::{Address, U256, FixedBytes};
 use alloy::providers::{Provider, ProviderBuilder};
@@ -34,6 +34,7 @@ use crate::services::paymaster_pool::PaymasterPool;
 use crate::services::redis::Redis;
 use crate::services::database::{Database, CreateTransaction};
 use crate::services::verification::VerificationService;
+use crate::services::metrics;
 
 // ERC-3009 interface for gasless transfers
 sol! {
@@ -87,24 +88,30 @@ impl SettlementService {
         }
     }
 
-    /// Main settlement method with safety checks
+    /// Main settlement method with safety checks and timing instrumentation
     pub async fn settle(
         &self,
         payload: &PaymentPayload,
         requirements: &PaymentRequirements,
         merchant: &Merchant,
     ) -> SettleResponse {
+        let total_start = Instant::now();
+        
         // Get normalized network
+        let start = Instant::now();
         let normalized_network = match self.validate_network(&requirements.network) {
             Ok(n) => n,
             Err(reason) => return SettleResponse::failure(requirements.network.clone(), reason),
         };
+        debug!("⏱️ Network validation: {}µs", start.elapsed().as_micros());
 
         // Get paymaster signer
+        let start = Instant::now();
         let signer = match self.paymaster_pool.get_next_signer() {
             Ok(s) => s,
             Err(e) => return SettleResponse::failure(normalized_network, format!("Paymaster error: {}", e)),
         };
+        debug!("⏱️ Paymaster selection: {}µs", start.elapsed().as_micros());
 
         info!("Using paymaster wallet: {}", signer.address());
         info!("Settling payment to merchant: {}", merchant.auth_address);
@@ -120,9 +127,11 @@ impl SettlementService {
         // Already done above
 
         // Safety Check 1.5: Validate token
+        let start = Instant::now();
         if let Err(reason) = self.validate_token(&normalized_network, &requirements.asset) {
             return SettleResponse::failure(normalized_network, reason);
         }
+        debug!("⏱️ Token validation: {}µs", start.elapsed().as_micros());
 
         // Safety Check 2: Extract payer
         if payer.is_empty() {
@@ -141,7 +150,10 @@ impl SettlementService {
         }
 
         // Safety Check 4: Verify time window
+        info!("⏰ Checking time window: validAfter={}, validBefore={}", 
+              payload.authorization.valid_after, payload.authorization.valid_before);
         if let Err(reason) = self.verify_time_window(&payload.authorization.valid_after, &payload.authorization.valid_before) {
+            warn!("⏰ Time window check failed: {}", reason);
             return SettleResponse::failure(normalized_network, reason);
         }
 
@@ -157,6 +169,7 @@ impl SettlementService {
         }
 
         // Safety Check 6: Check for duplicate/cached transaction
+        let start = Instant::now();
         match self.redis.get_nonce_transaction(payer, nonce).await {
             Ok(Some(cached)) => {
                 info!("⚡ Found cached transaction for nonce {}: {} ({})", nonce, cached.transaction_hash, cached.status);
@@ -173,16 +186,28 @@ impl SettlementService {
                 // Continue anyway
             }
         }
+        debug!("⏱️ Redis cache check: {}ms", start.elapsed().as_millis());
 
-        // Safety Check 7: Pre-settlement balance verification
-        if let Err(reason) = self.verify_balance(payer, &requirements.asset, &requirements.max_amount_required, &normalized_network).await {
+        // Safety Checks 7 & 8: Run balance and nonce checks in PARALLEL for ~50ms savings
+        let start = Instant::now();
+        info!("⚡ Running balance and nonce checks in parallel...");
+        let balance_check = self.verify_balance(payer, &requirements.asset, &requirements.max_amount_required, &normalized_network);
+        let nonce_check = self.check_nonce_unused(payer, nonce, &requirements.asset, &normalized_network);
+        
+        let (balance_result, nonce_result) = tokio::join!(balance_check, nonce_check);
+        
+        // Check balance result
+        if let Err(reason) = balance_result {
             return SettleResponse::failure(normalized_network, reason);
         }
-
-        // Safety Check 8: Check on-chain nonce state
-        if let Err(reason) = self.check_nonce_unused(payer, nonce, &requirements.asset, &normalized_network).await {
+        
+        // Check nonce result
+        if let Err(reason) = nonce_result {
             return SettleResponse::failure(normalized_network, reason);
         }
+        
+        debug!("⏱️ Parallel RPC checks (balance + nonce): {}ms", start.elapsed().as_millis());
+        info!("✓ Parallel checks completed successfully");
 
         // Check merchant has sufficient credits
         let credit_cost = 1; // 1 credit per settlement
@@ -196,6 +221,7 @@ impl SettlementService {
         }
 
         // Create transaction record
+        let start = Instant::now();
         let tx_record = CreateTransaction {
             merchant_id: merchant.id,
             payer_address: payer.to_lowercase(),
@@ -221,10 +247,13 @@ impl SettlementService {
                 return SettleResponse::failure(normalized_network, "Database error".to_string());
             }
         };
+        debug!("⏱️ DB create transaction: {}ms", start.elapsed().as_millis());
 
         // Execute the settlement transaction
+        let start = Instant::now();
         match self.execute_transfer(payload, requirements, &normalized_network, &signer).await {
             Ok(tx_hash) => {
+                debug!("⏱️ Transaction send: {}ms", start.elapsed().as_millis());
                 info!("⏳ Transaction submitted: {}", tx_hash);
                 
                 // Update database with pending status
@@ -233,10 +262,13 @@ impl SettlementService {
                 }
 
                 // Wait for confirmation (flashblock fast path + standard fallback)
+                let start = Instant::now();
                 let (confirmed, final_status) = self.wait_for_confirmation(&tx_hash, &normalized_network).await;
+                debug!("⏱️ Confirmation wait: {}ms", start.elapsed().as_millis());
                 
                 if confirmed && final_status == "completed" {
                     info!("✅ Settlement confirmed: {}", tx_hash);
+                    info!("⏱️ Total settlement time: {}ms", total_start.elapsed().as_millis());
                     
                     // Deduct credits from merchant
                     if let Err(e) = self.database.deduct_credits(
@@ -346,18 +378,29 @@ impl SettlementService {
         }
     }
 
-    /// Verify time window
+    /// Verify time window - simple check without safety buffers
+    /// The client is responsible for setting appropriate validAfter/validBefore values
     fn verify_time_window(&self, valid_after: &str, valid_before: &str) -> Result<(), String> {
         let now = chrono::Utc::now().timestamp() as u64;
         
-        let after: u64 = valid_after.parse().map_err(|_| "Invalid validAfter")?;
-        let before: u64 = valid_before.parse().map_err(|_| "Invalid validBefore")?;
+        let after: u64 = valid_after.parse().map_err(|_| format!("Invalid validAfter: {}", valid_after))?;
+        let before: u64 = valid_before.parse().map_err(|_| format!("Invalid validBefore: {}", valid_before))?;
 
+        debug!("Time window check: now={}, validAfter={}, validBefore={}", now, after, before);
+
+        // Simple check: authorization must be valid now
         if now < after {
-            return Err(format!("Authorization not yet valid. Current: {}, validAfter: {}", now, after));
+            return Err(format!(
+                "Authorization not yet valid. Current time: {}, validAfter: {}, wait {} seconds",
+                now, after, after - now
+            ));
         }
+        
         if now > before {
-            return Err(format!("Authorization expired. Current: {}, validBefore: {}", now, before));
+            return Err(format!(
+                "Authorization expired. Current time: {}, validBefore: {}, expired {} seconds ago",
+                now, before, now - before
+            ));
         }
 
         Ok(())
@@ -375,16 +418,12 @@ impl SettlementService {
     /// Wait for transaction confirmation with flashblock optimization
     /// Returns (confirmed: bool, status: &'static str)
     async fn wait_for_confirmation(&self, tx_hash: &str, network: &str) -> (bool, &'static str) {
-        let provider = match self.provider_pool.get_provider(network) {
+        let provider_arc = match self.provider_pool.get_provider(network) {
             Ok(p) => p,
             Err(e) => {
                 warn!("Provider error during confirmation wait: {}", e);
                 return (false, "pending");
             }
-        };
-        
-        let provider = match provider.as_ref() {
-            ProviderType::Http(p) => p,
         };
 
         // Parse hash
@@ -401,6 +440,17 @@ impl SettlementService {
         let hash: FixedBytes<32> = FixedBytes::from_slice(&hash_bytes);
         let is_flashblock = Self::is_flashblock_network(network);
         
+        // Helper to get receipt based on provider type
+        let get_receipt = |hash: FixedBytes<32>| {
+            let provider = provider_arc.clone();
+            async move {
+                match provider.as_ref() {
+                    ProviderType::Http(p) => p.get_transaction_receipt(hash).await,
+                    ProviderType::WebSocket(p) => p.get_transaction_receipt(hash).await,
+                }
+            }
+        };
+        
         if is_flashblock {
             info!("⚡ Using Flashblock-optimized polling for {}", network);
             
@@ -410,9 +460,12 @@ impl SettlementService {
             let flashblock_interval = Duration::from_millis(100);
             
             while start.elapsed() < flashblock_duration {
-                match provider.get_transaction_receipt(hash).await {
+                match get_receipt(hash).await {
                     Ok(Some(receipt)) => {
                         let elapsed = start.elapsed().as_millis();
+                        // Log gas usage
+                        Self::log_gas_usage(&receipt, network, tx_hash);
+                        
                         if receipt.status() {
                             info!("⚡ Flashblock confirmation in {}ms: {}", elapsed, tx_hash);
                             return (true, "completed");
@@ -438,9 +491,12 @@ impl SettlementService {
         let start = std::time::Instant::now();
         
         while start.elapsed() < standard_duration {
-            match provider.get_transaction_receipt(hash).await {
+            match get_receipt(hash).await {
                 Ok(Some(receipt)) => {
                     let elapsed = start.elapsed().as_millis();
+                    // Log gas usage
+                    Self::log_gas_usage(&receipt, network, tx_hash);
+                    
                     if receipt.status() {
                         info!("✅ Transaction confirmed in {}ms: {}", elapsed, tx_hash);
                         return (true, "completed");
@@ -464,25 +520,59 @@ impl SettlementService {
         (false, "pending")
     }
 
+    /// Log gas usage from transaction receipt
+    fn log_gas_usage(receipt: &alloy::rpc::types::TransactionReceipt, network: &str, tx_hash: &str) {
+        let gas_used = receipt.gas_used;
+        let effective_gas_price = receipt.effective_gas_price;
+        let gas_cost_wei = gas_used as u128 * effective_gas_price;
+        
+        // Convert to gwei using floating point for precision (1 gwei = 10^9 wei)
+        let gas_price_gwei = effective_gas_price as f64 / 1_000_000_000.0;
+        let gas_cost_gwei = gas_cost_wei as f64 / 1_000_000_000.0;
+        
+        // Convert to ETH (1 ETH = 10^18 wei)
+        let gas_cost_eth = gas_cost_wei as f64 / 1_000_000_000_000_000_000.0;
+        
+        // Record metrics
+        metrics::record_gas_usage(network, gas_used as u64, gas_price_gwei);
+        
+        info!("⛽ Gas used: {} units @ {:.4} gwei = {:.4} gwei (~{:.8} ETH) [{}]", 
+              gas_used, gas_price_gwei, gas_cost_gwei, gas_cost_eth, network);
+        info!("   TX: {}", tx_hash);
+    }
+
     /// Verify balance
     async fn verify_balance(&self, payer: &str, token_address: &str, amount: &str, network: &str) -> Result<(), String> {
-        let provider = self.provider_pool.get_provider(network)
+        let start = Instant::now();
+        let provider_arc = self.provider_pool.get_provider(network)
             .map_err(|e| format!("Provider error: {}", e))?;
         
-        let provider = match provider.as_ref() {
-            ProviderType::Http(p) => p,
-        };
-
         let payer_addr: Address = payer.parse().map_err(|_| "Invalid payer address")?;
         let token: Address = token_address.parse().map_err(|_| "Invalid token address")?;
         let required: U256 = amount.parse().map_err(|_| "Invalid amount")?;
 
-        let contract = IERC3009::new(token, provider);
-        let balance = contract.balanceOf(payer_addr)
-            .call()
-            .await
-            .map_err(|e| format!("Balance check failed: {}", e))?
-            ._0;
+        // Call balance based on provider type
+        let balance = match provider_arc.as_ref() {
+            ProviderType::Http(p) => {
+                let contract = IERC3009::new(token, p);
+                contract.balanceOf(payer_addr)
+                    .call()
+                    .await
+                    .map_err(|e| format!("Balance check failed: {}", e))?
+                    ._0
+            }
+            ProviderType::WebSocket(p) => {
+                let contract = IERC3009::new(token, p);
+                contract.balanceOf(payer_addr)
+                    .call()
+                    .await
+                    .map_err(|e| format!("Balance check failed: {}", e))?
+                    ._0
+            }
+        };
+
+        let duration = start.elapsed().as_secs_f64();
+        metrics::record_rpc_call(network, "balanceOf", duration, false);
 
         if balance < required {
             return Err(format!("Insufficient balance: {} < {}", balance, required));
@@ -493,12 +583,9 @@ impl SettlementService {
 
     /// Check that nonce hasn't been used on-chain
     async fn check_nonce_unused(&self, payer: &str, nonce: &str, token_address: &str, network: &str) -> Result<(), String> {
-        let provider = self.provider_pool.get_provider(network)
+        let start = Instant::now();
+        let provider_arc = self.provider_pool.get_provider(network)
             .map_err(|e| format!("Provider error: {}", e))?;
-        
-        let provider = match provider.as_ref() {
-            ProviderType::Http(p) => p,
-        };
 
         let payer_addr: Address = payer.parse().map_err(|_| "Invalid payer address")?;
         let token: Address = token_address.parse().map_err(|_| "Invalid token address")?;
@@ -507,16 +594,32 @@ impl SettlementService {
         let nonce_hex = nonce.strip_prefix("0x").unwrap_or(nonce);
         let nonce_bytes = hex::decode(nonce_hex).map_err(|_| "Invalid nonce hex")?;
         let mut nonce_arr = [0u8; 32];
-        let start = 32 - nonce_bytes.len().min(32);
-        nonce_arr[start..].copy_from_slice(&nonce_bytes[..nonce_bytes.len().min(32)]);
+        let start_idx = 32 - nonce_bytes.len().min(32);
+        nonce_arr[start_idx..].copy_from_slice(&nonce_bytes[..nonce_bytes.len().min(32)]);
         let nonce_fixed: FixedBytes<32> = FixedBytes::from(nonce_arr);
 
-        let contract = IERC3009::new(token, provider);
-        let is_used = contract.authorizationState(payer_addr, nonce_fixed)
-            .call()
-            .await
-            .map_err(|e| format!("Nonce check failed: {}", e))?
-            ._0;
+        // Call authorizationState based on provider type
+        let is_used = match provider_arc.as_ref() {
+            ProviderType::Http(p) => {
+                let contract = IERC3009::new(token, p);
+                contract.authorizationState(payer_addr, nonce_fixed)
+                    .call()
+                    .await
+                    .map_err(|e| format!("Nonce check failed: {}", e))?
+                    ._0
+            }
+            ProviderType::WebSocket(p) => {
+                let contract = IERC3009::new(token, p);
+                contract.authorizationState(payer_addr, nonce_fixed)
+                    .call()
+                    .await
+                    .map_err(|e| format!("Nonce check failed: {}", e))?
+                    ._0
+            }
+        };
+
+        let duration = start.elapsed().as_secs_f64();
+        metrics::record_rpc_call(network, "authorizationState", duration, false);
 
         if is_used {
             return Err(format!("Nonce {} has already been used", nonce));
