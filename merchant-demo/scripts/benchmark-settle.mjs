@@ -1,103 +1,173 @@
 #!/usr/bin/env node
 
 /**
- * Batch Settlement Benchmark Script
+ * Interactive X402 Settlement Benchmark Tool
  * 
- * Tests settlement endpoint performance by submitting multiple payments
- * with actual wallet signatures and measuring response times, success rates, and throughput.
- * 
- * Prerequisites:
- *   - Wallet must have sufficient token balance for payments
- *   - Each payment costs 10000 units (0.01 USDC)
+ * Tests settlement endpoint performance with interactive configuration.
  * 
  * Usage:
- *   node scripts/benchmark-settle.mjs [options]
+ *   node scripts/benchmark-settle.mjs
  * 
- * Environment Variables:
+ * Environment Variables (optional):
  *   PRIVATE_KEY                 - Wallet private key (0x prefixed)
  *   NEXT_PUBLIC_MERCHANT_ADDRESS - Merchant address to receive payments
  *   X402_API_KEY                - API key for facilitator
- * 
- * Options:
- *   --count <n>           Number of settlements to test (default: 10)
- *   --concurrent <n>      Number of concurrent requests (default: 1)
- *   --network <name>      Network to use (default: Base Sepolia)
- *   --delay <ms>          Delay between batches in ms (default: 0)
- *   --facilitator <url>   Facilitator URL (default: from env)
- *   --private-key <key>   Private key for signing (overrides env var)
- *   --merchant <addr>     Merchant address (overrides env var)
- *   --apiKey <key>        API key (overrides env var)
- * 
- * Example:
- *   export PRIVATE_KEY=0x...
- *   export NEXT_PUBLIC_MERCHANT_ADDRESS=0x530f...
- *   export X402_API_KEY=df12...
- *   node scripts/benchmark-settle.mjs --count 10 --concurrent 3 --network "Base Sepolia"
+ *   NEXT_PUBLIC_FACILITATOR_URL - Facilitator URL
  */
 
 import { createHash, randomBytes } from 'crypto';
 import { parseArgs } from 'util';
-import { ethers } from 'ethers';
+import ethers from 'ethers';
+import * as readline from 'readline';
 
-// Parse command line arguments
-const { values } = parseArgs({
-  options: {
-    count: { type: 'string', default: '10' },
-    concurrent: { type: 'string', default: '1' },
-    network: { type: 'string', default: 'Base Sepolia' },
-    delay: { type: 'string', default: '0' },
-    facilitator: { type: 'string', default: process.env.NEXT_PUBLIC_FACILITATOR_URL || 'https://api.novacasino.xyz' },
-    apiKey: { type: 'string', default: process.env.X402_API_KEY || '' },
-    privateKey: { type: 'string', default: process.env.PRIVATE_KEY || '' },
-    merchant: { type: 'string', default: process.env.NEXT_PUBLIC_MERCHANT_ADDRESS || '' },
-  }
+// Create readline interface
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
 });
 
-const COUNT = parseInt(values.count);
-const CONCURRENT = parseInt(values.concurrent);
-const NETWORK = values.network;
-const DELAY = parseInt(values.delay);
-const FACILITATOR_URL = values.facilitator;
-const API_KEY = values.apiKey;
-const PRIVATE_KEY = values.privateKey;
-const MERCHANT_ADDRESS = values.merchant;
-
-if (!API_KEY) {
-  console.error('❌ Error: X402_API_KEY environment variable not set');
-  console.error('   Set it or pass --apiKey flag');
-  process.exit(1);
+// Promisified readline question
+function question(query) {
+  return new Promise(resolve => rl.question(query, resolve));
 }
 
-if (!PRIVATE_KEY) {
-  console.error('❌ Error: PRIVATE_KEY environment variable not set');
-  console.error('   Set it or pass --private-key flag');
-  process.exit(1);
+// Configuration
+let CONFIG = {
+  facilitator: process.env.NEXT_PUBLIC_FACILITATOR_URL || 'https://api.novacasino.xyz',
+  apiKey: process.env.X402_API_KEY || '',
+  privateKey: process.env.PRIVATE_KEY || '',
+  merchant: process.env.NEXT_PUBLIC_MERCHANT_ADDRESS || '',
+  count: 10,
+  concurrent: 1,
+  network: 'Base Sepolia',
+  delay: 0
+};
+
+// Interactive configuration
+async function configureInteractive() {
+  console.log('\n🚀 X402 Settlement Benchmark - Interactive Setup\n');
+  
+  // Check environment variables first
+  const hasEnvVars = CONFIG.apiKey && CONFIG.privateKey && CONFIG.merchant;
+  if (hasEnvVars) {
+    console.log('✅ Environment variables detected:');
+    console.log(`   Facilitator: ${CONFIG.facilitator}`);
+    console.log(`   API Key: ${CONFIG.apiKey.slice(0, 10)}...`);
+    console.log(`   Private Key: ${CONFIG.privateKey.slice(0, 10)}...`);
+    console.log(`   Merchant: ${CONFIG.merchant}\n`);
+    
+    const useEnv = await question('Use environment variables? (Y/n): ');
+    if (useEnv.toLowerCase() !== 'n') {
+      return await configureTestParams();
+    }
+  }
+
+  // Get API credentials
+  console.log('\n📝 Configuration:\n');
+  
+  const facilitator = await question(`Facilitator URL (${CONFIG.facilitator}): `);
+  if (facilitator.trim()) CONFIG.facilitator = facilitator.trim();
+  
+  const apiKey = await question('API Key: ');
+  if (apiKey.trim()) CONFIG.apiKey = apiKey.trim();
+  
+  const privateKey = await question('Private Key (0x...): ');
+  if (privateKey.trim()) CONFIG.privateKey = privateKey.trim();
+  
+  const merchant = await question('Merchant Address (0x...): ');
+  if (merchant.trim()) CONFIG.merchant = merchant.trim();
+
+  return await configureTestParams();
 }
 
-if (!MERCHANT_ADDRESS) {
-  console.error('❌ Error: NEXT_PUBLIC_MERCHANT_ADDRESS environment variable not set');
-  console.error('   Set it or pass --merchant flag');
-  process.exit(1);
+// Configure test parameters
+async function configureTestParams() {
+  console.log('\n⚙️  Test Parameters:\n');
+  
+  // Fetch available networks
+  console.log('📡 Fetching available networks...');
+  const networks = await getAvailableNetworks();
+  
+  if (networks.length > 0) {
+    console.log('\nAvailable networks:');
+    networks.forEach((net, i) => {
+      console.log(`  ${i + 1}. ${net.network} (Chain ID: ${net.chainId})`);
+    });
+    
+    const networkChoice = await question(`\nSelect network (1-${networks.length}) or enter custom name (${CONFIG.network}): `);
+    if (networkChoice.trim()) {
+      const choice = parseInt(networkChoice);
+      if (!isNaN(choice) && choice >= 1 && choice <= networks.length) {
+        CONFIG.network = networks[choice - 1].network;
+      } else {
+        CONFIG.network = networkChoice.trim();
+      }
+    }
+  }
+  
+  const count = await question(`\nNumber of settlements (${CONFIG.count}): `);
+  if (count.trim()) CONFIG.count = parseInt(count);
+  
+  const concurrent = await question(`Concurrent requests (${CONFIG.concurrent}): `);
+  if (concurrent.trim()) CONFIG.concurrent = parseInt(concurrent);
+  
+  const delay = await question(`Delay between batches in ms (${CONFIG.delay}): `);
+  if (delay.trim()) CONFIG.delay = parseInt(delay);
+  
+  // Summary
+  console.log('\n📋 Configuration Summary:\n');
+  console.log(`  Facilitator:     ${CONFIG.facilitator}`);
+  console.log(`  Network:         ${CONFIG.network}`);
+  console.log(`  Settlements:     ${CONFIG.count}`);
+  console.log(`  Concurrent:      ${CONFIG.concurrent}`);
+  console.log(`  Batch Delay:     ${CONFIG.delay}ms`);
+  console.log(`  Cost per tx:     0.01 USDC`);
+  console.log(`  Total cost:      ${(CONFIG.count * 0.01).toFixed(2)} USDC\n`);
+  
+  const confirm = await question('Start benchmark? (Y/n): ');
+  if (confirm.toLowerCase() === 'n') {
+    console.log('❌ Benchmark cancelled');
+    rl.close();
+    process.exit(0);
+  }
+}
+
+// Get available networks from facilitator
+async function getAvailableNetworks() {
+  try {
+    const response = await fetch(`${CONFIG.facilitator}/networks`);
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    return [...(data.mainnet || []), ...(data.testnet || [])];
+  } catch (error) {
+    console.error(`⚠️  Could not fetch networks: ${error.message}`);
+    return [];
+  }
 }
 
 // Initialize wallet
 let wallet;
 let checksummedMerchantAddress;
-try {
-  wallet = new ethers.Wallet(PRIVATE_KEY);
-  // CRITICAL: Use checksummed addresses for EIP-712 signing
-  checksummedMerchantAddress = ethers.getAddress(MERCHANT_ADDRESS);
-  console.log(`🔑 Wallet Address: ${wallet.address}`);
-  console.log(`💰 Merchant Address: ${checksummedMerchantAddress}`);
-} catch (error) {
-  console.error('❌ Invalid private key or merchant address:', error.message);
-  process.exit(1);
+
+function initializeWallet() {
+  try {
+    wallet = new ethers.Wallet(CONFIG.privateKey);
+    // CRITICAL: Use checksummed addresses for EIP-712 signing
+    checksummedMerchantAddress = ethers.utils.getAddress(CONFIG.merchant);
+    console.log(`\n🔑 Wallet Address: ${wallet.address}`);
+    console.log(`💰 Merchant Address: ${checksummedMerchantAddress}\n`);
+  } catch (error) {
+    console.error('❌ Invalid private key or merchant address:', error.message);
+    rl.close();
+    process.exit(1);
+  }
 }
 
 // Get network configuration from facilitator
 async function getNetworkConfig(network) {
   try {
-    const response = await fetch(`${FACILITATOR_URL}/networks`);
+    const response = await fetch(`${CONFIG.facilitator}/networks`);
     if (!response.ok) {
       throw new Error(`Failed to fetch networks: ${response.status}`);
     }
@@ -109,12 +179,14 @@ async function getNetworkConfig(network) {
     if (!networkConfig) {
       console.error(`❌ Network "${network}" not found`);
       console.error(`   Available networks: ${allNetworks.map(n => n.network).join(', ')}`);
+      rl.close();
       process.exit(1);
     }
     
     return networkConfig;
   } catch (error) {
     console.error('❌ Failed to fetch network config:', error.message);
+    rl.close();
     process.exit(1);
   }
 }
@@ -142,7 +214,7 @@ async function createPayment(networkConfig) {
     name: token.eip712.name,
     version: token.eip712.version,
     chainId: networkConfig.chainId,
-    verifyingContract: ethers.getAddress(token.eip712.verifyingContract)
+    verifyingContract: ethers.utils.getAddress(token.eip712.verifyingContract)
   };
 
   const types = {
@@ -173,8 +245,8 @@ async function createPayment(networkConfig) {
     , 2));
   }
 
-  // Sign with EIP-712
-  const signature = await wallet.signTypedData(domain, types, messageToSign);
+  // Sign with EIP-712 (ethers v5 uses _signTypedData)
+  const signature = await wallet._signTypedData(domain, types, messageToSign);
 
   const payment = {
     authorization,
@@ -217,11 +289,11 @@ async function settlePayment(paymentPayload, networkConfig, index) {
   const startTime = Date.now();
   
   try {
-    const response = await fetch(`${FACILITATOR_URL}/settle`, {
+    const response = await fetch(`${CONFIG.facilitator}/settle`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`
+        'Authorization': `Bearer ${CONFIG.apiKey}`
       },
       body: JSON.stringify(requestBody)
     });
@@ -259,29 +331,20 @@ async function settlePayment(paymentPayload, networkConfig, index) {
 
 // Run benchmark
 async function runBenchmark() {
-  console.log('🚀 X-402 Settlement Benchmark\n');
-  console.log(`Configuration:`);
-  console.log(`  Facilitator: ${FACILITATOR_URL}`);
-  console.log(`  Network: ${NETWORK}`);
-  console.log(`  Total Settlements: ${COUNT}`);
-  console.log(`  Concurrent Requests: ${CONCURRENT}`);
-  console.log(`  Delay Between Batches: ${DELAY}ms`);
-  console.log(`  Debug Mode: ${process.env.DEBUG_PAYLOADS ? '✅ Enabled (showing all payloads)' : '❌ Disabled (set DEBUG_PAYLOADS=1 to enable)'}\n`);
+  console.log('⏱️  Starting benchmark...\n');
 
   // Fetch network configuration
   console.log('📡 Fetching network configuration...');
-  const networkConfig = await getNetworkConfig(NETWORK);
+  const networkConfig = await getNetworkConfig(CONFIG.network);
   console.log(`✅ Using ${networkConfig.network} (Chain ID: ${networkConfig.chainId})`);
   console.log(`   Token: ${networkConfig.tokens[0].symbol} (${networkConfig.tokens[0].address})\n`);
-
-  console.log('⏱️  Starting benchmark...\n');
 
   const results = [];
   const overallStart = Date.now();
 
   // Process in batches based on concurrency
-  for (let i = 0; i < COUNT; i += CONCURRENT) {
-    const batchSize = Math.min(CONCURRENT, COUNT - i);
+  for (let i = 0; i < CONFIG.count; i += CONFIG.concurrent) {
+    const batchSize = Math.min(CONFIG.concurrent, CONFIG.count - i);
     const batchPromises = [];
 
     for (let j = 0; j < batchSize; j++) {
@@ -295,13 +358,13 @@ async function runBenchmark() {
 
     // Progress indicator
     const completed = results.length;
-    const percent = ((completed / COUNT) * 100).toFixed(1);
+    const percent = ((completed / CONFIG.count) * 100).toFixed(1);
     const successful = results.filter(r => r.success).length;
-    process.stdout.write(`\r  Progress: ${completed}/${COUNT} (${percent}%) | Success: ${successful}`);
+    process.stdout.write(`\r  Progress: ${completed}/${CONFIG.count} (${percent}%) | Success: ${successful}`);
 
     // Delay between batches if specified
-    if (DELAY > 0 && i + CONCURRENT < COUNT) {
-      await new Promise(resolve => setTimeout(resolve, DELAY));
+    if (CONFIG.delay > 0 && i + CONFIG.concurrent < CONFIG.count) {
+      await new Promise(resolve => setTimeout(resolve, CONFIG.delay));
     }
   }
 
@@ -315,12 +378,12 @@ async function runBenchmark() {
   const successfulDurations = successful.map(r => r.duration);
 
   const stats = {
-    total: COUNT,
+    total: CONFIG.count,
     successful: successful.length,
     failed: failed.length,
-    successRate: ((successful.length / COUNT) * 100).toFixed(2),
+    successRate: ((successful.length / CONFIG.count) * 100).toFixed(2),
     overallDuration: overallDuration,
-    throughput: (COUNT / (overallDuration / 1000)).toFixed(2),
+    throughput: (CONFIG.count / (overallDuration / 1000)).toFixed(2),
     avgDuration: (durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(2),
     minDuration: Math.min(...durations),
     maxDuration: Math.max(...durations),
@@ -391,10 +454,31 @@ async function runBenchmark() {
 
   console.log();
   console.log('✨ Benchmark complete!');
+  
+  // Ask if user wants to run again
+  console.log();
+  const again = await question('Run another benchmark? (y/N): ');
+  if (again.toLowerCase() === 'y') {
+    await configureTestParams();
+    initializeWallet();
+    await runBenchmark();
+  } else {
+    rl.close();
+  }
+}
+
+// Main entry point
+async function main() {
+  try {
+    await configureInteractive();
+    initializeWallet();
+    await runBenchmark();
+  } catch (error) {
+    console.error('\n❌ Benchmark failed:', error.message);
+    rl.close();
+    process.exit(1);
+  }
 }
 
 // Run the benchmark
-runBenchmark().catch(error => {
-  console.error('\n❌ Benchmark failed:', error.message);
-  process.exit(1);
-});
+main();

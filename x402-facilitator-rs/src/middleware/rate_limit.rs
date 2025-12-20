@@ -26,8 +26,10 @@ use crate::middleware::auth::AuthenticatedMerchant;
 pub type KeyedRateLimiter = RateLimiter<String, DefaultKeyedStateStore<String>, DefaultClock>;
 
 /// Rate limit configuration
-pub const UNAUTHENTICATED_LIMIT_PER_MIN: u32 = 200;
-pub const AUTHENTICATED_LIMIT_PER_MIN: u32 = 1500;
+/// For AI agents with high polling rates, we use generous limits
+pub const UNAUTHENTICATED_LIMIT_PER_MIN: u32 = 1000;   // Health checks, public endpoints
+pub const AUTHENTICATED_LIMIT_PER_MIN: u32 = 10000;    // /verify - high for AI agents
+pub const SETTLE_LIMIT_PER_MIN: u32 = 5000;            // /settle - also high for AI agents
 
 /// Rate limit state
 #[derive(Clone)]
@@ -70,13 +72,20 @@ impl Default for RateLimitState {
     }
 }
 
-/// General rate limiter for unauthenticated endpoints (IP-based, 200/min)
+/// General rate limiter for unauthenticated endpoints (IP-based)
+/// Skips rate limiting if request has Authorization header (will use merchant limiter instead)
 pub async fn general_rate_limiter(
     State(state): State<Arc<RateLimitState>>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     request: Request,
     next: Next,
 ) -> Response {
+    // Skip IP-based rate limiting if request has Authorization header
+    // These requests will be rate-limited by merchant_rate_limiter instead
+    if request.headers().contains_key("authorization") {
+        return next.run(request).await;
+    }
+    
     let ip = addr.ip().to_string();
     
     if state.unauthenticated.check_key(&ip).is_err() {
