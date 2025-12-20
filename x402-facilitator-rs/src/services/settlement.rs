@@ -716,7 +716,14 @@ impl SettlementService {
             s,
         );
 
-        let pending_tx = tx.send().await
+        // Set gas limit with buffer to prevent out-of-gas failures
+        // Default is 200000, configurable via SETTLEMENT_GAS_LIMIT env var
+        let gas_limit = self.config.settlement_gas_limit;
+        let tx_with_gas = tx.gas(gas_limit);
+        
+        debug!("   Gas limit: {}", gas_limit);
+
+        let pending_tx = tx_with_gas.send().await
             .map_err(|e| format!("Transaction send failed: {}", e))?;
 
         let tx_hash = format!("{:?}", pending_tx.tx_hash());

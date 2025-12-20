@@ -57,9 +57,9 @@ cargo run
 pm2 start ecosystem.config.cjs
 
 # Option 3: Run release binary directly
-./target/release/x402-facilitator-rs
+./target/release/x402-facilitator
 
-# Option 4: Systemd service (if configured)
+# Option 4: Systemd service
 sudo systemctl start x402-facilitator-rs
 ```
 
@@ -285,13 +285,15 @@ redis-cli ping
 
 ### Start Service
 
+#### Option A: PM2 (Process Manager)
+
 ```bash
 # Create PM2 ecosystem config
 cat > ecosystem.config.cjs << 'EOF'
 module.exports = {
   apps: [{
     name: 'x402-facilitator-rs',
-    script: './target/release/x402-facilitator-rs',
+    script: './target/release/x402-facilitator',
     cwd: '/srv/x402/x402-facilitator-rs',
     env: {
       NODE_ENV: 'production',
@@ -316,6 +318,55 @@ pm2 save
 
 # Setup PM2 startup script
 pm2 startup
+```
+
+#### Option B: Systemd (Recommended for Production)
+
+```bash
+# Create systemd service file
+sudo cat > /etc/systemd/system/x402-facilitator-rs.service << 'EOF'
+[Unit]
+Description=x402 Facilitator (Rust)
+Documentation=https://github.com/your-org/x402
+After=network.target mysql.service redis.service
+Wants=mysql.service redis.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/srv/x402/x402-facilitator-rs
+ExecStart=/srv/x402/x402-facilitator-rs/target/release/x402-facilitator
+EnvironmentFile=/srv/x402/x402-facilitator-rs/.env
+Restart=always
+RestartSec=5
+StandardOutput=append:/srv/x402/x402-facilitator-rs/logs/x402-facilitator.log
+StandardError=append:/srv/x402/x402-facilitator-rs/logs/error.log
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/x402/x402-facilitator-rs/logs
+
+# Resource limits
+LimitNOFILE=65535
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd, enable and start service
+sudo systemctl daemon-reload
+sudo systemctl enable x402-facilitator-rs
+sudo systemctl start x402-facilitator-rs
+
+# Check status
+sudo systemctl status x402-facilitator-rs
+
+# View logs
+sudo journalctl -u x402-facilitator-rs -f
 ```
 
 ### Nginx Reverse Proxy (Optional)
@@ -457,7 +508,36 @@ mkdir -p logs
 chmod 755 logs
 
 # Fix binary permissions
-chmod +x target/release/x402-facilitator-rs
+chmod +x target/release/x402-facilitator
+```
+
+#### Paymaster Insufficient Gas
+
+**Error:**
+```
+insufficient funds for gas * price + value: balance 0, tx cost 104924436545, overshot 104924436545
+```
+
+**Cause:** The paymaster wallet assigned to handle the settlement has 0 ETH balance on that network. The paymaster needs native tokens (ETH) to pay for gas when submitting the `transferWithAuthorization` transaction.
+
+**Merchant Response:**
+```json
+{
+  "success": false,
+  "network": "OP Sepolia",
+  "errorReason": "Transaction send failed: server returned an error response: error code -32000: insufficient funds for gas * price + value: balance 0, tx cost 104924436545, overshot 104924436545",
+  "status": "failed"
+}
+```
+
+**Fix:**
+```bash
+# Check paymaster balances
+cd /srv/x402/x402-facilitator-rs
+node scripts/check-balances.mjs
+
+# Fund the paymaster wallet on the affected network
+# Send ~0.01 ETH to the paymaster address shown in logs
 ```
 
 ---
@@ -710,6 +790,33 @@ TRANSACTION_MONITOR_INTERVAL_MS=20000  # Pending tx check interval
 
 ## Quick Reference Commands
 
+### Systemd (Recommended)
+
+```bash
+# Start
+sudo systemctl start x402-facilitator-rs
+
+# Stop
+sudo systemctl stop x402-facilitator-rs
+
+# Restart
+sudo systemctl restart x402-facilitator-rs
+
+# Status
+sudo systemctl status x402-facilitator-rs
+
+# Logs (live)
+sudo journalctl -u x402-facilitator-rs -f
+
+# Logs (last 100 lines)
+sudo journalctl -u x402-facilitator-rs -n 100
+
+# Enable on boot
+sudo systemctl enable x402-facilitator-rs
+```
+
+### PM2 (Alternative)
+
 ```bash
 # Start
 pm2 start ecosystem.config.cjs
@@ -726,6 +833,13 @@ pm2 logs x402-facilitator-rs --lines 100
 # Monitor
 pm2 monit
 
+# Status
+pm2 status
+```
+
+### General
+
+```bash
 # Health check
 curl http://localhost:8080/health
 
@@ -735,8 +849,8 @@ curl http://localhost:8080/metrics
 # Build release
 cargo build --release
 
-# Check status
-pm2 status
+# Application logs
+tail -f /srv/x402/x402-facilitator-rs/logs/x402-facilitator.log
 ```
 
 ---

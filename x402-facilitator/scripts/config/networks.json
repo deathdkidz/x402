@@ -6,8 +6,8 @@
     "gasToken": "ETH",
     "type": "testnet",
     "batchContract": "0xe6158F16A2781241703cc8005229c8e1ADd866De",
-    "rebalanceThreshold": "0.01",
-    "minBalanceToKeep": "0.005"
+    "rebalanceThreshold": "0.001",
+    "minBalanceToKeep": "0.0005"
   },
   "Ethereum Sepolia": {
     "rpcUrl": "ETHEREUM_SEPOLIA_RPC",
@@ -66,8 +66,8 @@
     "gasToken": "ETH",
     "type": "testnet",
     "batchContract": "0xF7B3f366aaA6d293E4C391F2E834056dB7f3bE50",
-    "rebalanceThreshold": "0.01",
-    "minBalanceToKeep": "0.005"
+    "rebalanceThreshold": "0.001",
+    "minBalanceToKeep": "0.0005"
   },
   "OP Mainnet": {
     "rpcUrl": "OP_MAINNET_RPC",

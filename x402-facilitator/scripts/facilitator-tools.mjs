@@ -370,8 +370,68 @@ const MIN_BALANCE_TO_KEEP = ethers.parseEther(process.env.MIN_BALANCE_TO_KEEP ||
 const GAS_LIMIT_SIMPLE_TRANSFER = 21000;
 
 const BATCH_TRANSFER_ABI = [
-  'function batchTransfer(address[] recipients, uint256[] amounts) payable',
+  'function batchTransfer(address[] calldata recipients, uint256[] calldata amounts) external payable',
+  'function batchTransferEqual(address[] calldata recipients) external payable',
+  'event BatchTransferExecuted(address indexed sender, uint256 totalAmount, uint256 recipientCount)',
 ];
+
+// Helper to execute batch transfer
+async function executeBatchTransfer(wallet, batchContractAddress, recipients, amounts, config) {
+  const contract = new ethers.Contract(batchContractAddress, BATCH_TRANSFER_ABI, wallet);
+  const totalValue = amounts.reduce((sum, amt) => sum + amt, 0n);
+  
+  // Estimate gas for batch transfer
+  const gasEstimate = await contract.batchTransfer.estimateGas(recipients, amounts, { value: totalValue });
+  const gasLimit = gasEstimate * 120n / 100n; // 20% buffer
+  
+  const tx = await contract.batchTransfer(recipients, amounts, {
+    value: totalValue,
+    gasLimit,
+  });
+  
+  return tx;
+}
+
+// Helper to execute individual transfers (fallback)
+async function executeIndividualTransfers(fundingWallet, wallets, perWalletAmount, config) {
+  let successCount = 0;
+  let failCount = 0;
+  
+  for (let i = 0; i < wallets.length; i++) {
+    const targetAddress = wallets[i].address || wallets[i];
+    console.log(`\n[${i + 1}/${wallets.length}] Sending to wallet [${i + 1}]`);
+    console.log(`  To: ${targetAddress}`);
+    console.log(`  Amount: ${ethers.formatEther(perWalletAmount)} ${config.gasToken}`);
+    
+    try {
+      const tx = await fundingWallet.sendTransaction({
+        to: targetAddress,
+        value: perWalletAmount,
+        gasLimit: GAS_LIMIT_SIMPLE_TRANSFER,
+      });
+      
+      console.log(`  📤 TX: ${tx.hash}`);
+      const receipt = await tx.wait();
+      
+      if (receipt.status === 1) {
+        console.log(`  ✅ Confirmed in block ${receipt.blockNumber}`);
+        successCount++;
+      } else {
+        console.log(`  ❌ Transaction failed`);
+        failCount++;
+      }
+    } catch (error) {
+      console.log(`  ❌ Error: ${error.message}`);
+      failCount++;
+    }
+  }
+  
+  console.log(`\n${'═'.repeat(70)}`);
+  console.log('Distribution Complete!');
+  console.log(`  ✅ Success: ${successCount}`);
+  console.log(`  ❌ Failed: ${failCount}`);
+  console.log('═'.repeat(70));
+}
 
 async function paymasterBalances() {
   while (true) {
@@ -560,31 +620,86 @@ async function rebalancePaymasters() {
         console.log(`\n${'='.repeat(70)}`);
         console.log('Executing rebalancing...');
         
-        // Simple implementation: first sender distributes to all receivers
         const sender = senders[0];
         let remaining = sender.amount;
         
+        // Prepare batch of receivers
+        const batchRecipients = [];
+        const batchAmounts = [];
+        
         for (const receiver of receivers) {
           if (remaining <= 0n) break;
-          
           const sendAmount = remaining < receiver.amount ? remaining : receiver.amount;
-          
-          console.log(`\nSending ${ethers.formatEther(sendAmount)} ${config.gasToken} from [${sender.from.index}] to [${receiver.to.index}]`);
+          batchRecipients.push(receiver.to.address);
+          batchAmounts.push(sendAmount);
+          remaining -= sendAmount;
+        }
+        
+        // Check if batch contract is available and makes sense (2+ recipients)
+        if (config.batchContract && batchRecipients.length >= 2) {
+          console.log(`\n🚀 Using batch transfer contract: ${config.batchContract}`);
+          console.log(`   Distributing to ${batchRecipients.length} recipients in a single transaction`);
           
           try {
-            const tx = await sender.from.wallet.sendTransaction({
-              to: receiver.to.address,
-              value: sendAmount,
-              gasLimit: GAS_LIMIT_SIMPLE_TRANSFER,
-            });
+            const tx = await executeBatchTransfer(
+              sender.from.wallet,
+              config.batchContract,
+              batchRecipients,
+              batchAmounts,
+              config
+            );
             
-            console.log(`  📤 TX: ${tx.hash}`);
+            const totalAmount = batchAmounts.reduce((sum, amt) => sum + amt, 0n);
+            console.log(`   Total: ${ethers.formatEther(totalAmount)} ${config.gasToken}`);
+            console.log(`   📤 TX: ${tx.hash}`);
+            
             const receipt = await tx.wait();
-            console.log(`  ✅ Confirmed in block ${receipt.blockNumber}`);
-            
-            remaining -= sendAmount;
+            console.log(`   ✅ Batch confirmed in block ${receipt.blockNumber}`);
+            console.log(`   ⛽ Gas used: ${receipt.gasUsed.toString()}`);
           } catch (error) {
-            console.log(`  ❌ Error: ${error.message}`);
+            console.log(`\n❌ Batch transfer failed: ${error.message}`);
+            console.log('   Falling back to individual transfers...');
+            
+            // Fallback to individual transfers
+            for (let i = 0; i < batchRecipients.length; i++) {
+              console.log(`\nSending ${ethers.formatEther(batchAmounts[i])} ${config.gasToken} to [${receivers[i].to.index}]`);
+              try {
+                const tx = await sender.from.wallet.sendTransaction({
+                  to: batchRecipients[i],
+                  value: batchAmounts[i],
+                  gasLimit: GAS_LIMIT_SIMPLE_TRANSFER,
+                });
+                console.log(`  📤 TX: ${tx.hash}`);
+                const receipt = await tx.wait();
+                console.log(`  ✅ Confirmed in block ${receipt.blockNumber}`);
+              } catch (err) {
+                console.log(`  ❌ Error: ${err.message}`);
+              }
+            }
+          }
+        } else {
+          // No batch contract or only 1 recipient - use individual transfers
+          if (!config.batchContract && batchRecipients.length >= 2) {
+            console.log(`\n⚠️  No batch contract deployed on ${network}. Using individual transfers.`);
+            console.log(`   Tip: Deploy batch contract via menu option 4 to save gas.`);
+          }
+          
+          for (let i = 0; i < batchRecipients.length; i++) {
+            console.log(`\nSending ${ethers.formatEther(batchAmounts[i])} ${config.gasToken} from [${sender.from.index}] to [${receivers[i].to.index}]`);
+            
+            try {
+              const tx = await sender.from.wallet.sendTransaction({
+                to: batchRecipients[i],
+                value: batchAmounts[i],
+                gasLimit: GAS_LIMIT_SIMPLE_TRANSFER,
+              });
+              
+              console.log(`  📤 TX: ${tx.hash}`);
+              const receipt = await tx.wait();
+              console.log(`  ✅ Confirmed in block ${receipt.blockNumber}`);
+            } catch (error) {
+              console.log(`  ❌ Error: ${error.message}`);
+            }
           }
         }
         
@@ -742,42 +857,50 @@ async function addExternalFundsMenu() {
     } else {
       console.log(`\n🚀 Executing Distribution...`);
       
-      let successCount = 0;
-      let failCount = 0;
+      // Prepare batch recipients and amounts
+      const recipients = wallets.map(w => w.address);
+      const amounts = wallets.map(() => perWalletAmount);
       
-      for (let i = 0; i < wallets.length; i++) {
-        console.log(`\n[${i + 1}/${wallets.length}] Sending to wallet [${i + 1}]`);
-        console.log(`  To: ${wallets[i].address}`);
-        console.log(`  Amount: ${ethers.formatEther(perWalletAmount)} ${config.gasToken}`);
+      // Check if batch contract is available and makes sense (2+ recipients)
+      if (config.batchContract && wallets.length >= 2) {
+        console.log(`\n🚀 Using batch transfer contract: ${config.batchContract}`);
+        console.log(`   Distributing to ${wallets.length} recipients in a single transaction`);
         
         try {
-          const tx = await fundingWallet.sendTransaction({
-            to: wallets[i].address,
-            value: perWalletAmount,
-            gasLimit: GAS_LIMIT_SIMPLE_TRANSFER,
-          });
+          const tx = await executeBatchTransfer(
+            fundingWallet,
+            config.batchContract,
+            recipients,
+            amounts,
+            config
+          );
           
-          console.log(`  📤 TX: ${tx.hash}`);
+          console.log(`   📤 TX: ${tx.hash}`);
           const receipt = await tx.wait();
           
           if (receipt.status === 1) {
-            console.log(`  ✅ Confirmed in block ${receipt.blockNumber}`);
-            successCount++;
+            console.log(`   ✅ Batch confirmed in block ${receipt.blockNumber}`);
+            console.log(`   ⛽ Gas used: ${receipt.gasUsed.toString()}`);
+            console.log(`\n${'═'.repeat(70)}`);
+            console.log('Distribution Complete!');
+            console.log(`  ✅ All ${wallets.length} wallets funded successfully`);
+            console.log('═'.repeat(70));
           } else {
-            console.log(`  ❌ Transaction failed`);
-            failCount++;
+            console.log(`   ❌ Batch transaction failed`);
           }
         } catch (error) {
-          console.log(`  ❌ Error: ${error.message}`);
-          failCount++;
+          console.log(`\n❌ Batch transfer failed: ${error.message}`);
+          console.log('   Falling back to individual transfers...');
+          await executeIndividualTransfers(fundingWallet, wallets, perWalletAmount, config);
         }
+      } else {
+        // No batch contract - use individual transfers
+        if (!config.batchContract && wallets.length >= 2) {
+          console.log(`\n⚠️  No batch contract deployed on ${network}. Using individual transfers.`);
+          console.log(`   Tip: Deploy batch contract via menu option 4 to save gas.`);
+        }
+        await executeIndividualTransfers(fundingWallet, wallets, perWalletAmount, config);
       }
-      
-      console.log(`\n${'═'.repeat(70)}`);
-      console.log('Distribution Complete!');
-      console.log(`  ✅ Success: ${successCount}`);
-      console.log(`  ❌ Failed: ${failCount}`);
-      console.log('═'.repeat(70));
     }
     
     if (provider instanceof ethers.WebSocketProvider) {

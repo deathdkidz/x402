@@ -1,0 +1,30 @@
+[Unit]
+Description=x402 Facilitator (Rust)
+Documentation=https://github.com/your-org/x402
+After=network.target mysql.service redis.service
+Wants=mysql.service redis.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/srv/x402/x402-facilitator-rs
+ExecStart=/srv/x402/x402-facilitator-rs/target/release/x402-facilitator
+EnvironmentFile=/srv/x402/x402-facilitator-rs/.env
+Restart=always
+RestartSec=5
+StandardOutput=append:/srv/x402/x402-facilitator-rs/logs/x402-facilitator.log
+StandardError=append:/srv/x402/x402-facilitator-rs/logs/error.log
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/x402/x402-facilitator-rs/logs
+
+# Resource limits
+LimitNOFILE=65535
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target
