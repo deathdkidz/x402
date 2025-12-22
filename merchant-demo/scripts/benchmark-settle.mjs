@@ -33,7 +33,7 @@ function question(query) {
 
 // Configuration
 let CONFIG = {
-  facilitator: process.env.NEXT_PUBLIC_FACILITATOR_URL || 'https://api.novacasino.xyz',
+  facilitator: process.env.NEXT_PUBLIC_FACILITATOR_URL || 'https://api.netpay.id',
   apiKey: process.env.X402_API_KEY || '',
   privateKey: process.env.PRIVATE_KEY || '',
   merchant: process.env.NEXT_PUBLIC_MERCHANT_ADDRESS || '',

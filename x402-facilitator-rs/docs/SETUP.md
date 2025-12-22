@@ -61,6 +61,26 @@ sudo systemctl enable nginx
 
 ## Quick Start
 
+### Option 1: Auto Install (Recommended for New VPS)
+
+```bash
+# Navigate to project directory
+cd /srv/x402/x402-facilitator-rs
+
+# Run the auto-install script
+sudo ./scripts/install.sh
+```
+
+The install script will:
+- Install system dependencies (Rust, MySQL, Redis, Nginx)
+- Create the database and schema
+- Prompt for configuration (paymaster keys, RPC endpoints)
+- Build the application
+- Set up systemd service
+- Configure Nginx reverse proxy with SSL
+
+### Option 2: Manual Setup
+
 ```bash
 # 1. Clone or navigate to project
 cd /srv/x402/x402-facilitator-rs
@@ -70,7 +90,7 @@ cp .env.example .env
 nano .env
 
 # 3. Setup database
-mysql -u root -p < scripts/schema.sql
+sudo mysql < scripts/schema.sql
 
 # 4. Build release binary
 cargo build --release
@@ -86,101 +106,63 @@ cargo build --release
 Create a `.env` file in the project root:
 
 ```bash
-# =============================================================================
-# x402 FACILITATOR CONFIGURATION
-# =============================================================================
+# =====================================================
+# x402 Facilitator (Rust) - Environment Configuration
+# =====================================================
 
-# -----------------------------------------------------------------------------
-# Server Settings
-# -----------------------------------------------------------------------------
+# Server Configuration
 PORT=8080
-NODE_ENV=production
 LOG_LEVEL=info
 
-# Service metadata
-SERVICE_NAME=x402 Facilitator
-SERVICE_DESCRIPTION=Secure x402 payment facilitator
-
-# -----------------------------------------------------------------------------
 # Database Configuration (MySQL)
-# -----------------------------------------------------------------------------
 DB_HOST=localhost
 DB_PORT=3306
-DB_DATABASE=x402
+DB_DATABASE=x402_facilitator
 DB_USER=x402_user
 DB_PASSWORD=your_secure_password_here
 DB_CONNECTION_LIMIT=50
 
-# -----------------------------------------------------------------------------
 # Redis Configuration
-# -----------------------------------------------------------------------------
-REDIS_URL=redis://127.0.0.1:6379
+REDIS_URL=redis://localhost:6379
 
-# -----------------------------------------------------------------------------
+# =====================================================
+# Network Configuration
+# =====================================================
+TESTNET_NETWORKS="Base Sepolia,Ethereum Sepolia,OP Sepolia"
+MAINNET_NETWORKS="Base,Ethereum,OP Mainnet"
+
+# =====================================================
+# RPC Endpoints (WebSocket preferred for speed)
+# =====================================================
+# Testnet RPCs
+BASE_SEPOLIA_RPC=wss://base-sepolia.g.alchemy.com/v2/YOUR_API_KEY
+ETHEREUM_SEPOLIA_RPC=wss://eth-sepolia.g.alchemy.com/v2/YOUR_API_KEY
+OP_SEPOLIA_RPC=wss://opt-sepolia.g.alchemy.com/v2/YOUR_API_KEY
+
+# Mainnet RPCs
+BASE_RPC=wss://base-mainnet.g.alchemy.com/v2/YOUR_API_KEY
+ETHEREUM_RPC=wss://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY
+OP_MAINNET_RPC=wss://opt-mainnet.g.alchemy.com/v2/YOUR_API_KEY
+
+# =====================================================
 # Paymaster Configuration (REQUIRED)
-# -----------------------------------------------------------------------------
+# =====================================================
 # Comma-separated list of private keys (with or without 0x prefix)
 # These wallets pay gas fees for settlements
 # IMPORTANT: Fund these wallets with ETH on each network you support!
 PAYMASTER_PRIVATE_KEYS=0xYOUR_PRIVATE_KEY_1,0xYOUR_PRIVATE_KEY_2
 
-# -----------------------------------------------------------------------------
-# Network Configuration
-# -----------------------------------------------------------------------------
-# Comma-separated list of enabled networks
-MAINNET_NETWORKS=Base,Optimism
-TESTNET_NETWORKS=Base Sepolia,OP Sepolia
-
-# -----------------------------------------------------------------------------
-# RPC Endpoints (WebSocket preferred for speed)
-# -----------------------------------------------------------------------------
-# Mainnets
-BASE_RPC=wss://base-mainnet.g.alchemy.com/v2/YOUR_API_KEY
-ETHEREUM_RPC=https://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY
-OP_MAINNET_RPC=wss://opt-mainnet.g.alchemy.com/v2/YOUR_API_KEY
-HYPEREVM_RPC=wss://hyperliquid-mainnet.g.alchemy.com/v2/YOUR_API_KEY
-
-# Testnets
-BASE_SEPOLIA_RPC=wss://base-sepolia.g.alchemy.com/v2/YOUR_API_KEY
-ETHEREUM_SEPOLIA_RPC=https://eth-sepolia.g.alchemy.com/v2/YOUR_API_KEY
-OP_SEPOLIA_RPC=wss://opt-sepolia.g.alchemy.com/v2/YOUR_API_KEY
-HYPEREVM_TESTNET_RPC=wss://hyperliquid-testnet.g.alchemy.com/v2/YOUR_API_KEY
-
-# -----------------------------------------------------------------------------
-# Rate Limiting
-# -----------------------------------------------------------------------------
-RATE_LIMIT_WINDOW_MS=60000
-RATE_LIMIT_MAX_REQUESTS=100
-VERIFY_RATE_LIMIT_WINDOW_MS=60000
-VERIFY_RATE_LIMIT_MAX=60
-SETTLE_RATE_LIMIT_WINDOW_MS=60000
-SETTLE_RATE_LIMIT_MAX=20
-
-# -----------------------------------------------------------------------------
-# Transaction Settings
-# -----------------------------------------------------------------------------
-SETTLEMENT_GAS_LIMIT=200000
-SETTLEMENT_TIMEOUT_MS=60000
-TRANSACTION_MONITOR_INTERVAL_MS=5000
-TRANSACTION_TIMEOUT_MS=300000
-
-# -----------------------------------------------------------------------------
-# Webhook Settings
-# -----------------------------------------------------------------------------
-WEBHOOK_TIMEOUT_MS=10000
-WEBHOOK_RETRY_ATTEMPTS=3
-
-# -----------------------------------------------------------------------------
-# Security Settings
-# -----------------------------------------------------------------------------
-SECURITY_BAN_THRESHOLD=10
+# =====================================================
+# Security Configuration
+# =====================================================
+SECURITY_BAN_THRESHOLD=100
 SECURITY_BAN_DURATION_MS=3600000
-SECURITY_CLEANUP_INTERVAL_MS=60000
+SECURITY_CLEANUP_INTERVAL_MS=600000
 
-# -----------------------------------------------------------------------------
-# Optional: Gas Price Tracking
-# -----------------------------------------------------------------------------
-COINMARKETCAP_API_KEY=your_cmc_api_key
+# =====================================================
+# Transaction Monitoring
+# =====================================================
+TRANSACTION_MONITOR_INTERVAL_MS=20000
 ```
 
 ### Required vs Optional Variables
@@ -201,101 +183,48 @@ COINMARKETCAP_API_KEY=your_cmc_api_key
 Run the complete database setup with a single command:
 
 ```bash
-sudo mysql -u root -p < scripts/schema.sql
+sudo mysql < scripts/schema.sql
 ```
 
-Or create the schema manually:
+This creates:
+- Database: `x402_facilitator`
+- User: `x402_user` (update password in schema.sql first!)
+- All required tables with proper indexes
+
+### Database Schema Overview
+
+| Table | Description |
+|-------|-------------|
+| `merchants` | Merchant accounts with credit balances |
+| `transactions` | Settlement transaction records |
+| `credit_transactions` | Credit movement history |
+| `credit_purchases` | Blockchain credit purchases |
+| `webhook_logs` | Webhook delivery logs |
+| `auth_nonces` | SIWE authentication nonces |
+| `merchant_sessions` | Login sessions |
+| `gas_tracking` | Gas price analytics |
+| `transaction_events` | Transaction status audit log |
+| `webhook_deliveries` | Detailed webhook tracking |
+
+### Manual Database Creation
+
+If you need to create the database manually:
 
 ```sql
--- =============================================================================
--- x402 FACILITATOR DATABASE SCHEMA
--- =============================================================================
-
 -- Create database
-CREATE DATABASE IF NOT EXISTS x402 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS x402_facilitator 
+    CHARACTER SET utf8mb4 
+    COLLATE utf8mb4_unicode_ci;
 
 -- Create user (change password!)
 CREATE USER IF NOT EXISTS 'x402_user'@'localhost' IDENTIFIED BY 'your_secure_password';
-GRANT ALL PRIVILEGES ON x402.* TO 'x402_user'@'localhost';
+GRANT ALL PRIVILEGES ON x402_facilitator.* TO 'x402_user'@'localhost';
 FLUSH PRIVILEGES;
+```
 
-USE x402;
-
--- -----------------------------------------------------------------------------
--- Merchants table
--- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS merchants (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) UNIQUE,
-    api_key VARCHAR(64) NOT NULL UNIQUE,
-    auth_address VARCHAR(42) NOT NULL,
-    credits_balance BIGINT DEFAULT 0,
-    webhook_url VARCHAR(512),
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_api_key (api_key),
-    INDEX idx_auth_address (auth_address)
-);
-
--- -----------------------------------------------------------------------------
--- Transactions table
--- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS transactions (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    merchant_id INT NOT NULL,
-    network VARCHAR(50) NOT NULL,
-    asset VARCHAR(42) NOT NULL,
-    payer VARCHAR(42) NOT NULL,
-    recipient VARCHAR(42) NOT NULL,
-    amount VARCHAR(78) NOT NULL,
-    resource VARCHAR(512),
-    nonce VARCHAR(66) NOT NULL,
-    tx_hash VARCHAR(66),
-    status ENUM('pending', 'completed', 'failed', 'timeout') DEFAULT 'pending',
-    error_message TEXT,
-    gas_used BIGINT,
-    gas_price VARCHAR(78),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_merchant (merchant_id),
-    INDEX idx_tx_hash (tx_hash),
-    INDEX idx_status (status),
-    INDEX idx_payer_nonce (payer, nonce),
-    FOREIGN KEY (merchant_id) REFERENCES merchants(id)
-);
-
--- -----------------------------------------------------------------------------
--- Credit transactions table
--- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS credit_transactions (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    merchant_id INT NOT NULL,
-    amount BIGINT NOT NULL,
-    transaction_type ENUM('purchase', 'deduction', 'refund', 'bonus') NOT NULL,
-    description VARCHAR(512),
-    reference_tx VARCHAR(66),
-    balance_after BIGINT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_merchant (merchant_id),
-    FOREIGN KEY (merchant_id) REFERENCES merchants(id)
-);
-
--- -----------------------------------------------------------------------------
--- Test merchant (optional - for development)
--- -----------------------------------------------------------------------------
-INSERT INTO merchants (name, email, api_key, auth_address, credits_balance)
-VALUES (
-    'Test Merchant',
-    'test@example.com',
-    SHA2(CONCAT(RAND(), NOW()), 256),
-    '0xYourMerchantWalletAddress',
-    1000000
-);
-
--- Show the generated API key
-SELECT api_key FROM merchants WHERE name = 'Test Merchant';
+Then run the full schema:
+```bash
+sudo mysql x402_facilitator < scripts/schema.sql
 ```
 
 ---

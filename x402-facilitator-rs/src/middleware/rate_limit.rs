@@ -27,9 +27,9 @@ pub type KeyedRateLimiter = RateLimiter<String, DefaultKeyedStateStore<String>, 
 
 /// Rate limit configuration
 /// For AI agents with high polling rates, we use generous limits
-pub const UNAUTHENTICATED_LIMIT_PER_MIN: u32 = 1000;   // Health checks, public endpoints
-pub const AUTHENTICATED_LIMIT_PER_MIN: u32 = 10000;    // /verify - high for AI agents
-pub const SETTLE_LIMIT_PER_MIN: u32 = 5000;            // /settle - also high for AI agents
+pub const UNAUTHENTICATED_LIMIT_PER_MIN: u32 = 200;   // Health checks, public endpoints
+pub const AUTHENTICATED_LIMIT_PER_MIN: u32 = 1500;    // /verify - high for AI agents
+pub const SETTLE_LIMIT_PER_MIN: u32 = 1500;            // /settle - also high for AI agents
 
 /// Rate limit state
 #[derive(Clone)]
