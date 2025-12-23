@@ -11,12 +11,18 @@ interface Merchant {
   createdAt: string;
 }
 
+interface LoginResult {
+  isNewUser: boolean;
+  isAdmin: boolean;
+  adminRole: string | null;
+}
+
 interface AuthContextType {
   merchant: Merchant | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   isNewUser: boolean;
-  login: (address: string, signMessage: (message: string) => Promise<string>) => Promise<void>;
+  login: (address: string, signMessage: (message: string) => Promise<string>) => Promise<LoginResult>;
   logout: () => Promise<void>;
   refreshMerchant: () => Promise<void>;
 }
@@ -50,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, [checkAuth]);
 
-  const login = async (address: string, signMessage: (message: string) => Promise<string>) => {
+  const login = async (address: string, signMessage: (message: string) => Promise<string>): Promise<LoginResult> => {
     setIsLoading(true);
     
     try {
@@ -79,6 +85,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Refresh merchant data
       await checkAuth();
+      
+      return {
+        isNewUser: data.isNewUser || false,
+        isAdmin: data.isAdmin || false,
+        adminRole: data.adminRole || null,
+      };
       
     } catch (error) {
       console.error('Login failed:', error);

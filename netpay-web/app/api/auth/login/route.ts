@@ -64,10 +64,16 @@ export async function POST(request: NextRequest) {
       return errorResponse(result.error || 'Authentication failed', 401);
     }
 
-    const { merchant, sessionToken, isNewUser } = result.data;
+    const { merchant, sessionToken, isNewUser, isAdmin, adminRole } = result.data;
 
     // Set secure session cookie
     await setSessionCookie(sessionToken);
+
+    // If user is admin, also store admin session
+    if (isAdmin) {
+      // Store admin session token in a separate cookie or the same one
+      // The session can be used for both merchant and admin access
+    }
 
     // Return minimal merchant data (no sensitive fields)
     return secureJsonResponse({
@@ -79,6 +85,8 @@ export async function POST(request: NextRequest) {
         status: merchant.status,
       },
       isNewUser,
+      isAdmin: isAdmin || false,
+      adminRole: adminRole || null,
     });
   } catch (error) {
     console.error('Auth error:', error);

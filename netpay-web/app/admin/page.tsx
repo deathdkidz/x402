@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { StatCard, Card, CardHeader, CardContent } from '@/components/ui';
 import { StatusBadge } from '@/components/ui/Badge';
 import {
@@ -10,34 +11,109 @@ import {
   RefreshIcon,
 } from '@/components/icons';
 
-// Mock data - replace with actual API calls
-const mockStats = {
-  totalMerchants: 156,
-  activeMerchants: 142,
-  pendingMerchants: 8,
-  suspendedMerchants: 6,
-  totalSettlements24h: 1247,
-  totalSettlements7d: 8934,
-  totalVolume24h: 45230.50,
-  totalVolume7d: 312450.75,
-  totalCreditsSold: 1250000,
-  successRate24h: 98.7,
-};
+// Type for admin dashboard stats
+interface AdminDashboardStats {
+  totalMerchants: number;
+  activeMerchants: number;
+  pendingMerchants: number;
+  suspendedMerchants: number;
+  bannedMerchants: number;
+  totalSettlements24h: number;
+  totalSettlements7d: number;
+  totalVolume24h: number;
+  totalVolume7d: number;
+  totalCreditsUsed: number;
+  totalCreditsPurchased: number;
+  successRate24h: number;
+  recentSettlements: Array<{
+    id: number;
+    merchantName: string;
+    amount: number;
+    network: string;
+    status: string;
+    createdAt: string;
+  }>;
+}
 
-const recentSettlements = [
-  { id: 's_001', merchant: 'Acme Corp', amount: 25.00, network: 'Base', status: 'confirmed' as const, time: '2 min ago' },
-  { id: 's_002', merchant: 'TechStart', amount: 150.00, network: 'Base', status: 'pending' as const, time: '5 min ago' },
-  { id: 's_003', merchant: 'DataFlow', amount: 75.50, network: 'Ethereum', status: 'confirmed' as const, time: '8 min ago' },
-  { id: 's_004', merchant: 'AITools', amount: 12.00, network: 'Base', status: 'failed' as const, time: '12 min ago' },
-  { id: 's_005', merchant: 'CloudAPI', amount: 200.00, network: 'Base', status: 'confirmed' as const, time: '15 min ago' },
-];
-
-const lowBalancePaymasters = [
-  { address: '0x1234...5678', balance: 0.05, network: 'Base' },
-  { address: '0xabcd...efgh', balance: 0.12, network: 'Ethereum' },
-];
+// Client-side API helper
+async function apiGetAdminDashboard() {
+  const sessionToken = localStorage.getItem('admin_session_token');
+  if (!sessionToken) {
+    return { success: false, error: 'Not authenticated' };
+  }
+  const res = await fetch(`/api/admin/dashboard?sessionToken=${sessionToken}`);
+  return res.json();
+}
 
 export default function AdminDashboard() {
+  const [stats, setStats] = useState<AdminDashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchDashboard = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await apiGetAdminDashboard();
+      if (result.success && result.data) {
+        setStats(result.data);
+      } else {
+        setError(result.error || 'Failed to load dashboard');
+      }
+    } catch (err) {
+      setError('Failed to connect to API');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboard();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400"></div>
+      </div>
+    );
+  }
+
+  if (error || !stats) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent>
+            <div className="text-center py-8">
+              <p className="text-red-400 mb-4">{error || 'Failed to load dashboard'}</p>
+              <button
+                onClick={fetchDashboard}
+                className="px-4 py-2 bg-cyan-400 text-black rounded-lg hover:bg-cyan-300 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
+    if (diff < 60) return `${diff} sec ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`;
+    return date.toLocaleDateString();
+  };
+
+  const mapStatus = (status: string): 'confirmed' | 'pending' | 'failed' => {
+    if (status === 'confirmed' || status === 'completed') return 'confirmed';
+    if (status === 'pending' || status === 'processing') return 'pending';
+    return 'failed';
+  };
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -46,8 +122,12 @@ export default function AdminDashboard() {
           <h1 className="text-2xl font-bold text-white">Admin Dashboard</h1>
           <p className="text-gray-400 mt-1">Overview of the X402 protocol system</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300 transition-colors">
-          <RefreshIcon className="w-4 h-4" />
+        <button 
+          onClick={fetchDashboard}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300 transition-colors disabled:opacity-50"
+        >
+          <RefreshIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </button>
       </div>
@@ -56,40 +136,37 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Merchants"
-          value={mockStats.totalMerchants}
+          value={stats.totalMerchants}
           icon={<UsersIcon className="w-5 h-5" />}
-          subtitle={`${mockStats.activeMerchants} active`}
-          change={{ value: 12, type: 'increase' }}
+          subtitle={`${stats.activeMerchants} active`}
         />
         <StatCard
           title="Settlements (24h)"
-          value={mockStats.totalSettlements24h.toLocaleString()}
+          value={stats.totalSettlements24h.toLocaleString()}
           icon={<TransactionsIcon className="w-5 h-5" />}
-          subtitle={`${mockStats.successRate24h}% success rate`}
-          change={{ value: 8, type: 'increase' }}
+          subtitle={`${stats.successRate24h.toFixed(1)}% success rate`}
         />
         <StatCard
           title="Volume (24h)"
-          value={`$${mockStats.totalVolume24h.toLocaleString()}`}
+          value={`$${stats.totalVolume24h.toLocaleString()}`}
           icon={<WalletIcon className="w-5 h-5" />}
-          change={{ value: 15, type: 'increase' }}
         />
         <StatCard
-          title="Credits Sold"
-          value={mockStats.totalCreditsSold.toLocaleString()}
+          title="Credits Used"
+          value={stats.totalCreditsUsed.toLocaleString()}
           icon={<AnalyticsIcon className="w-5 h-5" />}
-          change={{ value: 5, type: 'increase' }}
+          subtitle={`${stats.totalCreditsPurchased.toLocaleString()} purchased`}
         />
       </div>
 
       {/* Secondary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-400">Active Merchants</p>
-                <p className="text-2xl font-bold text-green-400">{mockStats.activeMerchants}</p>
+                <p className="text-2xl font-bold text-green-400">{stats.activeMerchants}</p>
               </div>
               <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center">
                 <span className="text-2xl">✓</span>
@@ -102,7 +179,7 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-400">Pending Approval</p>
-                <p className="text-2xl font-bold text-yellow-400">{mockStats.pendingMerchants}</p>
+                <p className="text-2xl font-bold text-yellow-400">{stats.pendingMerchants}</p>
               </div>
               <div className="w-16 h-16 rounded-full bg-yellow-500/10 flex items-center justify-center">
                 <span className="text-2xl">⏳</span>
@@ -115,7 +192,20 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-400">Suspended</p>
-                <p className="text-2xl font-bold text-red-400">{mockStats.suspendedMerchants}</p>
+                <p className="text-2xl font-bold text-orange-400">{stats.suspendedMerchants}</p>
+              </div>
+              <div className="w-16 h-16 rounded-full bg-orange-500/10 flex items-center justify-center">
+                <span className="text-2xl">⏸</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-400">Banned</p>
+                <p className="text-2xl font-bold text-red-400">{stats.bannedMerchants}</p>
               </div>
               <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
                 <span className="text-2xl">⚠</span>
@@ -139,56 +229,51 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-gray-800">
-                {recentSettlements.map((settlement) => (
-                  <div key={settlement.id} className="px-4 py-3 flex items-center justify-between hover:bg-gray-800/30">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center">
-                        <TransactionsIcon className="w-5 h-5 text-gray-400" />
+                {stats.recentSettlements.length > 0 ? (
+                  stats.recentSettlements.map((settlement) => (
+                    <div key={settlement.id} className="px-4 py-3 flex items-center justify-between hover:bg-gray-800/30">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center">
+                          <TransactionsIcon className="w-5 h-5 text-gray-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-white">{settlement.merchantName || 'Unknown'}</p>
+                          <p className="text-xs text-gray-500">#{settlement.id} • {settlement.network}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-white">{settlement.merchant}</p>
-                        <p className="text-xs text-gray-500">{settlement.id} • {settlement.network}</p>
+                      <div className="flex items-center gap-4">
+                        <p className="text-sm font-medium text-white">${settlement.amount.toFixed(2)}</p>
+                        <StatusBadge status={mapStatus(settlement.status)} />
+                        <p className="text-xs text-gray-500 w-20 text-right">{formatTime(settlement.createdAt)}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <p className="text-sm font-medium text-white">${settlement.amount.toFixed(2)}</p>
-                      <StatusBadge status={settlement.status} />
-                      <p className="text-xs text-gray-500 w-20 text-right">{settlement.time}</p>
-                    </div>
+                  ))
+                ) : (
+                  <div className="px-4 py-8 text-center text-gray-500">
+                    No recent settlements
                   </div>
-                ))}
+                )}
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Alerts Panel */}
+        {/* Quick Stats Panel */}
         <div className="space-y-4">
-          {/* Low Balance Paymasters */}
+          {/* 7 Day Stats */}
           <Card>
             <CardHeader>
-              <h3 className="font-semibold text-white flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse"></span>
-                Low Balance Alerts
-              </h3>
+              <h3 className="font-semibold text-white">7 Day Summary</h3>
             </CardHeader>
             <CardContent className="space-y-3">
-              {lowBalancePaymasters.length > 0 ? (
-                lowBalancePaymasters.map((pm) => (
-                  <div key={pm.address} className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-300 font-mono">{pm.address}</span>
-                      <span className="text-xs text-gray-500">{pm.network}</span>
-                    </div>
-                    <p className="text-lg font-bold text-red-400 mt-1">{pm.balance} ETH</p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-gray-500">No alerts</p>
-              )}
-              <a href="/admin/paymasters" className="block text-sm text-cyan-400 hover:text-cyan-300 text-center mt-2">
-                Manage Paymasters →
-              </a>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Settlements</span>
+                <span className="text-white font-medium">{stats.totalSettlements7d.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Volume</span>
+                <span className="text-white font-medium">${stats.totalVolume7d.toLocaleString()}</span>
+              </div>
             </CardContent>
           </Card>
 
@@ -198,65 +283,22 @@ export default function AdminDashboard() {
               <h3 className="font-semibold text-white">Quick Actions</h3>
             </CardHeader>
             <CardContent className="space-y-2">
-              <button className="w-full px-4 py-2 text-sm text-left bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
-                Add New Paymaster
-              </button>
-              <button className="w-full px-4 py-2 text-sm text-left bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
-                Rebalance Wallets
-              </button>
-              <button className="w-full px-4 py-2 text-sm text-left bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
-                Export Reports
-              </button>
-              <button className="w-full px-4 py-2 text-sm text-left bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
-                View System Logs
-              </button>
+              <a href="/admin/merchants" className="block w-full px-4 py-2 text-sm text-left bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                View All Merchants
+              </a>
+              <a href="/admin/settlements" className="block w-full px-4 py-2 text-sm text-left bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                View All Settlements
+              </a>
+              <a href="/admin/paymasters" className="block w-full px-4 py-2 text-sm text-left bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                Manage Paymasters
+              </a>
+              <a href="/admin/audit" className="block w-full px-4 py-2 text-sm text-left bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                View Audit Log
+              </a>
             </CardContent>
           </Card>
         </div>
       </div>
-
-      {/* System Health */}
-      <Card>
-        <CardHeader>
-          <h3 className="font-semibold text-white">System Health</h3>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="p-3 bg-gray-800/50 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-2 h-2 rounded-full bg-green-400"></span>
-                <span className="text-sm text-gray-400">API Server</span>
-              </div>
-              <p className="text-lg font-semibold text-green-400">Healthy</p>
-              <p className="text-xs text-gray-500">Latency: 12ms</p>
-            </div>
-            <div className="p-3 bg-gray-800/50 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-2 h-2 rounded-full bg-green-400"></span>
-                <span className="text-sm text-gray-400">Database</span>
-              </div>
-              <p className="text-lg font-semibold text-green-400">Healthy</p>
-              <p className="text-xs text-gray-500">Connections: 24/100</p>
-            </div>
-            <div className="p-3 bg-gray-800/50 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-2 h-2 rounded-full bg-green-400"></span>
-                <span className="text-sm text-gray-400">Redis</span>
-              </div>
-              <p className="text-lg font-semibold text-green-400">Healthy</p>
-              <p className="text-xs text-gray-500">Memory: 45%</p>
-            </div>
-            <div className="p-3 bg-gray-800/50 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-2 h-2 rounded-full bg-yellow-400"></span>
-                <span className="text-sm text-gray-400">RPC Providers</span>
-              </div>
-              <p className="text-lg font-semibold text-yellow-400">Degraded</p>
-              <p className="text-xs text-gray-500">1 of 3 slow</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

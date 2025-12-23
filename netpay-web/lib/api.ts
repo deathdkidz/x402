@@ -15,32 +15,56 @@ interface ApiResponse<T = unknown> {
   error?: string;
 }
 
+// Admin and merchant dashboard routes that don't require API key
+const NO_API_KEY_ROUTES = [
+  '/admin/',
+  '/merchant/',
+];
+
 async function facilitatorRequest<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   try {
-    // Validate API key exists
-    if (!FACILITATOR_API_KEY) {
+    // Check if this endpoint requires API key
+    const requiresApiKey = !NO_API_KEY_ROUTES.some(route => endpoint.startsWith(route));
+    
+    // Validate API key exists for routes that require it
+    if (requiresApiKey && !FACILITATOR_API_KEY) {
       console.error('FACILITATOR_API_KEY not configured');
       return { success: false, error: 'Server configuration error' };
     }
 
     const url = `${FACILITATOR_URL}${endpoint}`;
+    
+    // Build headers - only add API key if required
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Request-Source': 'netpay-dashboard',
+    };
+    if (requiresApiKey && FACILITATOR_API_KEY) {
+      headers['X-API-Key'] = FACILITATOR_API_KEY;
+    }
+    
     const response = await fetch(url, {
       ...options,
       headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': FACILITATOR_API_KEY,
-        'X-Request-Source': 'netpay-dashboard',
+        ...headers,
         ...options.headers,
       },
+      // Add cache: 'no-store' for dynamic data
+      cache: 'no-store',
     });
 
     const data = await response.json();
 
     if (!response.ok) {
       return { success: false, error: data.error || 'Request failed' };
+    }
+
+    // Handle new API response format
+    if (data.success !== undefined) {
+      return { success: data.success, data: data.data, error: data.error };
     }
 
     return { success: true, data };
@@ -58,6 +82,9 @@ export interface MerchantData {
   businessName: string;
   apiKey: string;
   creditBalance: number;
+  mainnetCreditBalance: number;
+  testnetCreditsRemaining: number;
+  testnetCreditsUsed: number;
   status: string;
   createdAt: string;
 }
@@ -66,6 +93,8 @@ export interface AuthResult {
   merchant: MerchantData;
   sessionToken: string;
   isNewUser: boolean;
+  isAdmin?: boolean;
+  adminRole?: string;
 }
 
 export async function authenticateWallet(
@@ -101,6 +130,11 @@ export async function logoutSession(
 
 export interface DashboardStats {
   creditBalance: number;
+  mainnetCreditBalance: number;
+  testnetCreditsRemaining: number;
+  testnetCreditsUsed: number;
+  testnetCreditsAllocated: number;
+  currentPeriod: string;
   totalTransactions: number;
   totalVolume: number;
   successRate: number;
@@ -245,5 +279,269 @@ export async function updateSettings(
   return facilitatorRequest<{ success: boolean }>(`/merchant/${merchantId}/settings`, {
     method: 'PUT',
     body: JSON.stringify(data),
+  });
+}
+
+// ============ Credits/Topup API ============
+
+export interface TopupPackage {
+  id: number;
+  name: string;
+  description: string | null;
+  creditAmount: number;
+  priceUsdc: number;
+  bonusCredits: number;
+  totalCredits: number;
+  isPopular: boolean;
+}
+
+export interface TopupOrder {
+  orderId: string;
+  merchantId: number;
+  creditAmount: number;
+  bonusCredits: number;
+  totalCredits: number;
+  priceUsdc: number;
+  network: string;
+  status: string;
+  paymentAddress: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export async function getTopupPackages(merchantId: number): Promise<ApiResponse<TopupPackage[]>> {
+  return facilitatorRequest<TopupPackage[]>(`/merchant/${merchantId}/credits/packages`);
+}
+
+export async function createTopupOrder(
+  merchantId: number,
+  packageId?: number,
+  creditAmount?: number,
+  network: string = 'base'
+): Promise<ApiResponse<TopupOrder>> {
+  return facilitatorRequest<TopupOrder>(`/merchant/${merchantId}/credits/topup`, {
+    method: 'POST',
+    body: JSON.stringify({ packageId, creditAmount, network }),
+  });
+}
+
+export async function getTopupOrder(merchantId: number, orderId: string): Promise<ApiResponse<TopupOrder>> {
+  return facilitatorRequest<TopupOrder>(`/merchant/${merchantId}/credits/topup/${orderId}`);
+}
+
+// ============ Admin API ============
+
+export interface AdminAuthResult {
+  admin: {
+    id: number;
+    username: string;
+    displayName: string | null;
+    role: string;
+    totpEnabled: boolean;
+  };
+  sessionToken: string;
+}
+
+export interface AdminDashboardStats {
+  totalMerchants: number;
+  activeMerchants: number;
+  pendingMerchants: number;
+  suspendedMerchants: number;
+  bannedMerchants: number;
+  totalSettlements24h: number;
+  totalSettlements7d: number;
+  totalVolume24h: number;
+  totalVolume7d: number;
+  totalCreditsUsed: number;
+  totalCreditsPurchased: number;
+  successRate24h: number;
+  recentSettlements: {
+    id: number;
+    merchantName: string;
+    amount: number;
+    network: string;
+    status: string;
+    createdAt: string;
+  }[];
+}
+
+export interface AdminMerchant {
+  id: number;
+  authAddress: string;
+  businessName: string | null;
+  email: string | null;
+  creditBalance: number;
+  mainnetCreditBalance: number;
+  lifetimeCreditsPurchased: number;
+  lifetimeCreditsUsed: number;
+  status: string;
+  isActive: boolean;
+  createdAt: string;
+  lastActiveAt: string | null;
+  settlementCount: number;
+  totalVolume: number;
+}
+
+export interface AdminTransaction {
+  id: number;
+  merchantId: number | null;
+  merchantName: string | null;
+  payerAddress: string;
+  recipientAddress: string;
+  amount: number;
+  asset: string;
+  network: string;
+  status: string;
+  txHash: string | null;
+  resource: string | null;
+  creditCost: number;
+  createdAt: string;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export async function adminLogin(
+  username: string,
+  password: string,
+  totpCode?: string
+): Promise<ApiResponse<AdminAuthResult>> {
+  return facilitatorRequest<AdminAuthResult>('/admin/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password, totpCode }),
+  });
+}
+
+export async function adminValidateSession(
+  sessionToken: string
+): Promise<ApiResponse<AdminAuthResult['admin']>> {
+  return facilitatorRequest<AdminAuthResult['admin']>('/admin/auth/session', {
+    method: 'POST',
+    body: JSON.stringify({ sessionToken }),
+  });
+}
+
+export async function adminLogout(sessionToken: string): Promise<ApiResponse<{ success: boolean }>> {
+  return facilitatorRequest<{ success: boolean }>('/admin/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({ sessionToken }),
+  });
+}
+
+export async function getAdminDashboard(): Promise<ApiResponse<AdminDashboardStats>> {
+  return facilitatorRequest<AdminDashboardStats>('/admin/dashboard');
+}
+
+export async function getAdminMerchants(
+  params: { page?: number; limit?: number; status?: string; search?: string } = {}
+): Promise<ApiResponse<{ merchants: AdminMerchant[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>> {
+  const query = new URLSearchParams();
+  if (params.page) query.append('page', params.page.toString());
+  if (params.limit) query.append('limit', params.limit.toString());
+  if (params.status) query.append('status', params.status);
+  if (params.search) query.append('search', params.search);
+  return facilitatorRequest(`/admin/merchants?${query}`);
+}
+
+export async function getAdminMerchant(merchantId: number): Promise<ApiResponse<AdminMerchant>> {
+  return facilitatorRequest<AdminMerchant>(`/admin/merchants/${merchantId}`);
+}
+
+export async function updateAdminMerchant(
+  merchantId: number,
+  data: { businessName?: string; email?: string; status?: string; isActive?: boolean; testnetCreditsEnabled?: boolean }
+): Promise<ApiResponse<{ success: boolean }>> {
+  return facilitatorRequest<{ success: boolean }>(`/admin/merchants/${merchantId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function banMerchant(merchantId: number, reason: string): Promise<ApiResponse<{ success: boolean }>> {
+  return facilitatorRequest<{ success: boolean }>(`/admin/merchants/${merchantId}/ban`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function unbanMerchant(merchantId: number): Promise<ApiResponse<{ success: boolean }>> {
+  return facilitatorRequest<{ success: boolean }>(`/admin/merchants/${merchantId}/unban`, {
+    method: 'POST',
+  });
+}
+
+export async function adjustMerchantCredits(
+  merchantId: number,
+  type: 'mainnet' | 'testnet',
+  amount: number,
+  reason: string
+): Promise<ApiResponse<{ success: boolean }>> {
+  return facilitatorRequest<{ success: boolean }>(`/admin/merchants/${merchantId}/credits`, {
+    method: 'POST',
+    body: JSON.stringify({ type, amount, reason }),
+  });
+}
+
+export async function getAdminTransactions(
+  params: { page?: number; limit?: number; status?: string; network?: string; merchantId?: number; search?: string } = {}
+): Promise<ApiResponse<{ transactions: AdminTransaction[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>> {
+  const query = new URLSearchParams();
+  if (params.page) query.append('page', params.page.toString());
+  if (params.limit) query.append('limit', params.limit.toString());
+  if (params.status) query.append('status', params.status);
+  if (params.network) query.append('network', params.network);
+  if (params.merchantId) query.append('merchantId', params.merchantId.toString());
+  if (params.search) query.append('search', params.search);
+  return facilitatorRequest(`/admin/transactions?${query}`);
+}
+
+export async function getAdminSettings(): Promise<ApiResponse<{ settings: { key: string; value: string; type: string; description: string | null }[] }>> {
+  return facilitatorRequest('/admin/settings');
+}
+
+export async function updateAdminSettings(
+  settings: { key: string; value: string; type: string }[]
+): Promise<ApiResponse<{ success: boolean }>> {
+  return facilitatorRequest<{ success: boolean }>('/admin/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ settings }),
+  });
+}
+
+export async function getAdminAuditLog(
+  params: { page?: number; limit?: number; action?: string; adminId?: number } = {}
+): Promise<ApiResponse<{ logs: { id: number; adminId: number | null; adminUsername: string | null; action: string; entityType: string | null; entityId: string | null; createdAt: string }[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>> {
+  const query = new URLSearchParams();
+  if (params.page) query.append('page', params.page.toString());
+  if (params.limit) query.append('limit', params.limit.toString());
+  if (params.action) query.append('action', params.action);
+  if (params.adminId) query.append('adminId', params.adminId.toString());
+  return facilitatorRequest(`/admin/audit?${query}`);
+}
+
+export async function getAdminTopupOrders(
+  params: { page?: number; limit?: number; status?: string } = {}
+): Promise<ApiResponse<{ orders: { id: number; orderId: string; merchantId: number; merchantName: string | null; creditAmount: number; bonusCredits: number; priceUsdc: number; network: string | null; status: string; expiresAt: string; createdAt: string }[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>> {
+  const query = new URLSearchParams();
+  if (params.page) query.append('page', params.page.toString());
+  if (params.limit) query.append('limit', params.limit.toString());
+  if (params.status) query.append('status', params.status);
+  return facilitatorRequest(`/admin/topup/orders?${query}`);
+}
+
+export async function completeTopupOrder(
+  orderId: string,
+  txHash: string
+): Promise<ApiResponse<{ success: boolean; creditsAdded: number }>> {
+  return facilitatorRequest<{ success: boolean; creditsAdded: number }>(`/admin/topup/orders/${orderId}/complete`, {
+    method: 'POST',
+    body: JSON.stringify({ txHash }),
   });
 }

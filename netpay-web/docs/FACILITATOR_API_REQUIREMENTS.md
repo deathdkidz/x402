@@ -35,7 +35,7 @@ Authenticate a merchant wallet. If wallet doesn't exist, create new merchant acc
      - `auth_address` = address
      - `business_name` = "New Merchant" (or generate from address)
      - `api_key` = generate UUID or random string
-     - `credit_balance` = 100 (free starter credits)
+     - `credit_balance` = 0
      - `status` = "active"
    - Set `isNewUser = true`
 5. If exists, set `isNewUser = false`
