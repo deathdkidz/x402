@@ -35,8 +35,9 @@ const PUBLIC_PATHS: &[&str] = &[
     "/health", 
     "/networks", 
     "/metrics",
-    // Merchant auth routes (use wallet signature auth)
-    "/merchant/auth",
+    // Merchant auth routes (use SIWE wallet signature auth)
+    "/merchant/siwe/nonce",
+    "/merchant/siwe/verify",
     "/merchant/session",
     "/merchant/logout",
     // Topup routes

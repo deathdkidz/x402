@@ -284,6 +284,114 @@ impl Database {
         Ok(())
     }
 
+    /// Log gas tracking data
+    pub async fn log_gas_tracking(
+        &self,
+        network: &str,
+        gas_price_gwei: f64,
+        gas_used: Option<u64>,
+        eth_cost: Option<f64>,
+        usd_cost: Option<f64>,
+        transaction_hash: Option<&str>,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(
+            r#"
+            INSERT INTO gas_tracking (
+                network, gas_price_gwei, gas_used, eth_cost, usd_cost, transaction_hash
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            "#
+        )
+        .bind(network)
+        .bind(gas_price_gwei)
+        .bind(gas_used.map(|v| v as i64))
+        .bind(eth_cost)
+        .bind(usd_cost)
+        .bind(transaction_hash)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Log transaction event for audit trail
+    pub async fn log_transaction_event(
+        &self,
+        transaction_id: i64,
+        event_type: &str,
+        old_status: Option<&str>,
+        new_status: Option<&str>,
+        metadata: Option<&str>,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(
+            r#"
+            INSERT INTO transaction_events (
+                transaction_id, event_type, old_status, new_status, metadata
+            ) VALUES (?, ?, ?, ?, ?)
+            "#
+        )
+        .bind(transaction_id as i32) // Match INT type in table
+        .bind(event_type)
+        .bind(old_status)
+        .bind(new_status)
+        .bind(metadata)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Log webhook delivery attempt
+    pub async fn log_webhook_delivery_v2(
+        &self,
+        merchant_id: i64,
+        transaction_id: Option<i64>,
+        delivery_id: &str,
+        event_type: &str,
+        webhook_url: &str,
+        request_body: Option<&str>,
+        response_status: Option<i32>,
+        response_body: Option<&str>,
+        status: &str,
+        attempts: i32,
+        error_message: Option<&str>,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(
+            r#"
+            INSERT INTO webhook_deliveries (
+                merchant_id, transaction_id, delivery_id, event_type, webhook_url,
+                request_body, response_status, response_body, status, attempts, error_message,
+                last_attempt_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE
+                response_status = VALUES(response_status),
+                response_body = VALUES(response_body),
+                status = VALUES(status),
+                attempts = VALUES(attempts),
+                error_message = VALUES(error_message),
+                last_attempt_at = NOW(),
+                completed_at = CASE WHEN VALUES(status) IN ('success', 'failed') THEN NOW() ELSE completed_at END
+            "#
+        )
+        .bind(merchant_id as i32) // Match INT type in table
+        .bind(transaction_id.map(|v| v as i32))
+        .bind(delivery_id)
+        .bind(event_type)
+        .bind(webhook_url)
+        .bind(request_body)
+        .bind(response_status)
+        .bind(response_body)
+        .bind(status)
+        .bind(attempts)
+        .bind(error_message)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Get pool reference for advanced queries
     pub fn pool(&self) -> &MySqlPool {
         &self.pool

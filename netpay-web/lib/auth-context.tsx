@@ -60,19 +60,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     
     try {
-      // Create simple sign message
+      // Step 1: Get SIWE nonce from server
+      const nonceRes = await fetch('/api/auth/siwe/nonce');
+      if (!nonceRes.ok) {
+        throw new Error('Failed to get nonce');
+      }
+      const { nonce } = await nonceRes.json();
+      
+      // Step 2: Create SIWE message (EIP-4361 format)
       const domain = window.location.host;
-      const timestamp = new Date().toISOString();
-      const message = `Sign in to ${domain}\n\nWallet: ${address}\nTimestamp: ${timestamp}`;
+      const origin = window.location.origin;
+      const issuedAt = new Date().toISOString();
+      const chainId = 1; // Default to mainnet for SIWE
       
-      // Sign message
-      const signature = await signMessage(message);
+      const siweMessage = `${domain} wants you to sign in with your Ethereum account:
+${address}
+
+Sign in to NetPay Dashboard
+
+URI: ${origin}
+Version: 1
+Chain ID: ${chainId}
+Nonce: ${nonce}
+Issued At: ${issuedAt}`;
       
-      // Authenticate (auto-registers if new user)
-      const res = await fetch('/api/auth/login', {
+      // Step 3: Sign message
+      const signature = await signMessage(siweMessage);
+      
+      // Step 4: Verify with server
+      const res = await fetch('/api/auth/siwe/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address, message, signature }),
+        body: JSON.stringify({ message: siweMessage, signature }),
       });
       
       if (!res.ok) {

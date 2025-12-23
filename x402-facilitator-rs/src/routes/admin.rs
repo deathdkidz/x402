@@ -750,7 +750,7 @@ async fn list_merchants_handler(
             .unwrap_or((0,));
             
             let rows: Vec<(i64, String, Option<String>, Option<String>, i32, i32, i32, i32, String, i8, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
-                r#"SELECT id, auth_address, business_name, email, credit_balance, COALESCE(mainnet_credit_balance, 0), 
+                r#"SELECT id, auth_address, business_name, email, credit_balance, credit_balance, 
                           lifetime_credits_purchased, lifetime_credits_used, status, is_active, created_at, last_active_at
                    FROM merchants WHERE status = ? AND (business_name LIKE ? OR auth_address LIKE ? OR email LIKE ?)
                    ORDER BY created_at DESC LIMIT ? OFFSET ?"#
@@ -776,7 +776,7 @@ async fn list_merchants_handler(
             .unwrap_or((0,));
             
             let rows: Vec<(i64, String, Option<String>, Option<String>, i32, i32, i32, i32, String, i8, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
-                r#"SELECT id, auth_address, business_name, email, credit_balance, COALESCE(mainnet_credit_balance, 0), 
+                r#"SELECT id, auth_address, business_name, email, credit_balance, credit_balance, 
                           lifetime_credits_purchased, lifetime_credits_used, status, is_active, created_at, last_active_at
                    FROM merchants WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"#
             )
@@ -801,7 +801,7 @@ async fn list_merchants_handler(
             .unwrap_or((0,));
             
             let rows: Vec<(i64, String, Option<String>, Option<String>, i32, i32, i32, i32, String, i8, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
-                r#"SELECT id, auth_address, business_name, email, credit_balance, COALESCE(mainnet_credit_balance, 0), 
+                r#"SELECT id, auth_address, business_name, email, credit_balance, credit_balance, 
                           lifetime_credits_purchased, lifetime_credits_used, status, is_active, created_at, last_active_at
                    FROM merchants WHERE business_name LIKE ? OR auth_address LIKE ? OR email LIKE ?
                    ORDER BY created_at DESC LIMIT ? OFFSET ?"#
@@ -823,7 +823,7 @@ async fn list_merchants_handler(
                 .unwrap_or((0,));
             
             let rows: Vec<(i64, String, Option<String>, Option<String>, i32, i32, i32, i32, String, i8, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
-                r#"SELECT id, auth_address, business_name, email, credit_balance, COALESCE(mainnet_credit_balance, 0), 
+                r#"SELECT id, auth_address, business_name, email, credit_balance, credit_balance, 
                           lifetime_credits_purchased, lifetime_credits_used, status, is_active, created_at, last_active_at
                    FROM merchants ORDER BY created_at DESC LIMIT ? OFFSET ?"#
             )
@@ -853,7 +853,7 @@ async fn list_merchants_handler(
             business_name: r.2,
             email: r.3,
             credit_balance: r.4,
-            mainnet_credit_balance: r.5,
+            mainnet_credit_balance: r.5, // Now same as credit_balance (consolidated)
             lifetime_credits_purchased: r.6,
             lifetime_credits_used: r.7,
             status: r.8,
@@ -893,7 +893,7 @@ async fn get_merchant_handler(
     }
 
     let merchant: Option<(i64, String, Option<String>, Option<String>, i32, i32, i32, i32, String, i8, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as::<_, (i64, String, Option<String>, Option<String>, i32, i32, i32, i32, String, i8, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)>(
-        r#"SELECT id, auth_address, business_name, email, credit_balance, COALESCE(mainnet_credit_balance, 0),
+        r#"SELECT id, auth_address, business_name, email, credit_balance, credit_balance,
                   lifetime_credits_purchased, lifetime_credits_used, status, is_active, created_at, last_active_at
            FROM merchants WHERE id = ?"#
     )
@@ -919,7 +919,7 @@ async fn get_merchant_handler(
                 business_name: r.2,
                 email: r.3,
                 credit_balance: r.4,
-                mainnet_credit_balance: r.5,
+                mainnet_credit_balance: r.5, // Now same as credit_balance (consolidated)
                 lifetime_credits_purchased: r.6,
                 lifetime_credits_used: r.7,
                 status: r.8,
@@ -1071,7 +1071,7 @@ async fn adjust_credits_handler(
     if req.credit_type == "mainnet" {
         // Get current balance
         let current: (i32,) = sqlx::query_as::<_, (i32,)>(
-            "SELECT COALESCE(mainnet_credit_balance, 0) FROM merchants WHERE id = ?"
+            "SELECT credit_balance FROM merchants WHERE id = ?"
         )
         .bind(merchant_id)
         .fetch_one(pool)
@@ -1085,7 +1085,7 @@ async fn adjust_credits_handler(
 
         // Update balance
         let result = sqlx::query(
-            "UPDATE merchants SET mainnet_credit_balance = ?, lifetime_credits_purchased = lifetime_credits_purchased + GREATEST(?, 0), updated_at = NOW() WHERE id = ?"
+            "UPDATE merchants SET credit_balance = ?, lifetime_credits_purchased = lifetime_credits_purchased + GREATEST(?, 0), updated_at = NOW() WHERE id = ?"
         )
         .bind(new_balance)
         .bind(req.amount)
@@ -1637,7 +1637,7 @@ async fn complete_topup_order_handler(
 
     // Update merchant credits
     let _ = sqlx::query(
-        "UPDATE merchants SET mainnet_credit_balance = mainnet_credit_balance + ?, lifetime_credits_purchased = lifetime_credits_purchased + ?, updated_at = NOW() WHERE id = ?"
+        "UPDATE merchants SET credit_balance = credit_balance + ?, lifetime_credits_purchased = lifetime_credits_purchased + ?, updated_at = NOW() WHERE id = ?"
     )
     .bind(total_credits)
     .bind(total_credits)

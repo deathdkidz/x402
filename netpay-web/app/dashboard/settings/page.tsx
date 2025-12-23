@@ -208,20 +208,6 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm text-gray-400">Settlement Wallet</label>
-                <div className="flex items-center gap-2 p-3 bg-gray-800/50 rounded-lg">
-                  <code className="flex-1 text-sm text-cyan-400 font-mono">{merchant.walletAddress}</code>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(merchant.walletAddress, 'wallet')}
-                    className="text-gray-500 hover:text-white transition-colors"
-                  >
-                    {copiedId === 'wallet' ? <CheckIcon className="w-4 h-4 text-green-400" /> : <CopyIcon className="w-4 h-4" />}
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500">All settlements will be sent to this wallet address</p>
-              </div>
-              <div className="space-y-1">
                 <label className="text-sm text-gray-400">Member Since</label>
                 <p className="text-sm text-gray-300">{new Date(merchant.createdAt).toLocaleDateString()}</p>
               </div>

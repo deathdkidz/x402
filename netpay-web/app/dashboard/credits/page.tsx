@@ -1,26 +1,43 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, CardHeader, CardContent, Button, CreditBalanceCard } from '@/components/ui';
+import { Card, CardHeader, CardContent, Button } from '@/components/ui';
 import { Table } from '@/components/ui/Table';
 import { Modal } from '@/components/ui/Modal';
 import { WalletIcon, PlusIcon, CopyIcon, CheckIcon, RefreshIcon } from '@/components/icons';
-import { getCredits, getTopupPackages, createTopupOrder, TopupPackage, TopupOrder } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 
 interface CreditTransaction {
   id: number;
-  type: 'purchase' | 'settlement_fee' | 'bonus' | 'refund' | 'adjustment' | 'testnet_allocation';
+  type: string;
   amount: number;
   balanceBefore: number;
   balanceAfter: number;
-  referenceType: string | null;
-  referenceId: string | null;
   description: string | null;
   createdAt: string;
 }
 
+interface TopupPackage {
+  id: string;
+  name: string;
+  creditAmount: number;
+  bonusCredits: number;
+  totalCredits: number;
+  priceUsdc: number;
+  isPopular: boolean;
+}
+
+interface TopupOrder {
+  orderId: string;
+  totalCredits: number;
+  priceUsdc: number;
+  network: string;
+  paymentAddress: string;
+  expiresAt: string;
+}
+
 interface CreditsData {
+  balance: number;
   mainnetBalance: number;
   testnetRemaining: number;
   testnetUsed: number;
@@ -37,6 +54,7 @@ export default function CreditsPage() {
   const [data, setData] = useState<CreditsData | null>(null);
   const [packages, setPackages] = useState<TopupPackage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<TopupPackage | null>(null);
   const [customAmount, setCustomAmount] = useState<number>(1000);
@@ -48,41 +66,56 @@ export default function CreditsPage() {
   const fetchCredits = async () => {
     if (!merchant?.id) return;
     setIsLoading(true);
+    setError(null);
     try {
       const [creditsRes, packagesRes] = await Promise.all([
-        getCredits(merchant.id),
-        getTopupPackages(merchant.id),
+        fetch('/api/dashboard/credits'),
+        fetch('/api/dashboard/credits/packages'),
       ]);
       
-      if (creditsRes.success && creditsRes.data) {
-        setData(creditsRes.data as unknown as CreditsData);
+      if (creditsRes.ok) {
+        const creditsData = await creditsRes.json();
+        setData(creditsData);
+      } else {
+        const errorData = await creditsRes.json().catch(() => ({}));
+        setError(errorData.error || 'Failed to load credits');
       }
-      if (packagesRes.success && packagesRes.data) {
-        setPackages(packagesRes.data);
+      
+      if (packagesRes.ok) {
+        const packagesData = await packagesRes.json();
+        setPackages(packagesData.packages || []);
       }
-    } catch (error) {
-      console.error('Fetch error:', error);
+    } catch (err) {
+      console.error('Fetch error:', err);
+      setError('Failed to load credits data');
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchCredits();
+    if (merchant?.id) {
+      fetchCredits();
+    }
   }, [merchant?.id]);
 
   const handleCreateOrder = async () => {
     if (!merchant?.id) return;
     setOrderLoading(true);
     try {
-      const result = await createTopupOrder(
-        merchant.id,
-        selectedPackage?.id,
-        selectedPackage ? undefined : customAmount,
-        selectedNetwork
-      );
-      if (result.success && result.data) {
-        setCreatedOrder(result.data);
+      const res = await fetch('/api/dashboard/credits/topup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          packageId: selectedPackage?.id,
+          customAmount: selectedPackage ? undefined : customAmount,
+          network: selectedNetwork,
+        }),
+      });
+      
+      const result = await res.json();
+      if (res.ok && result.orderId) {
+        setCreatedOrder(result);
       } else {
         alert(result.error || 'Failed to create order');
       }
@@ -130,7 +163,7 @@ export default function CreditsPage() {
         };
         return (
           <span className={`px-2 py-1 text-xs rounded ${typeStyles[tx.type] || 'bg-gray-500/20 text-gray-400'}`}>
-            {tx.type.replace('_', ' ')}
+            {tx.type.replace(/_/g, ' ')}
           </span>
         );
       },
@@ -164,6 +197,15 @@ export default function CreditsPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <p className="text-red-400">{error}</p>
+        <Button onClick={fetchCredits}>Try Again</Button>
       </div>
     );
   }
@@ -202,7 +244,7 @@ export default function CreditsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <p className="text-4xl font-bold text-green-400">{data?.mainnetBalance.toLocaleString() || 0}</p>
+            <p className="text-4xl font-bold text-green-400">{(data?.mainnetBalance || 0).toLocaleString()}</p>
             <p className="text-sm text-gray-400 mt-2">For settlements on Ethereum & Base mainnet</p>
             <button
               onClick={() => setShowPurchaseModal(true)}
@@ -222,9 +264,9 @@ export default function CreditsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <p className="text-4xl font-bold text-blue-400">{data?.testnetRemaining.toLocaleString() || 0}</p>
+            <p className="text-4xl font-bold text-blue-400">{(data?.testnetRemaining || 0).toLocaleString()}</p>
             <p className="text-sm text-gray-400 mt-2">
-              {data?.testnetUsed.toLocaleString() || 0} used of {data?.testnetAllocated.toLocaleString() || 0} allocated
+              {(data?.testnetUsed || 0).toLocaleString()} used of {(data?.testnetAllocated || 0).toLocaleString()} allocated
             </p>
             <div className="mt-2 w-full bg-gray-700 rounded-full h-2">
               <div 
@@ -244,19 +286,19 @@ export default function CreditsPage() {
         <Card>
           <CardContent className="py-3">
             <p className="text-sm text-gray-400">Lifetime Purchased</p>
-            <p className="text-2xl font-bold text-white">{data?.lifetimePurchased.toLocaleString() || 0}</p>
+            <p className="text-2xl font-bold text-white">{(data?.lifetimePurchased || 0).toLocaleString()}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="py-3">
             <p className="text-sm text-gray-400">Lifetime Used</p>
-            <p className="text-2xl font-bold text-white">{data?.lifetimeUsed.toLocaleString() || 0}</p>
+            <p className="text-2xl font-bold text-white">{(data?.lifetimeUsed || 0).toLocaleString()}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="py-3">
             <p className="text-sm text-gray-400">Used (30 days)</p>
-            <p className="text-2xl font-bold text-white">{data?.usedLast30Days.toLocaleString() || 0}</p>
+            <p className="text-2xl font-bold text-white">{(data?.usedLast30Days || 0).toLocaleString()}</p>
           </CardContent>
         </Card>
         <Card>

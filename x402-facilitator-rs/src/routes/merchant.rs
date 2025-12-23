@@ -20,9 +20,13 @@ use crate::routes::AppState;
 /// Create merchant API router
 pub fn create_merchant_router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/merchant/auth", post(auth_handler))
+        // SIWE Authentication (EIP-4361)
+        .route("/merchant/siwe/nonce", get(siwe_nonce_handler))
+        .route("/merchant/siwe/verify", post(siwe_verify_handler))
+        // Session management
         .route("/merchant/session", post(session_handler))
         .route("/merchant/logout", post(logout_handler))
+        // Dashboard endpoints
         .route("/merchant/:merchant_id/dashboard/stats", get(dashboard_stats_handler))
         .route("/merchant/:merchant_id/transactions", get(transactions_handler))
         .route("/merchant/:merchant_id/credits", get(credits_handler))
@@ -36,9 +40,14 @@ pub fn create_merchant_router() -> Router<Arc<AppState>> {
 
 // ============ Types ============
 
+// SIWE Types
+#[derive(Debug, Serialize)]
+pub struct SiweNonceResponse {
+    nonce: String,
+}
+
 #[derive(Debug, Deserialize)]
-pub struct AuthRequest {
-    address: String,
+pub struct SiweVerifyRequest {
     message: String,
     signature: String,
 }
@@ -476,31 +485,99 @@ async fn validate_merchant_auth(
 
 // ============ Handlers ============
 
-/// Authenticate merchant wallet
-async fn auth_handler(
+/// Generate SIWE nonce
+async fn siwe_nonce_handler(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<AuthRequest>,
 ) -> Response {
-    info!("Auth request for address: {}", req.address);
-
-    // Verify signature
-    let address = req.address.to_lowercase();
+    let db = &state.database;
+    let pool = db.pool();
     
-    // Use ethers to verify the signature
+    // Generate random nonce (32 bytes hex)
+    let nonce = format!("{:032x}{:032x}", rand::random::<u64>(), rand::random::<u64>());
+    let expires_at = Utc::now() + chrono::Duration::minutes(10);
+    
+    // Store nonce in database
+    if let Err(e) = sqlx::query(
+        "INSERT INTO siwe_nonces (nonce, expires_at) VALUES (?, ?)"
+    )
+    .bind(&nonce)
+    .bind(expires_at)
+    .execute(pool)
+    .await {
+        error!("Failed to store nonce: {}", e);
+        return error_response("Failed to generate nonce", StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    
+    // Cleanup expired nonces occasionally
+    let _ = sqlx::query("DELETE FROM siwe_nonces WHERE expires_at < NOW()")
+        .execute(pool)
+        .await;
+    
+    success_response(SiweNonceResponse { nonce })
+}
+
+/// Verify SIWE message and authenticate
+async fn siwe_verify_handler(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SiweVerifyRequest>,
+) -> Response {
+    let db = &state.database;
+    let pool = db.pool();
+    
+    // Parse SIWE message
+    let siwe_message = match parse_siwe_message(&req.message) {
+        Ok(msg) => msg,
+        Err(e) => {
+            warn!("Invalid SIWE message format: {}", e);
+            return error_response("Invalid SIWE message format", StatusCode::BAD_REQUEST);
+        }
+    };
+    
+    let address = siwe_message.address.to_lowercase();
+    info!("SIWE auth request for address: {}", address);
+    
+    // Verify nonce exists and is not expired/used
+    let nonce_check: Option<(i64, bool)> = sqlx::query_as::<_, (i64, bool)>(
+        "SELECT id, used FROM siwe_nonces WHERE nonce = ? AND expires_at > NOW()"
+    )
+    .bind(&siwe_message.nonce)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    
+    match nonce_check {
+        Some((_, true)) => {
+            return error_response("Nonce already used", StatusCode::BAD_REQUEST);
+        }
+        None => {
+            return error_response("Invalid or expired nonce", StatusCode::BAD_REQUEST);
+        }
+        _ => {}
+    }
+    
+    // Mark nonce as used
+    let _ = sqlx::query("UPDATE siwe_nonces SET used = TRUE, address = ? WHERE nonce = ?")
+        .bind(&address)
+        .bind(&siwe_message.nonce)
+        .execute(pool)
+        .await;
+    
+    // Verify signature using EIP-191 personal_sign
     match verify_signature(&req.message, &req.signature, &address) {
         Ok(true) => {}
         Ok(false) => {
             return error_response("Invalid signature", StatusCode::UNAUTHORIZED);
         }
         Err(e) => {
-            error!("Signature verification error: {}", e);
+            error!("SIWE signature verification error: {}", e);
             return error_response("Signature verification failed", StatusCode::UNAUTHORIZED);
         }
     }
-
-    let db = &state.database;
-    let pool = db.pool();
-
+    
+    // Check domain (optional - can be strict)
+    // For now, we accept any domain for flexibility
+    
     // Check if merchant exists
     let existing: Option<(i64,)> = sqlx::query_as::<_, (i64,)>(
         "SELECT id FROM merchants WHERE auth_address = ?"
@@ -516,17 +593,15 @@ async fn auth_handler(
         None => {
             // Create new merchant
             let api_key = format!("pk_live_{}", Uuid::new_v4().to_string().replace("-", ""));
-            let private_key = format!("0x{}", hex::encode(rand::random::<[u8; 32]>()));
             let business_name = format!("Merchant {}", &address[0..8]);
 
             let result = sqlx::query(
-                r#"INSERT INTO merchants (auth_address, business_name, api_key, private_key, credit_balance, mainnet_credit_balance, status)
-                   VALUES (?, ?, ?, ?, 0, 0, 'active')"#
+                r#"INSERT INTO merchants (auth_address, business_name, api_key, credit_balance, status)
+                   VALUES (?, ?, ?, 0, 'active')"#
             )
             .bind(&address)
             .bind(&business_name)
             .bind(&api_key)
-            .bind(&private_key)
             .execute(pool)
             .await;
 
@@ -540,7 +615,7 @@ async fn auth_handler(
         }
     };
 
-    // Get merchant info with testnet credits
+    // Get merchant info
     let merchant_info = match get_merchant_info(pool, merchant_id).await {
         Ok(info) => info,
         Err(e) => {
@@ -552,7 +627,6 @@ async fn auth_handler(
     // Create session
     let session_token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + chrono::Duration::days(30);
-    let nonce = Uuid::new_v4().to_string(); // Generate a unique nonce for the session
 
     if let Err(e) = sqlx::query(
         "INSERT INTO merchant_sessions (merchant_id, session_token, auth_address, nonce, signature, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
@@ -560,7 +634,7 @@ async fn auth_handler(
     .bind(merchant_id)
     .bind(&session_token)
     .bind(&address)
-    .bind(&nonce)
+    .bind(&siwe_message.nonce)
     .bind(&req.signature)
     .bind(expires_at)
     .execute(pool)
@@ -820,7 +894,7 @@ async fn credits_handler(
 
     // Get merchant info
     let merchant: (i32, i32, i32) = sqlx::query_as::<_, (i32, i32, i32)>(
-        "SELECT COALESCE(mainnet_credit_balance, 0), lifetime_credits_purchased, lifetime_credits_used FROM merchants WHERE id = ?"
+        "SELECT credit_balance, lifetime_credits_purchased, lifetime_credits_used FROM merchants WHERE id = ?"
     )
     .bind(merchant_id)
     .fetch_one(pool)
@@ -1283,7 +1357,7 @@ async fn get_merchant_credits(pool: &sqlx::MySqlPool, merchant_id: i64) -> Resul
     
     // Get mainnet balance
     let mainnet: (i32,) = sqlx::query_as::<_, (i32,)>(
-        "SELECT COALESCE(mainnet_credit_balance, 0) FROM merchants WHERE id = ?"
+        "SELECT credit_balance FROM merchants WHERE id = ?"
     )
     .bind(merchant_id)
     .fetch_one(pool)
@@ -1324,8 +1398,8 @@ async fn get_merchant_credits(pool: &sqlx::MySqlPool, merchant_id: i64) -> Resul
 }
 
 async fn get_merchant_info(pool: &sqlx::MySqlPool, merchant_id: i64) -> Result<MerchantInfo, String> {
-    let row: (i64, String, Option<String>, String, i32, i32, String, chrono::DateTime<chrono::Utc>) = sqlx::query_as::<_, (i64, String, Option<String>, String, i32, i32, String, chrono::DateTime<chrono::Utc>)>(
-        "SELECT id, auth_address, business_name, api_key, credit_balance, COALESCE(mainnet_credit_balance, 0), status, created_at FROM merchants WHERE id = ?"
+    let row: (i64, String, Option<String>, String, i32, String, chrono::DateTime<chrono::Utc>) = sqlx::query_as::<_, (i64, String, Option<String>, String, i32, String, chrono::DateTime<chrono::Utc>)>(
+        "SELECT id, auth_address, business_name, api_key, credit_balance, status, created_at FROM merchants WHERE id = ?"
     )
     .bind(merchant_id)
     .fetch_one(pool)
@@ -1340,11 +1414,11 @@ async fn get_merchant_info(pool: &sqlx::MySqlPool, merchant_id: i64) -> Result<M
         business_name: row.2.unwrap_or_else(|| "New Merchant".to_string()),
         api_key: row.3,
         credit_balance: row.4,
-        mainnet_credit_balance: row.5,
+        mainnet_credit_balance: row.4, // Same as credit_balance (consolidated)
         testnet_credits_remaining: credits.testnet_remaining,
         testnet_credits_used: credits.testnet_used,
-        status: row.6,
-        created_at: row.7.to_rfc3339(),
+        status: row.5,
+        created_at: row.6.to_rfc3339(),
     })
 }
 
@@ -1429,4 +1503,84 @@ fn verify_signature(message: &str, signature: &str, expected_address: &str) -> R
         .map_err(|e| format!("Invalid expected address: {}", e))?;
 
     Ok(recovered == expected)
+}
+
+/// Parsed SIWE message fields
+struct SiweMessage {
+    address: String,
+    nonce: String,
+    #[allow(dead_code)]
+    domain: String,
+    #[allow(dead_code)]
+    uri: String,
+    #[allow(dead_code)]
+    chain_id: Option<u64>,
+}
+
+/// Parse SIWE message according to EIP-4361
+fn parse_siwe_message(message: &str) -> Result<SiweMessage, String> {
+    // SIWE message format:
+    // {domain} wants you to sign in with your Ethereum account:
+    // {address}
+    //
+    // {statement (optional)}
+    //
+    // URI: {uri}
+    // Version: {version}
+    // Chain ID: {chain_id}
+    // Nonce: {nonce}
+    // Issued At: {issued_at}
+    
+    let lines: Vec<&str> = message.lines().collect();
+    
+    if lines.len() < 5 {
+        return Err("Message too short".to_string());
+    }
+    
+    // Parse domain from first line
+    let first_line = lines[0];
+    let domain = if let Some(pos) = first_line.find(" wants you to sign in") {
+        first_line[..pos].to_string()
+    } else {
+        return Err("Invalid SIWE format: missing domain".to_string());
+    };
+    
+    // Address is on line 2 (index 1)
+    let address = lines.get(1)
+        .ok_or("Missing address")?
+        .trim()
+        .to_lowercase();
+    
+    // Validate address format
+    if !address.starts_with("0x") || address.len() != 42 {
+        return Err(format!("Invalid address format: {}", address));
+    }
+    
+    // Parse fields from remaining lines
+    let mut uri = String::new();
+    let mut nonce = String::new();
+    let mut chain_id = None;
+    
+    for line in &lines {
+        let line = line.trim();
+        if let Some(value) = line.strip_prefix("URI: ") {
+            uri = value.to_string();
+        } else if let Some(value) = line.strip_prefix("Nonce: ") {
+            nonce = value.to_string();
+        } else if let Some(value) = line.strip_prefix("Chain ID: ") {
+            chain_id = value.parse().ok();
+        }
+    }
+    
+    if nonce.is_empty() {
+        return Err("Missing nonce".to_string());
+    }
+    
+    Ok(SiweMessage {
+        address,
+        nonce,
+        domain,
+        uri,
+        chain_id,
+    })
 }

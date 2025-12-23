@@ -2,41 +2,42 @@
 
 import { useState } from 'react';
 import { Card, CardHeader, CardContent, Input } from '@/components/ui';
-import { CopyIcon, CheckIcon, SearchIcon, ExternalLinkIcon } from '@/components/icons';
+import { CopyIcon, CheckIcon, SearchIcon } from '@/components/icons';
 
 const docsSections = [
   {
     id: 'getting-started',
     title: 'Getting Started',
     items: [
-      { id: 'overview', title: 'Overview', content: 'overview' },
-      { id: 'quickstart', title: 'Quick Start Guide', content: 'quickstart' },
-      { id: 'authentication', title: 'Authentication', content: 'auth' },
+      { id: 'overview', title: 'Overview' },
+      { id: 'quickstart', title: 'Quick Start' },
+      { id: 'how-it-works', title: 'How It Works' },
     ],
   },
   {
     id: 'integration',
     title: 'Integration',
     items: [
-      { id: 'middleware', title: 'Middleware Setup', content: 'middleware' },
-      { id: 'api-reference', title: 'API Reference', content: 'api' },
-      { id: 'webhooks', title: 'Webhooks', content: 'webhooks' },
+      { id: 'nextjs', title: 'Next.js' },
+      { id: 'express', title: 'Express.js' },
+      { id: 'any-backend', title: 'Any Backend' },
     ],
   },
   {
-    id: 'resources',
-    title: 'Resources',
+    id: 'api-reference',
+    title: 'API Reference',
     items: [
-      { id: 'creating-resources', title: 'Creating Resources', content: 'resources' },
-      { id: 'pricing', title: 'Setting Prices', content: 'pricing' },
+      { id: 'verify', title: 'Verify Payment' },
+      { id: 'settle', title: 'Settle Payment' },
+      { id: 'networks', title: 'Networks' },
     ],
   },
   {
-    id: 'sdks',
-    title: 'SDKs & Libraries',
+    id: 'guides',
+    title: 'Guides',
     items: [
-      { id: 'javascript', title: 'JavaScript SDK', content: 'js-sdk' },
-      { id: 'python', title: 'Python SDK', content: 'python-sdk' },
+      { id: 'testing', title: 'Testing Payments' },
+      { id: 'credits', title: 'Credit System' },
     ],
   },
 ];
@@ -74,25 +75,45 @@ export default function DocsPage() {
             <div>
               <h1 className="text-2xl font-bold text-white">Overview</h1>
               <p className="text-gray-400 mt-2">
-                x402 enables seamless micropayments for web services using the 402 Payment Required HTTP status code and stablecoins.
+                NetPay enables instant USDC micropayments for web APIs using the HTTP 402 Payment Required protocol.
               </p>
             </div>
+            
             <div className="prose prose-invert max-w-none">
-              <h2 className="text-lg font-semibold text-white">How It Works</h2>
-              <ol className="list-decimal list-inside space-y-2 text-gray-400">
-                <li>A client makes a request to your protected resource</li>
-                <li>Your server returns a 402 status with payment requirements</li>
-                <li>The client signs an ERC-3009 authorization for the payment</li>
-                <li>The request is retried with the payment header</li>
-                <li>x402 facilitator verifies and settles the payment</li>
-                <li>Your server returns the protected content</li>
-              </ol>
+              <h2 className="text-lg font-semibold text-white">What is NetPay?</h2>
+              <p className="text-gray-400">
+                NetPay is a payment facilitator that allows you to monetize any API endpoint with USDC stablecoin payments.
+                Payments are verified and settled on-chain within seconds, with support for multiple EVM networks.
+              </p>
             </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="border-cyan-400/20">
+                <CardContent className="p-4">
+                  <h3 className="font-medium text-cyan-400">⚡ Instant</h3>
+                  <p className="text-sm text-gray-400 mt-1">Payments settle in under 1 second on supported networks</p>
+                </CardContent>
+              </Card>
+              <Card className="border-green-400/20">
+                <CardContent className="p-4">
+                  <h3 className="font-medium text-green-400">💰 Low Cost</h3>
+                  <p className="text-sm text-gray-400 mt-1">1 credit per settlement, as low as $0.01</p>
+                </CardContent>
+              </Card>
+              <Card className="border-purple-400/20">
+                <CardContent className="p-4">
+                  <h3 className="font-medium text-purple-400">🔒 Secure</h3>
+                  <p className="text-sm text-gray-400 mt-1">EIP-712 signed authorizations, no custody required</p>
+                </CardContent>
+              </Card>
+            </div>
+
             <Card className="border-cyan-400/20 bg-cyan-400/5">
               <CardContent className="p-4">
-                <h3 className="text-sm font-medium text-cyan-400">Credit-Based Settlement</h3>
+                <h3 className="text-sm font-medium text-cyan-400">Supported Networks</h3>
                 <p className="text-sm text-gray-400 mt-1">
-                  Each settlement consumes 1 credit from your balance. Purchase credits to continue receiving settlements.
+                  <strong>Mainnet:</strong> Base, Ethereum, Optimism<br/>
+                  <strong>Testnet:</strong> Base Sepolia, Ethereum Sepolia, OP Sepolia
                 </p>
               </CardContent>
             </Card>
@@ -103,57 +124,96 @@ export default function DocsPage() {
         return (
           <div className="space-y-6">
             <div>
-              <h1 className="text-2xl font-bold text-white">Quick Start Guide</h1>
-              <p className="text-gray-400 mt-2">Get started with x402 payments in under 5 minutes.</p>
+              <h1 className="text-2xl font-bold text-white">Quick Start</h1>
+              <p className="text-gray-400 mt-2">Get started with NetPay payments in 5 minutes.</p>
             </div>
 
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">1. Install the SDK</h2>
-              <CodeBlock
-                id="install"
-                language="bash"
-                code="npm install @x402/middleware"
-              />
+              <h2 className="text-lg font-semibold text-white">1. Get Your API Key</h2>
+              <p className="text-gray-400">Your API key is available in the Settings page:</p>
+              <div className="p-3 bg-gray-800/50 rounded-lg">
+                <code className="text-cyan-400 font-mono">pk_live_xxxxxxxxxxxxxxxx</code>
+              </div>
             </div>
 
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">2. Configure the Middleware</h2>
+              <h2 className="text-lg font-semibold text-white">2. Add the Payment Middleware</h2>
+              <p className="text-gray-400">Create a middleware that checks for the X-PAYMENT header:</p>
               <CodeBlock
-                id="config"
+                id="middleware"
                 language="typescript"
-                code={`import { x402Middleware } from '@x402/middleware';
+                code={`// middleware/payment.ts
+const FACILITATOR_URL = 'https://x402.netpay.id';
+const API_KEY = process.env.NETPAY_API_KEY;
 
-const x402 = x402Middleware({
-  apiKey: process.env.X402_API_KEY,
-  facilitatorUrl: 'https://facilitator.x402.org',
-  merchantAddress: '0x...',
-});`}
+export async function verifyPayment(request: Request, config: {
+  amount: string;      // Amount in USDC (e.g., "0.01")
+  recipient: string;   // Your wallet address
+  network?: string;    // "base" | "ethereum" | "base-sepolia"
+  resource?: string;   // Resource identifier for tracking
+}) {
+  const paymentHeader = request.headers.get('X-PAYMENT');
+  
+  if (!paymentHeader) {
+    // Return 402 with payment requirements
+    return {
+      valid: false,
+      response: createPaymentRequiredResponse(config)
+    };
+  }
+  
+  // Verify payment with facilitator
+  const result = await fetch(\`\${FACILITATOR_URL}/settle\`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': API_KEY,
+    },
+    body: JSON.stringify({
+      xPayment: paymentHeader,
+      paymentRequirements: {
+        scheme: 'exact',
+        network: config.network || 'base',
+        maxAmountRequired: Math.floor(parseFloat(config.amount) * 1_000_000).toString(),
+        resource: config.resource,
+        description: 'API Payment',
+      }
+    }),
+  });
+  
+  const data = await result.json();
+  return { valid: data.success, txHash: data.transactionHash };
+}`}
               />
             </div>
 
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">3. Protect Your Routes</h2>
+              <h2 className="text-lg font-semibold text-white">3. Protect Your Endpoint</h2>
               <CodeBlock
                 id="protect"
                 language="typescript"
-                code={`// Express.js example
-app.get('/api/premium-data', x402({
-  amount: '0.01', // $0.01 in USDC
-  currency: 'USDC',
-  network: 'base',
-}), (req, res) => {
-  res.json({ data: 'Premium content here' });
-});`}
-              />
-            </div>
+                code={`// app/api/premium/route.ts
+import { verifyPayment } from '@/middleware/payment';
 
-            <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">4. Test the Integration</h2>
-              <CodeBlock
-                id="test"
-                language="bash"
-                code={`curl -X GET https://your-api.com/api/premium-data \\
-  -H "X-Payment: <signed-payment-header>"`}
+export async function GET(request: Request) {
+  const payment = await verifyPayment(request, {
+    amount: '0.01',
+    recipient: '0xYourWalletAddress',
+    network: 'base',
+    resource: '/api/premium',
+  });
+  
+  if (!payment.valid) {
+    return payment.response;
+  }
+  
+  // Payment verified! Return premium content
+  return Response.json({ 
+    success: true,
+    data: 'Premium content here',
+    txHash: payment.txHash 
+  });
+}`}
               />
             </div>
 
@@ -161,9 +221,9 @@ app.get('/api/premium-data', x402({
               <CardContent className="p-4 flex items-start gap-3">
                 <div className="text-green-400 text-lg">✓</div>
                 <div>
-                  <h3 className="text-sm font-medium text-green-400">You&apos;re all set!</h3>
+                  <h3 className="text-sm font-medium text-green-400">That&apos;s it!</h3>
                   <p className="text-sm text-gray-400 mt-1">
-                    Your endpoint is now protected. Payments will be settled automatically to your wallet.
+                    Your endpoint is now protected. Each successful payment consumes 1 credit and the USDC is sent directly to your specified recipient wallet.
                   </p>
                 </div>
               </CardContent>
@@ -171,169 +231,390 @@ app.get('/api/premium-data', x402({
           </div>
         );
 
-      case 'auth':
+      case 'how-it-works':
         return (
           <div className="space-y-6">
             <div>
-              <h1 className="text-2xl font-bold text-white">Authentication</h1>
-              <p className="text-gray-400 mt-2">Secure your API integration with API keys.</p>
+              <h1 className="text-2xl font-bold text-white">How It Works</h1>
+              <p className="text-gray-400 mt-2">Understanding the NetPay payment flow.</p>
             </div>
 
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">API Keys</h2>
-              <p className="text-gray-400">
-                API keys are used to authenticate requests to the x402 facilitator. Keep your keys secure and never expose them in client-side code.
-              </p>
-              <CodeBlock
-                id="apikey"
-                language="typescript"
-                code={`// Server-side only
-const x402 = x402Middleware({
-  apiKey: process.env.X402_API_KEY, // pk_live_xxxxx
-});`}
-              />
+              <div className="p-4 bg-gray-800/50 rounded-lg">
+                <h3 className="font-medium text-white mb-3">Payment Flow</h3>
+                <ol className="space-y-3 text-sm text-gray-400">
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 bg-cyan-400/20 text-cyan-400 rounded-full flex items-center justify-center text-xs">1</span>
+                    <span>Client requests your protected endpoint without payment header</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 bg-cyan-400/20 text-cyan-400 rounded-full flex items-center justify-center text-xs">2</span>
+                    <span>Your server returns HTTP 402 with payment requirements</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 bg-cyan-400/20 text-cyan-400 rounded-full flex items-center justify-center text-xs">3</span>
+                    <span>Client signs an ERC-3009 TransferWithAuthorization message</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 bg-cyan-400/20 text-cyan-400 rounded-full flex items-center justify-center text-xs">4</span>
+                    <span>Client retries request with X-PAYMENT header containing the signed authorization</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 bg-cyan-400/20 text-cyan-400 rounded-full flex items-center justify-center text-xs">5</span>
+                    <span>Your server calls NetPay facilitator to verify and settle the payment</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 bg-cyan-400/20 text-cyan-400 rounded-full flex items-center justify-center text-xs">6</span>
+                    <span>NetPay executes the on-chain transfer and returns transaction hash</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 bg-green-400/20 text-green-400 rounded-full flex items-center justify-center text-xs">✓</span>
+                    <span>Your server returns the protected content</span>
+                  </li>
+                </ol>
+              </div>
             </div>
 
             <Card className="border-yellow-400/20 bg-yellow-400/5">
               <CardContent className="p-4">
-                <h3 className="text-sm font-medium text-yellow-400">Security Best Practices</h3>
-                <ul className="list-disc list-inside text-sm text-gray-400 mt-2 space-y-1">
-                  <li>Store API keys in environment variables</li>
-                  <li>Use different keys for development and production</li>
-                  <li>Rotate keys periodically</li>
-                  <li>Never commit keys to version control</li>
-                </ul>
+                <h3 className="text-sm font-medium text-yellow-400">Important: No Custody</h3>
+                <p className="text-sm text-gray-400 mt-1">
+                  NetPay never holds your funds. Payments go directly from the payer&apos;s wallet to your specified recipient address. 
+                  The facilitator only submits the pre-signed authorization on-chain.
+                </p>
               </CardContent>
             </Card>
           </div>
         );
 
-      case 'middleware':
+      case 'nextjs':
         return (
           <div className="space-y-6">
             <div>
-              <h1 className="text-2xl font-bold text-white">Middleware Setup</h1>
-              <p className="text-gray-400 mt-2">Integrate x402 with popular web frameworks.</p>
+              <h1 className="text-2xl font-bold text-white">Next.js Integration</h1>
+              <p className="text-gray-400 mt-2">Complete example for Next.js App Router.</p>
             </div>
 
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">Next.js Middleware</h2>
+              <h2 className="text-lg font-semibold text-white">Create Payment Utility</h2>
               <CodeBlock
-                id="nextjs"
+                id="nextjs-util"
                 language="typescript"
-                code={`// middleware.ts
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { verifyPayment } from '@x402/middleware/next';
+                code={`// lib/netpay.ts
+const FACILITATOR_URL = 'https://x402.netpay.id';
 
-export async function middleware(request: NextRequest) {
-  if (request.nextUrl.pathname.startsWith('/api/premium')) {
-    const paymentResult = await verifyPayment(request, {
-      amount: '0.01',
-      currency: 'USDC',
-      network: 'base',
-    });
-    
-    if (!paymentResult.valid) {
-      return new NextResponse(JSON.stringify(paymentResult.paymentRequired), {
-        status: 402,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-  }
+export interface PaymentConfig {
+  amount: string;
+  recipient: string;
+  network?: string;
+  resource?: string;
+}
+
+export async function createPaymentRequiredResponse(config: PaymentConfig) {
+  // Fetch available networks
+  const networksRes = await fetch(\`\${FACILITATOR_URL}/networks\`);
+  const networks = await networksRes.json();
   
-  return NextResponse.next();
+  const network = config.network || 'base';
+  const networkConfig = [...networks.mainnet, ...networks.testnet]
+    .find(n => n.network.toLowerCase() === network.toLowerCase());
+  
+  const amountInMicro = Math.floor(parseFloat(config.amount) * 1_000_000).toString();
+  
+  const paymentRequirements = {
+    scheme: 'exact',
+    network: networkConfig?.network || network,
+    maxAmountRequired: amountInMicro,
+    resource: config.resource,
+    description: 'API Payment',
+    maxTimeoutSeconds: 3600,
+    asset: networkConfig?.tokens[0]?.address,
+    payTo: config.recipient,
+  };
+  
+  return new Response(JSON.stringify(paymentRequirements), {
+    status: 402,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Payment-Required': 'true',
+    },
+  });
+}
+
+export async function settlePayment(xPayment: string, config: PaymentConfig) {
+  const amountInMicro = Math.floor(parseFloat(config.amount) * 1_000_000).toString();
+  
+  const response = await fetch(\`\${FACILITATOR_URL}/settle\`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': process.env.NETPAY_API_KEY!,
+    },
+    body: JSON.stringify({
+      xPayment,
+      paymentRequirements: {
+        scheme: 'exact',
+        network: config.network || 'base',
+        maxAmountRequired: amountInMicro,
+        resource: config.resource,
+      },
+    }),
+  });
+  
+  return response.json();
 }`}
               />
             </div>
 
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">Express.js Middleware</h2>
+              <h2 className="text-lg font-semibold text-white">Protected API Route</h2>
               <CodeBlock
-                id="express"
+                id="nextjs-route"
                 language="typescript"
-                code={`import express from 'express';
-import { x402Middleware } from '@x402/middleware';
+                code={`// app/api/premium-data/route.ts
+import { createPaymentRequiredResponse, settlePayment } from '@/lib/netpay';
 
-const app = express();
+const PAYMENT_CONFIG = {
+  amount: '0.01',        // $0.01 USDC
+  recipient: '0x...',    // Your wallet address
+  network: 'base',
+  resource: '/api/premium-data',
+};
 
-const x402 = x402Middleware({
-  apiKey: process.env.X402_API_KEY,
-  facilitatorUrl: 'https://facilitator.x402.org',
-});
-
-app.get('/api/premium', x402({ amount: '0.01' }), (req, res) => {
-  res.json({ success: true });
-});`}
+export async function GET(request: Request) {
+  const xPayment = request.headers.get('X-PAYMENT');
+  
+  if (!xPayment) {
+    return createPaymentRequiredResponse(PAYMENT_CONFIG);
+  }
+  
+  const result = await settlePayment(xPayment, PAYMENT_CONFIG);
+  
+  if (!result.success) {
+    return Response.json({ error: result.error }, { status: 402 });
+  }
+  
+  // Payment successful! Return your premium content
+  return Response.json({
+    success: true,
+    data: { /* your premium data */ },
+    payment: {
+      txHash: result.transactionHash,
+      network: result.network,
+    },
+  });
+}`}
               />
             </div>
           </div>
         );
 
-      case 'api':
+      case 'express':
         return (
           <div className="space-y-6">
             <div>
-              <h1 className="text-2xl font-bold text-white">API Reference</h1>
-              <p className="text-gray-400 mt-2">Complete reference for the x402 API.</p>
+              <h1 className="text-2xl font-bold text-white">Express.js Integration</h1>
+              <p className="text-gray-400 mt-2">Middleware-based integration for Express.</p>
+            </div>
+
+            <CodeBlock
+              id="express-full"
+              language="typescript"
+              code={`import express from 'express';
+
+const app = express();
+const FACILITATOR_URL = 'https://x402.netpay.id';
+const API_KEY = process.env.NETPAY_API_KEY;
+
+// Payment middleware factory
+function requirePayment(config: { amount: string; recipient: string; network?: string }) {
+  return async (req, res, next) => {
+    const xPayment = req.headers['x-payment'];
+    
+    if (!xPayment) {
+      // Return 402 with payment requirements
+      const amountInMicro = Math.floor(parseFloat(config.amount) * 1_000_000);
+      return res.status(402).json({
+        scheme: 'exact',
+        network: config.network || 'base',
+        maxAmountRequired: amountInMicro.toString(),
+        payTo: config.recipient,
+        description: 'API Payment',
+      });
+    }
+    
+    // Settle payment
+    const response = await fetch(\`\${FACILITATOR_URL}/settle\`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY,
+      },
+      body: JSON.stringify({
+        xPayment,
+        paymentRequirements: {
+          scheme: 'exact',
+          network: config.network || 'base',
+          maxAmountRequired: Math.floor(parseFloat(config.amount) * 1_000_000).toString(),
+        },
+      }),
+    });
+    
+    const result = await response.json();
+    
+    if (!result.success) {
+      return res.status(402).json({ error: result.error });
+    }
+    
+    req.payment = result;
+    next();
+  };
+}
+
+// Protected route
+app.get('/api/premium', requirePayment({
+  amount: '0.01',
+  recipient: '0xYourWallet',
+  network: 'base',
+}), (req, res) => {
+  res.json({
+    success: true,
+    data: 'Premium content',
+    txHash: req.payment.transactionHash,
+  });
+});
+
+app.listen(3000);`}
+            />
+          </div>
+        );
+
+      case 'any-backend':
+        return (
+          <div className="space-y-6">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Any Backend</h1>
+              <p className="text-gray-400 mt-2">Generic integration guide for any language/framework.</p>
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-white">Step 1: Check for X-PAYMENT Header</h2>
+              <p className="text-gray-400">
+                When a request comes in without an X-PAYMENT header, return HTTP 402 with payment requirements:
+              </p>
+              <CodeBlock
+                id="any-402"
+                language="json"
+                code={`HTTP/1.1 402 Payment Required
+Content-Type: application/json
+
+{
+  "scheme": "exact",
+  "network": "base",
+  "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "payTo": "0xYourWalletAddress",
+  "maxAmountRequired": "10000",
+  "description": "API access fee",
+  "maxTimeoutSeconds": 3600
+}`}
+              />
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-white">Step 2: Settle Payment</h2>
+              <p className="text-gray-400">
+                When X-PAYMENT header is present, call the facilitator to settle:
+              </p>
+              <CodeBlock
+                id="any-settle"
+                language="bash"
+                code={`curl -X POST https://x402.netpay.id/settle \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: pk_live_xxxxx" \\
+  -d '{
+    "xPayment": "base64-encoded-payment-header",
+    "paymentRequirements": {
+      "scheme": "exact",
+      "network": "base",
+      "maxAmountRequired": "10000"
+    }
+  }'`}
+              />
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-white">Step 3: Check Response</h2>
+              <CodeBlock
+                id="any-response"
+                language="json"
+                code={`// Success
+{
+  "success": true,
+  "transactionHash": "0x...",
+  "network": "base",
+  "status": "completed"
+}
+
+// Failure
+{
+  "success": false,
+  "error": "Insufficient balance",
+  "status": "failed"
+}`}
+              />
+            </div>
+          </div>
+        );
+
+      case 'verify':
+        return (
+          <div className="space-y-6">
+            <div>
+              <h1 className="text-2xl font-bold text-white">POST /verify</h1>
+              <p className="text-gray-400 mt-2">Verify a payment without settling (useful for validation).</p>
             </div>
 
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 bg-green-400/20 text-green-400 text-xs font-medium rounded">POST</span>
-                  <code className="text-white">/verify</code>
+                  <code className="text-white">https://x402.netpay.id/verify</code>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-gray-400 text-sm">Verify a payment header and process the settlement.</p>
+                <h4 className="text-sm font-medium text-white">Headers</h4>
+                <CodeBlock
+                  id="verify-headers"
+                  language="text"
+                  code={`Content-Type: application/json
+X-API-Key: pk_live_xxxxx`}
+                />
+
                 <h4 className="text-sm font-medium text-white">Request Body</h4>
                 <CodeBlock
-                  id="verify-req"
+                  id="verify-body"
                   language="json"
                   code={`{
-  "x402Version": 1,
-  "paymentHeader": "base64-encoded-payment",
+  "xPayment": "base64-encoded-payment-header",
   "paymentRequirements": {
-    "amount": "10000",
-    "currency": "USDC",
+    "scheme": "exact",
     "network": "base",
-    "recipient": "0x..."
+    "maxAmountRequired": "10000",
+    "resource": "/api/endpoint"
   }
 }`}
                 />
-                <h4 className="text-sm font-medium text-white">Response</h4>
-                <CodeBlock
-                  id="verify-res"
-                  language="json"
-                  code={`{
-  "success": true,
-  "settlementId": "stl_abc123",
-  "txHash": "0x..."
-}`}
-                />
-              </CardContent>
-            </Card>
 
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 bg-blue-400/20 text-blue-400 text-xs font-medium rounded">GET</span>
-                  <code className="text-white">/settlement/:id</code>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-gray-400 text-sm">Get the status of a settlement.</p>
                 <h4 className="text-sm font-medium text-white">Response</h4>
                 <CodeBlock
-                  id="settlement-res"
+                  id="verify-response"
                   language="json"
                   code={`{
-  "id": "stl_abc123",
-  "status": "completed",
+  "valid": true,
+  "payer": "0x...",
   "amount": "10000",
-  "txHash": "0x...",
-  "completedAt": "2024-12-22T10:30:00Z"
+  "network": "base",
+  "reason": null
 }`}
                 />
               </CardContent>
@@ -341,61 +622,220 @@ app.get('/api/premium', x402({ amount: '0.01' }), (req, res) => {
           </div>
         );
 
-      case 'webhooks':
+      case 'settle':
         return (
           <div className="space-y-6">
             <div>
-              <h1 className="text-2xl font-bold text-white">Webhooks</h1>
-              <p className="text-gray-400 mt-2">Receive real-time notifications for settlement events.</p>
+              <h1 className="text-2xl font-bold text-white">POST /settle</h1>
+              <p className="text-gray-400 mt-2">Verify and execute the on-chain payment settlement.</p>
             </div>
 
-            <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">Webhook Payload</h2>
-              <CodeBlock
-                id="webhook-payload"
-                language="json"
-                code={`{
-  "event": "settlement.completed",
-  "timestamp": "2024-12-22T10:30:00Z",
-  "data": {
-    "settlementId": "stl_abc123",
-    "amount": "10000",
-    "currency": "USDC",
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-green-400/20 text-green-400 text-xs font-medium rounded">POST</span>
+                  <code className="text-white">https://x402.netpay.id/settle</code>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <h4 className="text-sm font-medium text-white">Headers</h4>
+                <CodeBlock
+                  id="settle-headers"
+                  language="text"
+                  code={`Content-Type: application/json
+X-API-Key: pk_live_xxxxx`}
+                />
+
+                <h4 className="text-sm font-medium text-white">Request Body</h4>
+                <CodeBlock
+                  id="settle-body"
+                  language="json"
+                  code={`{
+  "xPayment": "base64-encoded-payment-header",
+  "paymentRequirements": {
+    "scheme": "exact",
     "network": "base",
-    "txHash": "0x...",
-    "resourceId": "res_xyz"
+    "maxAmountRequired": "10000",
+    "resource": "/api/endpoint",
+    "description": "API Payment"
   }
 }`}
-              />
+                />
+
+                <h4 className="text-sm font-medium text-white">Success Response</h4>
+                <CodeBlock
+                  id="settle-success"
+                  language="json"
+                  code={`{
+  "success": true,
+  "transactionHash": "0xabc123...",
+  "network": "base",
+  "status": "completed",
+  "payer": "0x...",
+  "amount": "10000"
+}`}
+                />
+
+                <Card className="border-yellow-400/20 bg-yellow-400/5">
+                  <CardContent className="p-3">
+                    <p className="text-sm text-yellow-400">
+                      <strong>Note:</strong> Each successful settlement consumes 1 credit from your balance.
+                    </p>
+                  </CardContent>
+                </Card>
+              </CardContent>
+            </Card>
+          </div>
+        );
+
+      case 'networks':
+        return (
+          <div className="space-y-6">
+            <div>
+              <h1 className="text-2xl font-bold text-white">GET /networks</h1>
+              <p className="text-gray-400 mt-2">Get available networks and token configurations.</p>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-blue-400/20 text-blue-400 text-xs font-medium rounded">GET</span>
+                  <code className="text-white">https://x402.netpay.id/networks</code>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <h4 className="text-sm font-medium text-white">Response</h4>
+                <CodeBlock
+                  id="networks-response"
+                  language="json"
+                  code={`{
+  "mainnet": [
+    {
+      "network": "Base",
+      "chainId": 8453,
+      "tokens": [{
+        "symbol": "USDC",
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "decimals": 6,
+        "eip712": {
+          "name": "USD Coin",
+          "version": "2"
+        }
+      }]
+    }
+  ],
+  "testnet": [
+    {
+      "network": "Base Sepolia",
+      "chainId": 84532,
+      "tokens": [...]
+    }
+  ]
+}`}
+                />
+              </CardContent>
+            </Card>
+          </div>
+        );
+
+      case 'testing':
+        return (
+          <div className="space-y-6">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Testing Payments</h1>
+              <p className="text-gray-400 mt-2">How to test payments using testnet networks.</p>
             </div>
 
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">Verifying Webhooks</h2>
-              <CodeBlock
-                id="webhook-verify"
-                language="typescript"
-                code={`import { verifyWebhookSignature } from '@x402/middleware';
-
-app.post('/webhooks/x402', (req, res) => {
-  const signature = req.headers['x-x402-signature'];
-  const isValid = verifyWebhookSignature(
-    req.body,
-    signature,
-    process.env.WEBHOOK_SECRET
-  );
-  
-  if (!isValid) {
-    return res.status(401).json({ error: 'Invalid signature' });
-  }
-  
-  // Process the webhook
-  const { event, data } = req.body;
-  console.log(\`Received \${event}:\`, data);
-  
-  res.json({ received: true });
-});`}
-              />
+              <h2 className="text-lg font-semibold text-white">1. Use Testnet Networks</h2>
+              <p className="text-gray-400">
+                Set your network to a testnet for development:
+              </p>
+              <ul className="list-disc list-inside text-gray-400 space-y-1">
+                <li>Base Sepolia (chainId: 84532)</li>
+                <li>Ethereum Sepolia (chainId: 11155111)</li>
+                <li>OP Sepolia (chainId: 11155420)</li>
+              </ul>
             </div>
+
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-white">2. Get Test USDC</h2>
+              <p className="text-gray-400">
+                Mint test USDC from the faucet contract or use these resources:
+              </p>
+              <ul className="list-disc list-inside text-gray-400 space-y-1">
+                <li>Circle USDC Faucet for Sepolia</li>
+                <li>Base Sepolia Bridge from Ethereum Sepolia</li>
+              </ul>
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-white">3. Free Testnet Credits</h2>
+              <p className="text-gray-400">
+                You receive 1,000 free testnet credits monthly for testing. Check your balance in the Credits page.
+              </p>
+            </div>
+
+            <Card className="border-cyan-400/20 bg-cyan-400/5">
+              <CardContent className="p-4">
+                <h3 className="text-sm font-medium text-cyan-400">Testnet vs Mainnet</h3>
+                <p className="text-sm text-gray-400 mt-1">
+                  Testnet settlements use your free monthly testnet credits. 
+                  Mainnet settlements require purchased credits.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        );
+
+      case 'credits':
+        return (
+          <div className="space-y-6">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Credit System</h1>
+              <p className="text-gray-400 mt-2">Understanding how credits work.</p>
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-white">How Credits Work</h2>
+              <ul className="list-disc list-inside text-gray-400 space-y-2">
+                <li>Each successful settlement consumes 1 credit</li>
+                <li>Mainnet settlements require purchased credits</li>
+                <li>Testnet settlements use free monthly credits (1,000/month)</li>
+                <li>Credits never expire once purchased</li>
+              </ul>
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-white">Credit Pricing</h2>
+              <div className="p-4 bg-gray-800/50 rounded-lg">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-2xl font-bold text-cyan-400">$10</p>
+                    <p className="text-sm text-gray-400">1,000 credits</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-cyan-400">$50</p>
+                    <p className="text-sm text-gray-400">5,500 credits</p>
+                    <p className="text-xs text-green-400">+10% bonus</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-cyan-400">$100</p>
+                    <p className="text-sm text-gray-400">12,000 credits</p>
+                    <p className="text-xs text-green-400">+20% bonus</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <Card className="border-green-400/20 bg-green-400/5">
+              <CardContent className="p-4">
+                <h3 className="text-sm font-medium text-green-400">Purchase Credits</h3>
+                <p className="text-sm text-gray-400 mt-1">
+                  Visit the <a href="/dashboard/credits" className="text-cyan-400 underline">Credits page</a> to purchase credits with USDC on Base or Ethereum.
+                </p>
+              </CardContent>
+            </Card>
           </div>
         );
 
@@ -453,30 +893,11 @@ app.post('/webhooks/x402', (req, res) => {
           </nav>
 
           <Card className="p-4">
-            <h4 className="text-sm font-medium text-white">Need Help?</h4>
-            <p className="text-xs text-gray-400 mt-1">
-              Check out our GitHub or join our Discord community.
+            <h4 className="text-sm font-medium text-white">API Base URL</h4>
+            <code className="text-xs text-cyan-400 mt-1 block">https://x402.netpay.id</code>
+            <p className="text-xs text-gray-500 mt-2">
+              All API requests should be made to this URL.
             </p>
-            <div className="flex gap-2 mt-3">
-              <a
-                href="https://github.com/x402"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 rounded transition-colors"
-              >
-                GitHub
-                <ExternalLinkIcon className="w-3 h-3" />
-              </a>
-              <a
-                href="https://discord.gg/x402"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 rounded transition-colors"
-              >
-                Discord
-                <ExternalLinkIcon className="w-3 h-3" />
-              </a>
-            </div>
           </Card>
         </div>
       </div>

@@ -1,14 +1,12 @@
 import { NextRequest } from 'next/server';
-import { authenticateWallet } from '@/lib/api';
+import { verifySiwe } from '@/lib/api';
 import { setSessionCookie } from '@/lib/session';
 import {
   secureJsonResponse,
   errorResponse,
   checkRateLimit,
   getClientIP,
-  isValidEthereumAddress,
   isValidSignature,
-  sanitizeString,
   validateOrigin,
 } from '@/lib/security';
 
@@ -21,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     // Strict rate limiting for auth endpoint (10 attempts per minute)
     const ip = getClientIP(request);
-    const rateLimit = checkRateLimit(`auth:${ip}`, { windowMs: 60000, maxRequests: 10 });
+    const rateLimit = checkRateLimit(`siwe-verify:${ip}`, { windowMs: 60000, maxRequests: 10 });
     if (!rateLimit.allowed) {
       return errorResponse('Too many login attempts. Please try again later.', 429);
     }
@@ -34,16 +32,11 @@ export async function POST(request: NextRequest) {
       return errorResponse('Invalid request body', 400);
     }
 
-    const { address, message, signature } = body;
+    const { message, signature } = body;
 
     // Validate required fields
-    if (!address || !message || !signature) {
+    if (!message || !signature) {
       return errorResponse('Missing required fields', 400);
-    }
-
-    // Validate address format
-    if (!isValidEthereumAddress(address)) {
-      return errorResponse('Invalid wallet address format', 400);
     }
 
     // Validate signature format
@@ -51,14 +44,13 @@ export async function POST(request: NextRequest) {
       return errorResponse('Invalid signature format', 400);
     }
 
-    // Sanitize message (prevent injection)
-    const sanitizedMessage = sanitizeString(message, 2000);
-    if (!sanitizedMessage) {
-      return errorResponse('Invalid message', 400);
+    // Validate message length (SIWE messages shouldn't be too long)
+    if (message.length > 5000) {
+      return errorResponse('Message too long', 400);
     }
 
-    // Call facilitator API to authenticate (server-side only)
-    const result = await authenticateWallet(address.toLowerCase(), sanitizedMessage, signature);
+    // Call facilitator API to verify SIWE
+    const result = await verifySiwe(message, signature);
 
     if (!result.success || !result.data) {
       return errorResponse(result.error || 'Authentication failed', 401);
@@ -68,12 +60,6 @@ export async function POST(request: NextRequest) {
 
     // Set secure session cookie
     await setSessionCookie(sessionToken);
-
-    // If user is admin, also store admin session
-    if (isAdmin) {
-      // Store admin session token in a separate cookie or the same one
-      // The session can be used for both merchant and admin access
-    }
 
     // Return minimal merchant data (no sensitive fields)
     return secureJsonResponse({
@@ -89,7 +75,7 @@ export async function POST(request: NextRequest) {
       adminRole: adminRole || null,
     });
   } catch (error) {
-    console.error('Auth error:', error);
+    console.error('SIWE auth error:', error);
     return errorResponse('Authentication failed', 500);
   }
 }

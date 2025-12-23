@@ -10,6 +10,7 @@ pub mod verification;
 pub mod settlement;
 pub mod transaction_monitor;
 pub mod metrics;
+pub mod webhook;
 
 pub use database::Database;
 pub use redis::Redis;
@@ -18,4 +19,5 @@ pub use paymaster_pool::PaymasterPool;
 pub use verification::VerificationService;
 pub use settlement::SettlementService;
 pub use transaction_monitor::TransactionMonitor;
+pub use webhook::WebhookService;
 pub use metrics::MetricsService;

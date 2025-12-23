@@ -25,7 +25,7 @@ mod routes;
 mod utils;
 
 use config::Config;
-use services::{Database, Redis, ProviderPool, PaymasterPool, VerificationService, SettlementService, TransactionMonitor, MetricsService};
+use services::{Database, Redis, ProviderPool, PaymasterPool, VerificationService, SettlementService, TransactionMonitor, MetricsService, WebhookService};
 use middleware::{AuthState, RateLimitState, SecurityState, start_cleanup_task};
 use routes::{create_router, AppState};
 
@@ -95,6 +95,11 @@ async fn main() {
         provider_pool.clone(),
     ));
 
+    let webhook_service = Arc::new(WebhookService::new(
+        config.clone(),
+        database.clone(),
+    ));
+
     let settlement_service = Arc::new(SettlementService::new(
         config.clone(),
         provider_pool.clone(),
@@ -102,6 +107,7 @@ async fn main() {
         redis.clone(),
         database.clone(),
         verification_service.clone(),
+        webhook_service.clone(),
     ));
 
     // Create and start transaction monitor

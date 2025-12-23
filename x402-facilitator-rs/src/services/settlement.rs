@@ -34,6 +34,7 @@ use crate::services::paymaster_pool::PaymasterPool;
 use crate::services::redis::Redis;
 use crate::services::database::{Database, CreateTransaction};
 use crate::services::verification::VerificationService;
+use crate::services::webhook::{WebhookService, WebhookEventType};
 use crate::services::metrics;
 
 // ERC-3009 interface for gasless transfers
@@ -65,6 +66,7 @@ pub struct SettlementService {
     redis: Arc<Redis>,
     database: Arc<Database>,
     verification_service: Arc<VerificationService>,
+    webhook_service: Arc<WebhookService>,
 }
 
 impl SettlementService {
@@ -76,6 +78,7 @@ impl SettlementService {
         redis: Arc<Redis>,
         database: Arc<Database>,
         verification_service: Arc<VerificationService>,
+        webhook_service: Arc<WebhookService>,
     ) -> Self {
         info!("Settlement service initialized");
         Self {
@@ -85,6 +88,7 @@ impl SettlementService {
             redis,
             database,
             verification_service,
+            webhook_service,
         }
     }
 
@@ -249,12 +253,18 @@ impl SettlementService {
         };
         debug!("⏱️ DB create transaction: {}ms", start.elapsed().as_millis());
 
+        // Log transaction created event
+        self.log_tx_event(transaction_id, "created", None, Some("pending"), None).await;
+
         // Execute the settlement transaction
         let start = Instant::now();
         match self.execute_transfer(payload, requirements, &normalized_network, &signer).await {
             Ok(tx_hash) => {
                 debug!("⏱️ Transaction send: {}ms", start.elapsed().as_millis());
                 info!("⏳ Transaction submitted: {}", tx_hash);
+                
+                // Log submitted event
+                self.log_tx_event(transaction_id, "submitted", Some("pending"), Some("pending"), Some(&format!("{{\"tx_hash\":\"{}\"}}", tx_hash))).await;
                 
                 // Update database with pending status
                 if let Err(e) = self.database.update_transaction_hash(transaction_id, &tx_hash, "pending").await {
@@ -263,12 +273,34 @@ impl SettlementService {
 
                 // Wait for confirmation (flashblock fast path + standard fallback)
                 let start = Instant::now();
-                let (confirmed, final_status) = self.wait_for_confirmation(&tx_hash, &normalized_network).await;
+                let (confirmed, final_status, receipt) = self.wait_for_confirmation_with_receipt(&tx_hash, &normalized_network).await;
                 debug!("⏱️ Confirmation wait: {}ms", start.elapsed().as_millis());
+                
+                // Log gas to database if we have a receipt
+                if let Some(ref r) = receipt {
+                    self.log_gas_to_db(r, &normalized_network, &tx_hash).await;
+                }
                 
                 if confirmed && final_status == "completed" {
                     info!("✅ Settlement confirmed: {}", tx_hash);
                     info!("⏱️ Total settlement time: {}ms", total_start.elapsed().as_millis());
+                    
+                    // Log completed event
+                    self.log_tx_event(transaction_id, "confirmed", Some("pending"), Some("completed"), None).await;
+                    
+                    // Send webhook notification
+                    self.send_webhook(
+                        merchant,
+                        WebhookEventType::TransactionCompleted,
+                        transaction_id,
+                        Some(&tx_hash),
+                        "completed",
+                        &normalized_network,
+                        &requirements.asset,
+                        &requirements.max_amount_required,
+                        payer,
+                        Some(&requirements.resource),
+                    ).await;
                     
                     // Deduct credits from merchant
                     if let Err(e) = self.database.deduct_credits(
@@ -299,6 +331,23 @@ impl SettlementService {
                 } else if confirmed && final_status == "failed" {
                     error!("❌ Transaction reverted: {}", tx_hash);
                     
+                    // Log failed event
+                    self.log_tx_event(transaction_id, "reverted", Some("pending"), Some("failed"), Some("{\"reason\":\"Transaction reverted on-chain\"}")).await;
+                    
+                    // Send webhook notification
+                    self.send_webhook(
+                        merchant,
+                        WebhookEventType::TransactionFailed,
+                        transaction_id,
+                        Some(&tx_hash),
+                        "failed",
+                        &normalized_network,
+                        &requirements.asset,
+                        &requirements.max_amount_required,
+                        payer,
+                        Some(&requirements.resource),
+                    ).await;
+                    
                     // Update database with failed status
                     if let Err(e) = self.database.update_transaction(transaction_id, "failed").await {
                         error!("Failed to update transaction status: {}", e);
@@ -313,6 +362,20 @@ impl SettlementService {
                 } else {
                     // Not confirmed yet - return pending (background monitor will update)
                     info!("⏳ Transaction pending, will be monitored: {}", tx_hash);
+                    
+                    // Send webhook notification
+                    self.send_webhook(
+                        merchant,
+                        WebhookEventType::TransactionPending,
+                        transaction_id,
+                        Some(&tx_hash),
+                        "pending",
+                        &normalized_network,
+                        &requirements.asset,
+                        &requirements.max_amount_required,
+                        payer,
+                        Some(&requirements.resource),
+                    ).await;
                     
                     // Deduct credits (we submitted successfully, just waiting for confirmation)
                     if let Err(e) = self.database.deduct_credits(
@@ -339,6 +402,23 @@ impl SettlementService {
             }
             Err(reason) => {
                 error!("❌ Settlement failed: {}", reason);
+                
+                // Log failed event
+                self.log_tx_event(transaction_id, "execution_failed", Some("pending"), Some("failed"), Some(&format!("{{\"reason\":\"{}\"}}", reason.replace('"', "\\\"")))).await;
+                
+                // Send webhook notification
+                self.send_webhook(
+                    merchant,
+                    WebhookEventType::TransactionFailed,
+                    transaction_id,
+                    None,
+                    "failed",
+                    &normalized_network,
+                    &requirements.asset,
+                    &requirements.max_amount_required,
+                    payer,
+                    Some(&requirements.resource),
+                ).await;
                 
                 // Update database
                 if let Err(e) = self.database.update_transaction(transaction_id, "failed").await {
@@ -416,13 +496,13 @@ impl SettlementService {
     }
 
     /// Wait for transaction confirmation with flashblock optimization
-    /// Returns (confirmed: bool, status: &'static str)
-    async fn wait_for_confirmation(&self, tx_hash: &str, network: &str) -> (bool, &'static str) {
+    /// Returns (confirmed: bool, status: &'static str, Option<TransactionReceipt>)
+    async fn wait_for_confirmation_with_receipt(&self, tx_hash: &str, network: &str) -> (bool, &'static str, Option<alloy::rpc::types::TransactionReceipt>) {
         let provider_arc = match self.provider_pool.get_provider(network) {
             Ok(p) => p,
             Err(e) => {
                 warn!("Provider error during confirmation wait: {}", e);
-                return (false, "pending");
+                return (false, "pending", None);
             }
         };
 
@@ -430,11 +510,11 @@ impl SettlementService {
         let hash_hex = tx_hash.strip_prefix("0x").unwrap_or(tx_hash);
         let hash_bytes = match hex::decode(hash_hex) {
             Ok(b) => b,
-            Err(_) => return (false, "pending"),
+            Err(_) => return (false, "pending", None),
         };
         
         if hash_bytes.len() != 32 {
-            return (false, "pending");
+            return (false, "pending", None);
         }
         
         let hash: FixedBytes<32> = FixedBytes::from_slice(&hash_bytes);
@@ -468,10 +548,10 @@ impl SettlementService {
                         
                         if receipt.status() {
                             info!("⚡ Flashblock confirmation in {}ms: {}", elapsed, tx_hash);
-                            return (true, "completed");
+                            return (true, "completed", Some(receipt));
                         } else {
                             info!("⚡ Transaction reverted in {}ms: {}", elapsed, tx_hash);
-                            return (true, "failed");
+                            return (true, "failed", Some(receipt));
                         }
                     }
                     Ok(None) => {
@@ -499,10 +579,10 @@ impl SettlementService {
                     
                     if receipt.status() {
                         info!("✅ Transaction confirmed in {}ms: {}", elapsed, tx_hash);
-                        return (true, "completed");
+                        return (true, "completed", Some(receipt));
                     } else {
                         info!("❌ Transaction reverted in {}ms: {}", elapsed, tx_hash);
-                        return (true, "failed");
+                        return (true, "failed", Some(receipt));
                     }
                 }
                 Ok(None) => {
@@ -517,7 +597,7 @@ impl SettlementService {
 
         // Timeout - will be monitored by background task
         info!("⏳ Confirmation timeout after 10s, transaction will be monitored: {}", tx_hash);
-        (false, "pending")
+        (false, "pending", None)
     }
 
     /// Log gas usage from transaction receipt
@@ -539,6 +619,101 @@ impl SettlementService {
         info!("⛽ Gas used: {} units @ {:.4} gwei = {:.4} gwei (~{:.8} ETH) [{}]", 
               gas_used, gas_price_gwei, gas_cost_gwei, gas_cost_eth, network);
         info!("   TX: {}", tx_hash);
+    }
+
+    /// Log gas tracking to database
+    async fn log_gas_to_db(&self, receipt: &alloy::rpc::types::TransactionReceipt, network: &str, tx_hash: &str) {
+        let gas_used = receipt.gas_used;
+        let effective_gas_price = receipt.effective_gas_price;
+        let gas_cost_wei = gas_used as u128 * effective_gas_price;
+        
+        let gas_price_gwei = effective_gas_price as f64 / 1_000_000_000.0;
+        let gas_cost_eth = gas_cost_wei as f64 / 1_000_000_000_000_000_000.0;
+        
+        // Store in database (fire-and-forget)
+        if let Err(e) = self.database.log_gas_tracking(
+            network,
+            gas_price_gwei,
+            Some(gas_used as u64),
+            Some(gas_cost_eth),
+            None, // USD cost would need price feed
+            Some(tx_hash),
+        ).await {
+            warn!("Failed to log gas tracking: {}", e);
+        }
+    }
+
+    /// Log transaction event to database for audit trail
+    async fn log_tx_event(&self, transaction_id: i64, event_type: &str, old_status: Option<&str>, new_status: Option<&str>, metadata: Option<&str>) {
+        if let Err(e) = self.database.log_transaction_event(
+            transaction_id,
+            event_type,
+            old_status,
+            new_status,
+            metadata,
+        ).await {
+            warn!("Failed to log transaction event: {}", e);
+        }
+    }
+
+    /// Send webhook notification to merchant (if configured)
+    async fn send_webhook(
+        &self,
+        merchant: &Merchant,
+        event_type: WebhookEventType,
+        transaction_id: i64,
+        tx_hash: Option<&str>,
+        status: &str,
+        network: &str,
+        asset: &str,
+        amount: &str,
+        payer: &str,
+        resource: Option<&str>,
+    ) {
+        // Check if merchant has webhook configured
+        let webhook_url = match &merchant.webhook_url {
+            Some(url) if !url.is_empty() => url,
+            _ => return, // No webhook configured
+        };
+
+        // Check if this event type is enabled
+        let event_str = event_type.to_string();
+        let events = &merchant.webhook_events;
+        if !events.contains("all") && !events.contains(&event_str) {
+            debug!("Webhook event {} not enabled for merchant {}", event_str, merchant.id);
+            return;
+        }
+
+        // Clone for async move
+        let webhook_service = self.webhook_service.clone();
+        let merchant_id = merchant.id;
+        let webhook_url = webhook_url.clone();
+        let tx_hash = tx_hash.map(String::from);
+        let status = status.to_string();
+        let network = network.to_string();
+        let asset = asset.to_string();
+        let amount = amount.to_string();
+        let payer = payer.to_string();
+        let recipient = merchant.auth_address.clone();
+        let resource = resource.map(String::from);
+
+        // Fire and forget - don't block settlement on webhook delivery
+        tokio::spawn(async move {
+            webhook_service.send_transaction_webhook(
+                merchant_id,
+                &webhook_url,
+                event_type,
+                transaction_id,
+                tx_hash.as_deref(),
+                &status,
+                &network,
+                &asset,
+                &amount,
+                &payer,
+                &recipient,
+                resource.as_deref(),
+            ).await;
+        });
     }
 
     /// Verify balance

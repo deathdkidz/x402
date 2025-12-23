@@ -88,6 +88,22 @@ export interface MerchantData {
   createdAt: string;
 }
 
+// SIWE Nonce
+export async function getSiweNonce(): Promise<ApiResponse<{ nonce: string }>> {
+  return facilitatorRequest<{ nonce: string }>('/merchant/siwe/nonce');
+}
+
+// SIWE Verify
+export async function verifySiwe(
+  message: string,
+  signature: string
+): Promise<ApiResponse<AuthResult>> {
+  return facilitatorRequest<AuthResult>('/merchant/siwe/verify', {
+    method: 'POST',
+    body: JSON.stringify({ message, signature }),
+  });
+}
+
 export interface AuthResult {
   merchant: MerchantData;
   sessionToken: string;
