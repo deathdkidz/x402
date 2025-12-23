@@ -3,8 +3,8 @@ import { getCredits } from '@/lib/api';
 import { withAuth } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
-  return withAuth(request, async (merchant) => {
-    const result = await getCredits(merchant.id);
+  return withAuth(request, async (merchant, _req, sessionToken) => {
+    const result = await getCredits(merchant.id, sessionToken);
 
     if (!result.success || !result.data) {
       throw new Error(result.error || 'Failed to fetch credits');

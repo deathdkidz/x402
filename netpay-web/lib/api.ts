@@ -21,9 +21,13 @@ const NO_API_KEY_ROUTES = [
   '/merchant/',
 ];
 
+interface FacilitatorOptions extends RequestInit {
+  sessionToken?: string;
+}
+
 async function facilitatorRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: FacilitatorOptions = {}
 ): Promise<ApiResponse<T>> {
   try {
     // Check if this endpoint requires API key
@@ -37,6 +41,9 @@ async function facilitatorRequest<T>(
 
     const url = `${FACILITATOR_URL}${endpoint}`;
     
+    // Extract sessionToken before spreading to headers
+    const { sessionToken, ...fetchOptions } = options;
+    
     // Build headers - only add API key if required
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -45,12 +52,16 @@ async function facilitatorRequest<T>(
     if (requiresApiKey && FACILITATOR_API_KEY) {
       headers['X-API-Key'] = FACILITATOR_API_KEY;
     }
+    // Add session token if provided
+    if (sessionToken) {
+      headers['X-Session-Token'] = sessionToken;
+    }
     
     const response = await fetch(url, {
-      ...options,
+      ...fetchOptions,
       headers: {
         ...headers,
-        ...options.headers,
+        ...fetchOptions.headers,
       },
       // Add cache: 'no-store' for dynamic data
       cache: 'no-store',
@@ -169,14 +180,16 @@ export interface TransactionsResult {
 }
 
 export async function getDashboardStats(
-  merchantId: number
+  merchantId: number,
+  sessionToken?: string
 ): Promise<ApiResponse<DashboardStats>> {
-  return facilitatorRequest<DashboardStats>(`/merchant/${merchantId}/dashboard/stats`);
+  return facilitatorRequest<DashboardStats>(`/merchant/${merchantId}/dashboard/stats`, { sessionToken });
 }
 
 export async function getTransactions(
   merchantId: number,
-  params: { page?: number; limit?: number; status?: string; network?: string; search?: string }
+  params: { page?: number; limit?: number; status?: string; network?: string; search?: string },
+  sessionToken?: string
 ): Promise<ApiResponse<TransactionsResult>> {
   const query = new URLSearchParams();
   if (params.page) query.append('page', params.page.toString());
@@ -186,7 +199,8 @@ export async function getTransactions(
   if (params.search) query.append('search', params.search);
   
   return facilitatorRequest<TransactionsResult>(
-    `/merchant/${merchantId}/transactions?${query}`
+    `/merchant/${merchantId}/transactions?${query}`,
+    { sessionToken }
   );
 }
 
@@ -220,9 +234,10 @@ export interface CreditPurchase {
 }
 
 export async function getCredits(
-  merchantId: number
+  merchantId: number,
+  sessionToken?: string
 ): Promise<ApiResponse<CreditsData>> {
-  return facilitatorRequest<CreditsData>(`/merchant/${merchantId}/credits`);
+  return facilitatorRequest<CreditsData>(`/merchant/${merchantId}/credits`, { sessionToken });
 }
 
 export interface AnalyticsData {
@@ -238,10 +253,12 @@ export interface AnalyticsData {
 
 export async function getAnalytics(
   merchantId: number,
-  period: string = '30d'
+  period: string = '30d',
+  sessionToken?: string
 ): Promise<ApiResponse<AnalyticsData>> {
   return facilitatorRequest<AnalyticsData>(
-    `/merchant/${merchantId}/analytics?period=${period}`
+    `/merchant/${merchantId}/analytics?period=${period}`,
+    { sessionToken }
   );
 }
 
@@ -267,18 +284,21 @@ export interface MerchantSettings {
 }
 
 export async function getSettings(
-  merchantId: number
+  merchantId: number,
+  sessionToken?: string
 ): Promise<ApiResponse<MerchantSettings>> {
-  return facilitatorRequest<MerchantSettings>(`/merchant/${merchantId}/settings`);
+  return facilitatorRequest<MerchantSettings>(`/merchant/${merchantId}/settings`, { sessionToken });
 }
 
 export async function updateSettings(
   merchantId: number,
-  data: Partial<MerchantSettings>
+  data: Partial<MerchantSettings>,
+  sessionToken?: string
 ): Promise<ApiResponse<{ success: boolean }>> {
   return facilitatorRequest<{ success: boolean }>(`/merchant/${merchantId}/settings`, {
     method: 'PUT',
     body: JSON.stringify(data),
+    sessionToken,
   });
 }
 
@@ -309,24 +329,26 @@ export interface TopupOrder {
   createdAt: string;
 }
 
-export async function getTopupPackages(merchantId: number): Promise<ApiResponse<TopupPackage[]>> {
-  return facilitatorRequest<TopupPackage[]>(`/merchant/${merchantId}/credits/packages`);
+export async function getTopupPackages(merchantId: number, sessionToken?: string): Promise<ApiResponse<TopupPackage[]>> {
+  return facilitatorRequest<TopupPackage[]>(`/merchant/${merchantId}/credits/packages`, { sessionToken });
 }
 
 export async function createTopupOrder(
   merchantId: number,
   packageId?: number,
   creditAmount?: number,
-  network: string = 'base'
+  network: string = 'base',
+  sessionToken?: string
 ): Promise<ApiResponse<TopupOrder>> {
   return facilitatorRequest<TopupOrder>(`/merchant/${merchantId}/credits/topup`, {
     method: 'POST',
     body: JSON.stringify({ packageId, creditAmount, network }),
+    sessionToken,
   });
 }
 
-export async function getTopupOrder(merchantId: number, orderId: string): Promise<ApiResponse<TopupOrder>> {
-  return facilitatorRequest<TopupOrder>(`/merchant/${merchantId}/credits/topup/${orderId}`);
+export async function getTopupOrder(merchantId: number, orderId: string, sessionToken?: string): Promise<ApiResponse<TopupOrder>> {
+  return facilitatorRequest<TopupOrder>(`/merchant/${merchantId}/credits/topup/${orderId}`, { sessionToken });
 }
 
 // ============ Admin API ============

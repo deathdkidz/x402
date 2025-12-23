@@ -3,7 +3,7 @@ import { getTransactions } from '@/lib/api';
 import { withAuth, sanitizeString, sanitizeInt } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
-  return withAuth(request, async (merchant) => {
+  return withAuth(request, async (merchant, _req, sessionToken) => {
     const { searchParams } = new URL(request.url);
     
     // Sanitize all query parameters
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       search: sanitizeString(searchParams.get('search'), 200),
     };
 
-    const result = await getTransactions(merchant.id, params);
+    const result = await getTransactions(merchant.id, params, sessionToken);
 
     if (!result.success || !result.data) {
       throw new Error(result.error || 'Failed to fetch transactions');

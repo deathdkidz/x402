@@ -1,6 +1,7 @@
 // Security utilities for API routes
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentMerchant } from './session';
+import { getSessionToken } from './session';
 import type { MerchantData } from './api';
 
 // Rate limiting store (in production, use Redis)
@@ -131,7 +132,7 @@ export function errorResponse(message: string, status: number = 400): NextRespon
  */
 export async function withAuth<T>(
   request: NextRequest,
-  handler: (merchant: MerchantData, request: NextRequest) => Promise<T>
+  handler: (merchant: MerchantData, request: NextRequest, sessionToken: string) => Promise<T>
 ): Promise<NextResponse> {
   try {
     // Rate limit check
@@ -142,14 +143,20 @@ export async function withAuth<T>(
       return errorResponse('Too many requests. Please try again later.', 429);
     }
 
+    // Get session token
+    const sessionToken = await getSessionToken();
+    if (!sessionToken) {
+      return errorResponse('Unauthorized', 401);
+    }
+
     // Authentication check
     const merchant = await getCurrentMerchant();
     if (!merchant) {
       return errorResponse('Unauthorized', 401);
     }
 
-    // Execute handler
-    const result = await handler(merchant, request);
+    // Execute handler with session token
+    const result = await handler(merchant, request, sessionToken);
     return secureJsonResponse(result);
   } catch (error) {
     console.error('API error:', error);

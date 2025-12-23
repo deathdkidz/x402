@@ -3,8 +3,8 @@ import { getSettings, updateSettings } from '@/lib/api';
 import { withAuth, validateOrigin, errorResponse, sanitizeString } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
-  return withAuth(request, async (merchant) => {
-    const result = await getSettings(merchant.id);
+  return withAuth(request, async (merchant, _req, sessionToken) => {
+    const result = await getSettings(merchant.id, sessionToken);
 
     if (!result.success || !result.data) {
       throw new Error(result.error || 'Failed to fetch settings');
@@ -20,7 +20,7 @@ export async function PUT(request: NextRequest) {
     return errorResponse('Invalid origin', 403);
   }
 
-  return withAuth(request, async (merchant) => {
+  return withAuth(request, async (merchant, _req, sessionToken) => {
     let data;
     try {
       data = await request.json();
@@ -60,7 +60,7 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    const result = await updateSettings(merchant.id, sanitizedData);
+    const result = await updateSettings(merchant.id, sanitizedData, sessionToken);
 
     if (!result.success) {
       throw new Error(result.error || 'Failed to update settings');
