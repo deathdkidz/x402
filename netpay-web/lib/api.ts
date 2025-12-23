@@ -6,20 +6,14 @@ if (typeof window !== 'undefined') {
   throw new Error('lib/api.ts must only be used server-side');
 }
 
-const FACILITATOR_URL = process.env.FACILITATOR_URL || 'https://api.netpay.id';
-const FACILITATOR_API_KEY = process.env.FACILITATOR_API_KEY || '';
+const FACILITATOR_URL = process.env.FACILITATOR_URL || 'http://localhost:8080';
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
 
 interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
 }
-
-// Admin and merchant dashboard routes that don't require API key
-const NO_API_KEY_ROUTES = [
-  '/admin/',
-  '/merchant/',
-];
 
 interface FacilitatorOptions extends RequestInit {
   sessionToken?: string;
@@ -30,28 +24,22 @@ async function facilitatorRequest<T>(
   options: FacilitatorOptions = {}
 ): Promise<ApiResponse<T>> {
   try {
-    // Check if this endpoint requires API key
-    const requiresApiKey = !NO_API_KEY_ROUTES.some(route => endpoint.startsWith(route));
-    
-    // Validate API key exists for routes that require it
-    if (requiresApiKey && !FACILITATOR_API_KEY) {
-      console.error('FACILITATOR_API_KEY not configured');
-      return { success: false, error: 'Server configuration error' };
-    }
-
     const url = `${FACILITATOR_URL}${endpoint}`;
     
     // Extract sessionToken before spreading to headers
     const { sessionToken, ...fetchOptions } = options;
     
-    // Build headers - only add API key if required
+    // Build headers with internal auth
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-Request-Source': 'netpay-dashboard',
     };
-    if (requiresApiKey && FACILITATOR_API_KEY) {
-      headers['X-API-Key'] = FACILITATOR_API_KEY;
+    
+    // Add internal API secret for all requests from dashboard
+    if (INTERNAL_API_SECRET) {
+      headers['X-Internal-Secret'] = INTERNAL_API_SECRET;
     }
+    
     // Add session token if provided
     if (sessionToken) {
       headers['X-Session-Token'] = sessionToken;
