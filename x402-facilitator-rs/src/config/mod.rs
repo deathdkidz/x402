@@ -90,6 +90,7 @@ pub struct Config {
     pub verify_rate_limit_max: u32,
     pub settle_rate_limit_window_ms: u64,
     pub settle_rate_limit_max: u32,
+    pub internal_api_secret: Option<String>,
 }
 
 impl Config {
@@ -336,6 +337,7 @@ impl Config {
             verify_rate_limit_max: env::var("VERIFY_RATE_LIMIT_MAX").unwrap_or_else(|_| "60".to_string()).parse().unwrap_or(60),
             settle_rate_limit_window_ms: env::var("SETTLE_RATE_LIMIT_WINDOW_MS").unwrap_or_else(|_| "60000".to_string()).parse().unwrap_or(60000),
             settle_rate_limit_max: env::var("SETTLE_RATE_LIMIT_MAX").unwrap_or_else(|_| "20".to_string()).parse().unwrap_or(20),
+            internal_api_secret: env::var("INTERNAL_API_SECRET").ok().filter(|s| !s.is_empty()),
         })
     }
 
@@ -507,6 +509,7 @@ impl Default for Config {
             verify_rate_limit_max: 60,
             settle_rate_limit_window_ms: 60000,
             settle_rate_limit_max: 20,
+            internal_api_secret: None,
         }
     }
 }

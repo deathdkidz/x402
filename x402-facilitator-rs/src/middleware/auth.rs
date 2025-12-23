@@ -28,8 +28,31 @@ pub struct AuthState {
 #[derive(Clone)]
 pub struct AuthenticatedMerchant(pub Merchant);
 
-/// Public paths that don't require authentication
-const PUBLIC_PATHS: &[&str] = &["/", "/health", "/networks", "/metrics"];
+/// Public paths that don't require API key authentication
+/// These paths handle their own authentication (e.g., wallet signature, session tokens)
+const PUBLIC_PATHS: &[&str] = &[
+    "/", 
+    "/health", 
+    "/networks", 
+    "/metrics",
+    // Merchant auth routes (use wallet signature auth)
+    "/merchant/auth",
+    "/merchant/session",
+    "/merchant/logout",
+    // Topup routes
+    "/topup/packages",
+    "/topup/order",
+];
+
+/// Admin routes use session token authentication, not API keys
+fn is_admin_path(path: &str) -> bool {
+    path.starts_with("/admin/")
+}
+
+/// Merchant dashboard routes use session tokens
+fn is_merchant_dashboard_path(path: &str) -> bool {
+    path.starts_with("/merchant/") && !PUBLIC_PATHS.contains(&path)
+}
 
 /// API key authentication middleware
 /// Note: /metrics access control is handled in security.rs (checks real client IP from proxy headers)
@@ -40,8 +63,18 @@ pub async fn api_key_auth(
 ) -> Response {
     let path = request.uri().path();
     
-    // Skip auth for public endpoints (security checks are in security.rs)
+    // Skip API key auth for public endpoints
     if PUBLIC_PATHS.contains(&path) {
+        return next.run(request).await;
+    }
+    
+    // Skip API key auth for admin routes (they use session tokens)
+    if is_admin_path(path) {
+        return next.run(request).await;
+    }
+    
+    // Skip API key auth for merchant dashboard routes (they use session tokens)
+    if is_merchant_dashboard_path(path) {
         return next.run(request).await;
     }
 

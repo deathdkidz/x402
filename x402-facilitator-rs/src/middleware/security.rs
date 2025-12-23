@@ -28,10 +28,9 @@ static SUSPICIOUS_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
         Regex::new(r"\/phpunit\/").unwrap(),            // PHPUnit exploits
         Regex::new(r"\/vendor\/").unwrap(),             // Vendor folder scans
         Regex::new(r"\/\.git\/").unwrap(),              // Git folder access
-        Regex::new(r"\/config\/").unwrap(),             // Config folder access
         Regex::new(r"\.sql$").unwrap(),                 // SQL file access
-        Regex::new(r"\/admin").unwrap(),                // Admin panel scans
         Regex::new(r"\/wp-admin\/").unwrap(),           // WordPress scans
+        Regex::new(r"\/phpmyadmin").unwrap(),           // phpMyAdmin scans
     ]
 });
 
@@ -44,7 +43,8 @@ static ALLOWED_PATHS: Lazy<Vec<Regex>> = Lazy::new(|| {
         Regex::new(r"^/metrics$").unwrap(),             // Prometheus metrics (localhost only)
         Regex::new(r"^/verify$").unwrap(),              // Verify payment
         Regex::new(r"^/settle$").unwrap(),              // Settle payment
-        Regex::new(r"^/merchant$").unwrap(),            // Merchant info
+        Regex::new(r"^/merchant/").unwrap(),            // Merchant dashboard API (includes credits/topup)
+        Regex::new(r"^/admin/").unwrap(),               // Admin dashboard API
     ]
 });
 

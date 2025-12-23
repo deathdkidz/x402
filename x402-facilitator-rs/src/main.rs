@@ -156,6 +156,7 @@ async fn main() {
         verification_service,
         settlement_service,
         metrics_service,
+        database: database.clone(),
         start_time: Instant::now(),
     };
 

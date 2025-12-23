@@ -2,6 +2,9 @@
 //! 
 //! HTTP route handlers for the x402 facilitator API
 
+mod merchant;
+mod admin;
+
 use std::sync::Arc;
 use std::time::Instant;
 use axum::{
@@ -15,9 +18,12 @@ use tracing::info;
 
 use crate::config::Config;
 use crate::types::*;
-use crate::services::{VerificationService, SettlementService, MetricsService};
+use crate::services::{VerificationService, SettlementService, MetricsService, Database};
 use crate::services::metrics;
 use crate::middleware::{ValidatedJson, AuthenticatedMerchant};
+
+pub use merchant::create_merchant_router;
+pub use admin::create_admin_router;
 
 /// Application state shared across routes
 #[derive(Clone)]
@@ -26,11 +32,14 @@ pub struct AppState {
     pub verification_service: Arc<VerificationService>,
     pub settlement_service: Arc<SettlementService>,
     pub metrics_service: Arc<MetricsService>,
+    pub database: Arc<Database>,
     pub start_time: Instant,
 }
 
 /// Create the router with all routes
 pub fn create_router(state: AppState) -> Router {
+    let state_arc = Arc::new(state);
+    
     Router::new()
         .route("/", get(root_handler))
         .route("/health", get(health_handler))
@@ -38,7 +47,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/metrics", get(metrics_handler))
         .route("/verify", post(verify_handler))
         .route("/settle", post(settle_handler))
-        .with_state(Arc::new(state))
+        // Merge merchant and admin routes
+        .merge(create_merchant_router())
+        .merge(create_admin_router())
+        .with_state(state_arc)
 }
 
 /// Root endpoint - Service info
