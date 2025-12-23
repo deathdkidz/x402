@@ -36,7 +36,7 @@ export function middleware(request: NextRequest) {
 
   // Protect dashboard routes
   if (request.nextUrl.pathname.startsWith('/dashboard')) {
-    const sessionToken = request.cookies.get('session_token');
+    const sessionToken = request.cookies.get('netpay_session');
     
     if (!sessionToken) {
       const loginUrl = new URL('/', request.url);
