@@ -552,12 +552,16 @@ async fn auth_handler(
     // Create session
     let session_token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + chrono::Duration::days(30);
+    let nonce = Uuid::new_v4().to_string(); // Generate a unique nonce for the session
 
     if let Err(e) = sqlx::query(
-        "INSERT INTO merchant_sessions (merchant_id, session_token, expires_at) VALUES (?, ?, ?)"
+        "INSERT INTO merchant_sessions (merchant_id, session_token, auth_address, nonce, signature, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
     )
     .bind(merchant_id)
     .bind(&session_token)
+    .bind(&address)
+    .bind(&nonce)
+    .bind(&req.signature)
     .bind(expires_at)
     .execute(pool)
     .await {
