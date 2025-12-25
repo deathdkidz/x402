@@ -1,0 +1,317 @@
+# x402 Facilitator - Network & Token Configuration
+# This file allows adding new networks and tokens without code changes
+# Simply update this file and restart the service
+
+[settings]
+# Default gas buffer percentage for all networks
+default_gas_buffer_percent = 20
+# Default settlement timeout in milliseconds
+default_settlement_timeout_ms = 60000
+# Default transaction timeout in milliseconds
+default_transaction_timeout_ms = 300000
+
+# =============================================================================
+# MAINNET NETWORKS
+# =============================================================================
+
+[[networks]]
+name = "Base"
+chain_id = 8453
+network_type = "evm"
+environment = "mainnet"
+rpc_url_env = "BASE_RPC"
+rpc_url_default = "wss://base-mainnet.g.alchemy.com/v2/demo"
+explorer_url = "https://basescan.org"
+flashblock_enabled = true
+# Credit cost per settlement on this network
+credit_cost = 1
+# Gas settings
+gas_limit = 200000
+gas_buffer_percent = 20
+# Native token for gas
+native_symbol = "ETH"
+native_name = "Ethereum"
+native_decimals = 18
+native_cmc_slug = "ethereum"
+
+[[networks.tokens]]
+symbol = "USDC"
+name = "USD Coin"
+address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+decimals = 6
+transfer_type = "erc3009"
+# EIP-712 domain for signature verification
+eip712_name = "USD Coin"
+eip712_version = "2"
+# Forwarder contract address (deploy and set this)
+forwarder_address = ""
+enabled = true
+
+# -----------------------------------------------------------------------------
+
+[[networks]]
+name = "Ethereum"
+chain_id = 1
+network_type = "evm"
+environment = "mainnet"
+rpc_url_env = "ETHEREUM_RPC"
+rpc_url_default = "https://eth-mainnet.g.alchemy.com/v2/demo"
+explorer_url = "https://etherscan.io"
+flashblock_enabled = false
+credit_cost = 3
+gas_limit = 200000
+gas_buffer_percent = 25
+native_symbol = "ETH"
+native_name = "Ethereum"
+native_decimals = 18
+native_cmc_slug = "ethereum"
+
+[[networks.tokens]]
+symbol = "USDC"
+name = "USD Coin"
+address = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+decimals = 6
+transfer_type = "erc3009"
+eip712_name = "USD Coin"
+eip712_version = "2"
+forwarder_address = ""
+enabled = true
+
+[[networks.tokens]]
+symbol = "USDT"
+name = "Tether USD"
+address = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+decimals = 6
+transfer_type = "erc2612"
+eip712_name = "Tether USD"
+eip712_version = "1"
+forwarder_address = ""
+enabled = false  # Enable when ready
+
+# -----------------------------------------------------------------------------
+
+[[networks]]
+name = "OP Mainnet"
+chain_id = 10
+network_type = "evm"
+environment = "mainnet"
+rpc_url_env = "OP_MAINNET_RPC"
+rpc_url_default = "wss://opt-mainnet.g.alchemy.com/v2/demo"
+explorer_url = "https://optimistic.etherscan.io"
+flashblock_enabled = true
+credit_cost = 1
+gas_limit = 200000
+gas_buffer_percent = 20
+native_symbol = "ETH"
+native_name = "Ethereum"
+native_decimals = 18
+native_cmc_slug = "ethereum"
+
+[[networks.tokens]]
+symbol = "USDC"
+name = "USD Coin"
+address = "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
+decimals = 6
+transfer_type = "erc3009"
+eip712_name = "USDC"
+eip712_version = "2"
+forwarder_address = ""
+enabled = true
+
+# -----------------------------------------------------------------------------
+
+[[networks]]
+name = "HyperEVM"
+chain_id = 999
+network_type = "evm"
+environment = "mainnet"
+rpc_url_env = "HYPEREVM_RPC"
+rpc_url_default = "wss://hyperliquid-mainnet.g.alchemy.com/v2/demo"
+explorer_url = "https://explorer.hyperliquid.xyz"
+flashblock_enabled = false
+credit_cost = 1
+gas_limit = 200000
+gas_buffer_percent = 20
+native_symbol = "HYPE"
+native_name = "Hyperliquid"
+native_decimals = 18
+native_cmc_slug = "hyperliquid"
+
+[[networks.tokens]]
+symbol = "USDC"
+name = "USDC"
+address = "0xb88339CB7199b77E23DB6E890353E22632Ba630f"
+decimals = 6
+transfer_type = "erc3009"
+eip712_name = "USDC"
+eip712_version = "1"
+forwarder_address = ""
+enabled = true
+
+# =============================================================================
+# TESTNET NETWORKS
+# =============================================================================
+
+[[networks]]
+name = "Base Sepolia"
+chain_id = 84532
+network_type = "evm"
+environment = "testnet"
+rpc_url_env = "BASE_SEPOLIA_RPC"
+rpc_url_default = "wss://base-sepolia.g.alchemy.com/v2/demo"
+explorer_url = "https://sepolia.basescan.org"
+flashblock_enabled = true
+credit_cost = 0  # Free for testnet
+gas_limit = 200000
+gas_buffer_percent = 20
+native_symbol = "ETH"
+native_name = "Ethereum"
+native_decimals = 18
+native_cmc_slug = "ethereum"
+
+[[networks.tokens]]
+symbol = "USDC"
+name = "USD Coin"
+address = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+decimals = 6
+transfer_type = "erc3009"
+eip712_name = "USDC"
+eip712_version = "2"
+forwarder_address = ""
+enabled = true
+
+# -----------------------------------------------------------------------------
+
+[[networks]]
+name = "Ethereum Sepolia"
+chain_id = 11155111
+network_type = "evm"
+environment = "testnet"
+rpc_url_env = "ETHEREUM_SEPOLIA_RPC"
+rpc_url_default = "https://eth-sepolia.g.alchemy.com/v2/demo"
+explorer_url = "https://sepolia.etherscan.io"
+flashblock_enabled = false
+credit_cost = 0
+gas_limit = 200000
+gas_buffer_percent = 25
+native_symbol = "ETH"
+native_name = "Ethereum"
+native_decimals = 18
+native_cmc_slug = "ethereum"
+
+[[networks.tokens]]
+symbol = "USDC"
+name = "USD Coin"
+address = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+decimals = 6
+transfer_type = "erc3009"
+eip712_name = "USDC"
+eip712_version = "2"
+forwarder_address = ""
+enabled = true
+
+# -----------------------------------------------------------------------------
+
+[[networks]]
+name = "OP Sepolia"
+chain_id = 11155420
+network_type = "evm"
+environment = "testnet"
+rpc_url_env = "OP_SEPOLIA_RPC"
+rpc_url_default = "https://opt-sepolia.g.alchemy.com/v2/demo"
+explorer_url = "https://sepolia-optimism.etherscan.io"
+flashblock_enabled = true
+credit_cost = 0
+gas_limit = 200000
+gas_buffer_percent = 20
+native_symbol = "ETH"
+native_name = "Ethereum"
+native_decimals = 18
+native_cmc_slug = "ethereum"
+
+[[networks.tokens]]
+symbol = "USDC"
+name = "USDC"
+address = "0x5fd84259d66Cd46123540766Be93DFE6D43130D7"
+decimals = 6
+transfer_type = "erc3009"
+eip712_name = "USDC"
+eip712_version = "2"
+forwarder_address = ""
+enabled = true
+
+# -----------------------------------------------------------------------------
+
+[[networks]]
+name = "HyperEVM Testnet"
+chain_id = 998
+network_type = "evm"
+environment = "testnet"
+rpc_url_env = "HYPEREVM_TESTNET_RPC"
+rpc_url_default = "wss://hyperliquid-testnet.g.alchemy.com/v2/demo"
+explorer_url = "https://testnet.explorer.hyperliquid.xyz"
+flashblock_enabled = false
+credit_cost = 0
+gas_limit = 200000
+gas_buffer_percent = 20
+native_symbol = "HYPE"
+native_name = "Hyperliquid"
+native_decimals = 18
+native_cmc_slug = "hyperliquid"
+
+[[networks.tokens]]
+symbol = "USDC"
+name = "USDC"
+address = "0x2B3370eE501B4a559b57D449569354196457D8Ab"
+decimals = 6
+transfer_type = "erc3009"
+eip712_name = "USDC"
+eip712_version = "2"
+forwarder_address = ""
+enabled = true
+
+# =============================================================================
+# FUTURE NETWORKS (Templates - disabled by default)
+# =============================================================================
+
+# Solana example (future support)
+# [[networks]]
+# name = "Solana"
+# chain_id = 0  # Not applicable for Solana
+# network_type = "solana"
+# environment = "mainnet"
+# rpc_url_env = "SOLANA_RPC"
+# rpc_url_default = "https://api.mainnet-beta.solana.com"
+# explorer_url = "https://solscan.io"
+# flashblock_enabled = false
+# credit_cost = 1
+# native_symbol = "SOL"
+# native_name = "Solana"
+# native_decimals = 9
+# native_cmc_slug = "solana"
+# 
+# [[networks.tokens]]
+# symbol = "USDC"
+# name = "USD Coin"
+# address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+# decimals = 6
+# transfer_type = "spl_token"
+# enabled = false
+
+# Arbitrum example
+# [[networks]]
+# name = "Arbitrum One"
+# chain_id = 42161
+# network_type = "evm"
+# environment = "mainnet"
+# rpc_url_env = "ARBITRUM_RPC"
+# rpc_url_default = "https://arb1.arbitrum.io/rpc"
+# explorer_url = "https://arbiscan.io"
+# flashblock_enabled = false
+# credit_cost = 1
+# gas_limit = 200000
+# gas_buffer_percent = 20
+# native_symbol = "ETH"
+# native_name = "Ethereum"
+# native_decimals = 18
+# native_cmc_slug = "ethereum"

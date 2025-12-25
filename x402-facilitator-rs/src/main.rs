@@ -23,6 +23,7 @@ mod services;
 mod middleware;
 mod routes;
 mod utils;
+mod strategies;
 
 use config::Config;
 use services::{Database, Redis, ProviderPool, PaymasterPool, VerificationService, SettlementService, TransactionMonitor, MetricsService, WebhookService};

@@ -1,0 +1,127 @@
+# x402 Facilitator - Fee Configuration
+# Dynamic fee settings that can be updated without code changes
+
+[credit_system]
+# Base credit costs per network environment
+mainnet_base_credit_cost = 1
+testnet_base_credit_cost = 0
+
+# Credit bonus tiers for purchases (USD value -> bonus percentage)
+[[credit_system.bonus_tiers]]
+min_usd = 0
+max_usd = 9.99
+bonus_percent = 0
+
+[[credit_system.bonus_tiers]]
+min_usd = 10
+max_usd = 24.99
+bonus_percent = 5
+
+[[credit_system.bonus_tiers]]
+min_usd = 25
+max_usd = 49.99
+bonus_percent = 10
+
+[[credit_system.bonus_tiers]]
+min_usd = 50
+max_usd = 99.99
+bonus_percent = 15
+
+[[credit_system.bonus_tiers]]
+min_usd = 100
+max_usd = 249.99
+bonus_percent = 20
+
+[[credit_system.bonus_tiers]]
+min_usd = 250
+max_usd = 499.99
+bonus_percent = 25
+
+[[credit_system.bonus_tiers]]
+min_usd = 500
+max_usd = 999999
+bonus_percent = 30
+
+[credit_packages]
+# Pre-defined credit packages for purchase
+[[credit_packages.packages]]
+id = "starter"
+name = "Starter Pack"
+credits = 100
+price_usd = 5.00
+bonus_credits = 0
+popular = false
+
+[[credit_packages.packages]]
+id = "basic"
+name = "Basic Pack"
+credits = 250
+price_usd = 10.00
+bonus_credits = 12
+popular = false
+
+[[credit_packages.packages]]
+id = "standard"
+name = "Standard Pack"
+credits = 500
+price_usd = 20.00
+bonus_credits = 25
+popular = true
+
+[[credit_packages.packages]]
+id = "pro"
+name = "Pro Pack"
+credits = 1000
+price_usd = 35.00
+bonus_credits = 50
+popular = false
+
+[[credit_packages.packages]]
+id = "business"
+name = "Business Pack"
+credits = 2500
+price_usd = 75.00
+bonus_credits = 187
+popular = false
+
+[[credit_packages.packages]]
+id = "enterprise"
+name = "Enterprise Pack"
+credits = 5000
+price_usd = 125.00
+bonus_credits = 500
+popular = false
+
+[testnet_credits]
+# Free testnet credits for new merchants
+initial_allocation = 1000
+# Monthly reset amount (0 = no reset)
+monthly_reset = 0
+# Maximum testnet credits per merchant
+max_balance = 10000
+
+[gas_tracking]
+# Enable automatic gas cost tracking
+enabled = true
+# Update gas prices every N minutes
+update_interval_minutes = 5
+# Gas price multiplier for safety buffer
+safety_multiplier = 1.2
+
+[rate_limits]
+# Rate limits per merchant
+verify_requests_per_minute = 60
+settle_requests_per_minute = 20
+api_requests_per_minute = 100
+
+# Global rate limits
+global_verify_per_minute = 1000
+global_settle_per_minute = 500
+
+[webhooks]
+# Webhook delivery settings
+timeout_ms = 10000
+max_retries = 3
+retry_delays_ms = [1000, 5000, 15000]
+# Signature algorithm for webhook payloads
+signature_algorithm = "hmac-sha256"

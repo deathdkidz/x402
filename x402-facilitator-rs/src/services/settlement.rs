@@ -1,8 +1,11 @@
 //! Settlement Service
 //! 
-//! Executes ERC-3009 transferWithAuthorization transactions with multi-layer safety checks:
+//! Executes token transfers using the Strategy pattern for multi-token support.
+//! Supports ERC-3009 (transferWithAuthorization) and ERC-2612 (permit + transferFrom).
+//! 
+//! Safety checks performed:
 //! 1. Network validation
-//! 2. Token validation
+//! 2. Token validation  
 //! 3. Payer extraction
 //! 4. Authorization extraction
 //! 5. Recipient verification
@@ -13,7 +16,7 @@
 //! 10. Pre-settlement balance verification (PARALLEL)
 //! 11. Replay attack protection - nonce checking (PARALLEL)
 //! 12. Gas estimation
-//! 13. Transaction execution
+//! 13. Transaction execution (via Strategy pattern)
 //! 14. Flashblock fast confirmation (200-500ms for Base/OP networks)
 //! 15. Background monitoring for non-flashblock networks
 
@@ -27,7 +30,7 @@ use alloy::providers::{Provider, ProviderBuilder};
 use alloy::network::EthereumWallet;
 use alloy::sol;
 use tokio::time::sleep;
-use crate::config::Config;
+use crate::config::{Config, TransferType};
 use crate::types::{PaymentPayload, PaymentRequirements, SettleResponse, SettlementStatus, Merchant};
 use crate::services::provider_pool::{ProviderPool, ProviderType};
 use crate::services::paymaster_pool::PaymasterPool;
@@ -36,6 +39,7 @@ use crate::services::database::{Database, CreateTransaction};
 use crate::services::verification::VerificationService;
 use crate::services::webhook::{WebhookService, WebhookEventType};
 use crate::services::metrics;
+use crate::strategies::{StrategyFactory, UnifiedPayload};
 
 // ERC-3009 interface for gasless transfers
 sol! {
@@ -67,6 +71,8 @@ pub struct SettlementService {
     database: Arc<Database>,
     verification_service: Arc<VerificationService>,
     webhook_service: Arc<WebhookService>,
+    /// Strategy factory for multi-token transfer support
+    strategy_factory: Option<Arc<StrategyFactory>>,
 }
 
 impl SettlementService {
@@ -80,7 +86,21 @@ impl SettlementService {
         verification_service: Arc<VerificationService>,
         webhook_service: Arc<WebhookService>,
     ) -> Self {
-        info!("Settlement service initialized");
+        // Initialize strategy factory if external config is available
+        let strategy_factory = config.external.as_ref().map(|ext| {
+            Arc::new(StrategyFactory::new(
+                ext.clone(),
+                provider_pool.clone(),
+                paymaster_pool.clone(),
+            ))
+        });
+
+        if strategy_factory.is_some() {
+            info!("✅ Settlement service initialized with Strategy pattern (multi-token support)");
+        } else {
+            info!("⚠️ Settlement service initialized with legacy ERC-3009 only mode");
+        }
+
         Self {
             config,
             provider_pool,
@@ -89,6 +109,7 @@ impl SettlementService {
             database,
             verification_service,
             webhook_service,
+            strategy_factory,
         }
     }
 
@@ -806,6 +827,57 @@ impl SettlementService {
 
     /// Execute the transferWithAuthorization transaction
     async fn execute_transfer(
+        &self,
+        payload: &PaymentPayload,
+        requirements: &PaymentRequirements,
+        network: &str,
+        signer: &alloy::signers::local::PrivateKeySigner,
+    ) -> Result<String, String> {
+        // Check if we should use strategy pattern
+        if let Some(ref factory) = self.strategy_factory {
+            // Get transfer type for this token
+            let transfer_type = self.config.get_transfer_type(network, &requirements.asset)
+                .unwrap_or(TransferType::Erc3009);
+            
+            // Get the appropriate strategy
+            let strategy = factory.get_strategy(network, &requirements.asset)
+                .map_err(|e| format!("Strategy error: {}", e))?;
+            
+            // Convert payload to unified format using the constructor
+            let unified = UnifiedPayload::erc3009(
+                payload.authorization.from.clone(),
+                payload.authorization.to.clone(),
+                payload.authorization.value.clone(),
+                payload.authorization.valid_after.clone(),
+                payload.authorization.valid_before.clone(),
+                payload.authorization.nonce.clone(),
+                payload.signature.clone(),
+            );
+            
+            // Verify signature locally BEFORE spending gas on transaction
+            // This catches invalid signatures at zero cost
+            info!("🔐 Verifying signature locally before settlement...");
+            strategy.verify_signature(&unified, network, &requirements.asset)
+                .await
+                .map_err(|e| format!("Signature verification failed: {:?}", e))?;
+            info!("✅ Local signature verification passed");
+            
+            info!("📤 Executing transfer via {:?} strategy...", transfer_type);
+            
+            // Execute via strategy
+            let result = strategy.execute(&unified, network, &requirements.asset, &requirements.pay_to)
+                .await
+                .map_err(|e| format!("Strategy execution failed: {:?}", e))?;
+            
+            return Ok(result.tx_hash.unwrap_or_default());
+        }
+        
+        // Legacy ERC-3009 direct execution (fallback)
+        self.execute_transfer_erc3009_legacy(payload, requirements, network, signer).await
+    }
+    
+    /// Legacy ERC-3009 direct execution (when no external config/strategies)
+    async fn execute_transfer_erc3009_legacy(
         &self,
         payload: &PaymentPayload,
         requirements: &PaymentRequirements,

@@ -47,6 +47,7 @@ tracing-appender = "0.2"
 
 # Config & Environment
 dotenvy = "0.15"
+toml = "0.8"
 
 # Crypto
 sha2 = "0.10"

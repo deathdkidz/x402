@@ -1,12 +1,26 @@
 //! x402 Facilitator Configuration Module
 //! 
 //! Handles loading and managing configuration from environment variables
-//! Supports multiple networks and tokens with EIP-712 domains
+//! and external TOML files for networks/tokens.
+//! 
+//! Configuration sources:
+//! - Environment variables: Core service settings
+//! - config/networks.toml: Network and token definitions (optional, overrides hardcoded)
+//! - config/fees.toml: Credit system and fee settings
+
+pub mod external;
 
 use std::collections::HashMap;
 use std::env;
+use std::sync::Arc;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
+use tracing::{info, warn};
+
+pub use external::{
+    ExternalConfig, TransferType, NetworkType,
+    ConfigLoaderError,
+};
 
 /// Token configuration for supported tokens on each network
 #[derive(Debug, Clone)]
@@ -15,7 +29,9 @@ pub struct TokenConfig {
     pub name: String,
     pub address: String,
     pub decimals: u8,
+    pub transfer_type: TransferType,
     pub eip712: Option<Eip712Config>,
+    pub forwarder_address: Option<String>,
 }
 
 /// EIP-712 domain configuration for typed data signing
@@ -27,19 +43,23 @@ pub struct Eip712Config {
 
 /// Native token configuration
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct NativeTokenConfig {
     pub symbol: String,
     pub name: String,
+    pub decimals: u8,
     pub cmc_slug: String,
 }
 
 /// Network configuration including RPC and supported tokens
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct NetworkConfig {
     pub chain_id: u64,
+    pub network_type: NetworkType,
     pub rpc_url: String,
+    pub flashblock_enabled: bool,
+    pub credit_cost: i32,
+    pub gas_limit: u64,
+    pub gas_buffer_percent: u32,
     pub native_token: NativeTokenConfig,
     pub tokens: Vec<TokenConfig>,
 }
@@ -57,46 +77,77 @@ pub struct DatabaseConfig {
 
 /// Main application configuration
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Config {
+    // Service settings
     pub service_name: String,
     pub service_description: String,
     pub port: u16,
     pub https_port: u16,
     pub use_https: bool,
     pub node_env: String,
+    
+    // Paymaster
     pub paymaster_private_keys: Vec<String>,
+    
+    // Networks (from external config or hardcoded fallback)
     pub mainnet_networks: Vec<String>,
     pub testnet_networks: Vec<String>,
     pub networks: HashMap<String, NetworkConfig>,
+    
+    // Rate limiting
     pub rate_limit_window_ms: u64,
     pub rate_limit_max_requests: u32,
-    pub log_level: String,
-    pub redis_url: String,
-    pub coinmarketcap_api_key: String,
-    pub database: DatabaseConfig,
-    pub transaction_monitor_interval_ms: u64,
-    pub transaction_timeout_ms: u64,
-    pub settlement_gas_limit: u64,
-    pub settlement_timeout_ms: u64,
-    pub webhook_timeout_ms: u64,
-    pub webhook_retry_attempts: u32,
-    pub webhook_retry_delays: Vec<u64>,
-    pub security_ban_threshold: u32,
-    pub security_ban_duration_ms: u64,
-    pub security_cleanup_interval_ms: u64,
-    pub gas_buffer_percentage: u32,
     pub verify_rate_limit_window_ms: u64,
     pub verify_rate_limit_max: u32,
     pub settle_rate_limit_window_ms: u64,
     pub settle_rate_limit_max: u32,
+    
+    // Logging
+    pub log_level: String,
+    
+    // External services
+    pub redis_url: String,
+    pub coinmarketcap_api_key: String,
+    pub database: DatabaseConfig,
+    
+    // Transaction settings
+    pub transaction_monitor_interval_ms: u64,
+    pub transaction_timeout_ms: u64,
+    pub settlement_gas_limit: u64,
+    pub settlement_timeout_ms: u64,
+    
+    // Webhooks
+    pub webhook_timeout_ms: u64,
+    pub webhook_retry_attempts: u32,
+    pub webhook_retry_delays: Vec<u64>,
+    
+    // Security
+    pub security_ban_threshold: u32,
+    pub security_ban_duration_ms: u64,
+    pub security_cleanup_interval_ms: u64,
+    pub gas_buffer_percentage: u32,
     pub internal_api_secret: Option<String>,
+    
+    /// External configuration (networks, tokens, fees from TOML files)
+    pub external: Option<Arc<ExternalConfig>>,
 }
 
 impl Config {
-    /// Load configuration from environment variables
+    /// Load configuration from environment variables and external files
     pub fn from_env() -> Result<Self, ConfigError> {
         dotenvy::dotenv().ok();
+
+        // Try to load external configuration first
+        let external_config = match ExternalConfig::load() {
+            Ok(ext) => {
+                info!("✅ External configuration loaded successfully");
+                Some(Arc::new(ext))
+            }
+            Err(e) => {
+                warn!("⚠️ External config not loaded ({}), using defaults", e);
+                None
+            }
+        };
 
         // Load paymaster private keys (comma-separated)
         let paymaster_keys = env::var("PAYMASTER_PRIVATE_KEYS")
@@ -112,191 +163,31 @@ impl Config {
             return Err(ConfigError::InvalidConfig("PAYMASTER_PRIVATE_KEYS contains no valid keys".to_string()));
         }
 
-        // Load network lists
-        let mainnet_networks: Vec<String> = env::var("MAINNET_NETWORKS")
-            .unwrap_or_default()
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
+        // Build networks - prefer external config, fallback to hardcoded
+        let (mainnet_networks, testnet_networks, networks) = if let Some(ref ext) = external_config {
+            let mainnet = ext.mainnet_networks();
+            let testnet = ext.testnet_networks();
+            let networks = Self::build_networks_from_external(ext);
+            (mainnet, testnet, networks)
+        } else {
+            // Fallback to env vars and hardcoded networks
+            let mainnet: Vec<String> = env::var("MAINNET_NETWORKS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
 
-        let testnet_networks: Vec<String> = env::var("TESTNET_NETWORKS")
-            .unwrap_or_default()
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
+            let testnet: Vec<String> = env::var("TESTNET_NETWORKS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
 
-        // Build network configurations
-        let mut networks = HashMap::new();
-
-        // Base Mainnet
-        networks.insert("Base".to_string(), NetworkConfig {
-            chain_id: 8453,
-            rpc_url: env::var("BASE_RPC").unwrap_or_else(|_| "wss://base-mainnet.g.alchemy.com/v2/demo".to_string()),
-            native_token: NativeTokenConfig {
-                symbol: "ETH".to_string(),
-                name: "Ethereum".to_string(),
-                cmc_slug: "ethereum".to_string(),
-            },
-            tokens: vec![TokenConfig {
-                symbol: "USDC".to_string(),
-                name: "USD Coin".to_string(),
-                address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".to_string(),
-                decimals: 6,
-                eip712: Some(Eip712Config {
-                    name: "USD Coin".to_string(),
-                    version: "2".to_string(),
-                }),
-            }],
-        });
-
-        // Ethereum Mainnet
-        networks.insert("Ethereum".to_string(), NetworkConfig {
-            chain_id: 1,
-            rpc_url: env::var("ETHEREUM_RPC").unwrap_or_else(|_| "https://eth-mainnet.g.alchemy.com/v2/demo".to_string()),
-            native_token: NativeTokenConfig {
-                symbol: "ETH".to_string(),
-                name: "Ethereum".to_string(),
-                cmc_slug: "ethereum".to_string(),
-            },
-            tokens: vec![TokenConfig {
-                symbol: "USDC".to_string(),
-                name: "USD Coin".to_string(),
-                address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
-                decimals: 6,
-                eip712: Some(Eip712Config {
-                    name: "USD Coin".to_string(),
-                    version: "2".to_string(),
-                }),
-            }],
-        });
-
-        // HyperEVM
-        networks.insert("HyperEVM".to_string(), NetworkConfig {
-            chain_id: 999,
-            rpc_url: env::var("HYPEREVM_RPC").unwrap_or_else(|_| "wss://hyperliquid-mainnet.g.alchemy.com/v2/demo".to_string()),
-            native_token: NativeTokenConfig {
-                symbol: "HYPE".to_string(),
-                name: "Hyperliquid".to_string(),
-                cmc_slug: "hyperliquid".to_string(),
-            },
-            tokens: vec![TokenConfig {
-                symbol: "USDC".to_string(),
-                name: "USDC".to_string(),
-                address: "0xb88339CB7199b77E23DB6E890353E22632Ba630f".to_string(),
-                decimals: 6,
-                eip712: Some(Eip712Config {
-                    name: "USDC".to_string(),
-                    version: "1".to_string(),
-                }),
-            }],
-        });
-
-        // OP Mainnet
-        networks.insert("OP Mainnet".to_string(), NetworkConfig {
-            chain_id: 10,
-            rpc_url: env::var("OP_MAINNET_RPC").unwrap_or_else(|_| "wss://opt-mainnet.g.alchemy.com/v2/demo".to_string()),
-            native_token: NativeTokenConfig {
-                symbol: "ETH".to_string(),
-                name: "Ethereum".to_string(),
-                cmc_slug: "ethereum".to_string(),
-            },
-            tokens: vec![TokenConfig {
-                symbol: "USDC".to_string(),
-                name: "USD Coin".to_string(),
-                address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85".to_string(),
-                decimals: 6,
-                eip712: Some(Eip712Config {
-                    name: "USDC".to_string(),
-                    version: "2".to_string(),
-                }),
-            }],
-        });
-
-        // Base Sepolia (Testnet)
-        networks.insert("Base Sepolia".to_string(), NetworkConfig {
-            chain_id: 84532,
-            rpc_url: env::var("BASE_SEPOLIA_RPC").unwrap_or_else(|_| "wss://base-sepolia.g.alchemy.com/v2/demo".to_string()),
-            native_token: NativeTokenConfig {
-                symbol: "ETH".to_string(),
-                name: "Ethereum".to_string(),
-                cmc_slug: "ethereum".to_string(),
-            },
-            tokens: vec![TokenConfig {
-                symbol: "USDC".to_string(),
-                name: "USD Coin".to_string(),
-                address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e".to_string(),
-                decimals: 6,
-                eip712: Some(Eip712Config {
-                    name: "USDC".to_string(),
-                    version: "2".to_string(),
-                }),
-            }],
-        });
-
-        // Ethereum Sepolia (Testnet)
-        networks.insert("Ethereum Sepolia".to_string(), NetworkConfig {
-            chain_id: 11155111,
-            rpc_url: env::var("ETHEREUM_SEPOLIA_RPC").unwrap_or_else(|_| "https://eth-sepolia.g.alchemy.com/v2/demo".to_string()),
-            native_token: NativeTokenConfig {
-                symbol: "ETH".to_string(),
-                name: "Ethereum".to_string(),
-                cmc_slug: "ethereum".to_string(),
-            },
-            tokens: vec![TokenConfig {
-                symbol: "USDC".to_string(),
-                name: "USD Coin".to_string(),
-                address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238".to_string(),
-                decimals: 6,
-                eip712: Some(Eip712Config {
-                    name: "USDC".to_string(),
-                    version: "2".to_string(),
-                }),
-            }],
-        });
-
-        // HyperEVM Testnet
-        networks.insert("HyperEVM Testnet".to_string(), NetworkConfig {
-            chain_id: 998,
-            rpc_url: env::var("HYPEREVM_TESTNET_RPC").unwrap_or_else(|_| "wss://hyperliquid-testnet.g.alchemy.com/v2/demo".to_string()),
-            native_token: NativeTokenConfig {
-                symbol: "HYPE".to_string(),
-                name: "Hyperliquid".to_string(),
-                cmc_slug: "hyperliquid".to_string(),
-            },
-            tokens: vec![TokenConfig {
-                symbol: "USDC".to_string(),
-                name: "USDC".to_string(),
-                address: "0x2B3370eE501B4a559b57D449569354196457D8Ab".to_string(),
-                decimals: 6,
-                eip712: Some(Eip712Config {
-                    name: "USDC".to_string(),
-                    version: "2".to_string(),
-                }),
-            }],
-        });
-
-        // OP Sepolia (Testnet)
-        networks.insert("OP Sepolia".to_string(), NetworkConfig {
-            chain_id: 11155420,
-            rpc_url: env::var("OP_SEPOLIA_RPC").unwrap_or_else(|_| "https://opt-sepolia.g.alchemy.com/v2/demo".to_string()),
-            native_token: NativeTokenConfig {
-                symbol: "ETH".to_string(),
-                name: "Ethereum".to_string(),
-                cmc_slug: "ethereum".to_string(),
-            },
-            tokens: vec![TokenConfig {
-                symbol: "USDC".to_string(),
-                name: "USDC".to_string(),
-                address: "0x5fd84259d66Cd46123540766Be93DFE6D43130D7".to_string(),
-                decimals: 6,
-                eip712: Some(Eip712Config {
-                    name: "USDC".to_string(),
-                    version: "2".to_string(),
-                }),
-            }],
-        });
+            let networks = Self::build_default_networks();
+            (mainnet, testnet, networks)
+        };
 
         Ok(Config {
             service_name: env::var("SERVICE_NAME").unwrap_or_else(|_| "x402 Facilitator".to_string()),
@@ -338,13 +229,209 @@ impl Config {
             settle_rate_limit_window_ms: env::var("SETTLE_RATE_LIMIT_WINDOW_MS").unwrap_or_else(|_| "60000".to_string()).parse().unwrap_or(60000),
             settle_rate_limit_max: env::var("SETTLE_RATE_LIMIT_MAX").unwrap_or_else(|_| "20".to_string()).parse().unwrap_or(20),
             internal_api_secret: env::var("INTERNAL_API_SECRET").ok().filter(|s| !s.is_empty()),
+            external: external_config,
         })
+    }
+
+    /// Build networks from external configuration
+    fn build_networks_from_external(ext: &Arc<ExternalConfig>) -> HashMap<String, NetworkConfig> {
+        let mut networks = HashMap::new();
+        
+        for net in &ext.networks.networks {
+            let rpc_url = ext.get_rpc_url(&net.name)
+                .unwrap_or_else(|| net.rpc_url_default.clone().unwrap_or_default());
+            
+            let tokens: Vec<TokenConfig> = net.tokens.iter()
+                .filter(|t| t.enabled)
+                .map(|t| TokenConfig {
+                    symbol: t.symbol.clone(),
+                    name: t.name.clone(),
+                    address: t.address.clone(),
+                    decimals: t.decimals,
+                    transfer_type: t.transfer_type.clone(),
+                    eip712: t.eip712_name.as_ref().map(|name| Eip712Config {
+                        name: name.clone(),
+                        version: t.eip712_version.clone().unwrap_or_else(|| "1".to_string()),
+                    }),
+                    forwarder_address: t.forwarder_address.clone().filter(|s| !s.is_empty()),
+                })
+                .collect();
+            
+            networks.insert(net.name.clone(), NetworkConfig {
+                chain_id: net.chain_id,
+                network_type: net.network_type.clone(),
+                rpc_url,
+                flashblock_enabled: net.flashblock_enabled,
+                credit_cost: net.credit_cost,
+                gas_limit: net.gas_limit,
+                gas_buffer_percent: net.gas_buffer_percent,
+                native_token: NativeTokenConfig {
+                    symbol: net.native_symbol.clone(),
+                    name: net.native_name.clone(),
+                    decimals: net.native_decimals,
+                    cmc_slug: net.native_cmc_slug.clone().unwrap_or_default(),
+                },
+                tokens,
+            });
+        }
+        
+        networks
+    }
+
+    /// Build default hardcoded networks (fallback when no external config)
+    fn build_default_networks() -> HashMap<String, NetworkConfig> {
+        let mut networks = HashMap::new();
+        
+        // Helper to create default token config
+        let usdc_token = |address: &str, eip712_name: &str, version: &str| -> TokenConfig {
+            TokenConfig {
+                symbol: "USDC".to_string(),
+                name: "USD Coin".to_string(),
+                address: address.to_string(),
+                decimals: 6,
+                transfer_type: TransferType::Erc3009,
+                eip712: Some(Eip712Config {
+                    name: eip712_name.to_string(),
+                    version: version.to_string(),
+                }),
+                forwarder_address: None,
+            }
+        };
+        
+        let eth_native = || NativeTokenConfig {
+            symbol: "ETH".to_string(),
+            name: "Ethereum".to_string(),
+            decimals: 18,
+            cmc_slug: "ethereum".to_string(),
+        };
+        
+        // Base Mainnet
+        networks.insert("Base".to_string(), NetworkConfig {
+            chain_id: 8453,
+            network_type: NetworkType::Evm,
+            rpc_url: env::var("BASE_RPC").unwrap_or_else(|_| "wss://base-mainnet.g.alchemy.com/v2/demo".to_string()),
+            flashblock_enabled: true,
+            credit_cost: 1,
+            gas_limit: 200000,
+            gas_buffer_percent: 20,
+            native_token: eth_native(),
+            tokens: vec![usdc_token("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "USD Coin", "2")],
+        });
+        
+        // Ethereum Mainnet
+        networks.insert("Ethereum".to_string(), NetworkConfig {
+            chain_id: 1,
+            network_type: NetworkType::Evm,
+            rpc_url: env::var("ETHEREUM_RPC").unwrap_or_else(|_| "https://eth-mainnet.g.alchemy.com/v2/demo".to_string()),
+            flashblock_enabled: false,
+            credit_cost: 3,
+            gas_limit: 200000,
+            gas_buffer_percent: 25,
+            native_token: eth_native(),
+            tokens: vec![usdc_token("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "USD Coin", "2")],
+        });
+        
+        // OP Mainnet
+        networks.insert("OP Mainnet".to_string(), NetworkConfig {
+            chain_id: 10,
+            network_type: NetworkType::Evm,
+            rpc_url: env::var("OP_MAINNET_RPC").unwrap_or_else(|_| "wss://opt-mainnet.g.alchemy.com/v2/demo".to_string()),
+            flashblock_enabled: true,
+            credit_cost: 1,
+            gas_limit: 200000,
+            gas_buffer_percent: 20,
+            native_token: eth_native(),
+            tokens: vec![usdc_token("0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", "USDC", "2")],
+        });
+        
+        // HyperEVM
+        networks.insert("HyperEVM".to_string(), NetworkConfig {
+            chain_id: 999,
+            network_type: NetworkType::Evm,
+            rpc_url: env::var("HYPEREVM_RPC").unwrap_or_else(|_| "wss://hyperliquid-mainnet.g.alchemy.com/v2/demo".to_string()),
+            flashblock_enabled: false,
+            credit_cost: 1,
+            gas_limit: 200000,
+            gas_buffer_percent: 20,
+            native_token: NativeTokenConfig {
+                symbol: "HYPE".to_string(),
+                name: "Hyperliquid".to_string(),
+                decimals: 18,
+                cmc_slug: "hyperliquid".to_string(),
+            },
+            tokens: vec![usdc_token("0xb88339CB7199b77E23DB6E890353E22632Ba630f", "USDC", "1")],
+        });
+        
+        // Base Sepolia (Testnet)
+        networks.insert("Base Sepolia".to_string(), NetworkConfig {
+            chain_id: 84532,
+            network_type: NetworkType::Evm,
+            rpc_url: env::var("BASE_SEPOLIA_RPC").unwrap_or_else(|_| "wss://base-sepolia.g.alchemy.com/v2/demo".to_string()),
+            flashblock_enabled: true,
+            credit_cost: 0,
+            gas_limit: 200000,
+            gas_buffer_percent: 20,
+            native_token: eth_native(),
+            tokens: vec![usdc_token("0x036CbD53842c5426634e7929541eC2318f3dCF7e", "USDC", "2")],
+        });
+        
+        // Ethereum Sepolia (Testnet)
+        networks.insert("Ethereum Sepolia".to_string(), NetworkConfig {
+            chain_id: 11155111,
+            network_type: NetworkType::Evm,
+            rpc_url: env::var("ETHEREUM_SEPOLIA_RPC").unwrap_or_else(|_| "https://eth-sepolia.g.alchemy.com/v2/demo".to_string()),
+            flashblock_enabled: false,
+            credit_cost: 0,
+            gas_limit: 200000,
+            gas_buffer_percent: 25,
+            native_token: eth_native(),
+            tokens: vec![usdc_token("0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", "USDC", "2")],
+        });
+        
+        // OP Sepolia (Testnet)
+        networks.insert("OP Sepolia".to_string(), NetworkConfig {
+            chain_id: 11155420,
+            network_type: NetworkType::Evm,
+            rpc_url: env::var("OP_SEPOLIA_RPC").unwrap_or_else(|_| "https://opt-sepolia.g.alchemy.com/v2/demo".to_string()),
+            flashblock_enabled: true,
+            credit_cost: 0,
+            gas_limit: 200000,
+            gas_buffer_percent: 20,
+            native_token: eth_native(),
+            tokens: vec![usdc_token("0x5fd84259d66Cd46123540766Be93DFE6D43130D7", "USDC", "2")],
+        });
+        
+        // HyperEVM Testnet
+        networks.insert("HyperEVM Testnet".to_string(), NetworkConfig {
+            chain_id: 998,
+            network_type: NetworkType::Evm,
+            rpc_url: env::var("HYPEREVM_TESTNET_RPC").unwrap_or_else(|_| "wss://hyperliquid-testnet.g.alchemy.com/v2/demo".to_string()),
+            flashblock_enabled: false,
+            credit_cost: 0,
+            gas_limit: 200000,
+            gas_buffer_percent: 20,
+            native_token: NativeTokenConfig {
+                symbol: "HYPE".to_string(),
+                name: "Hyperliquid".to_string(),
+                decimals: 18,
+                cmc_slug: "hyperliquid".to_string(),
+            },
+            tokens: vec![usdc_token("0x2B3370eE501B4a559b57D449569354196457D8Ab", "USDC", "2")],
+        });
+        
+        networks
     }
 
     /// Get all supported networks (mainnet + testnet)
     pub fn all_networks(&self) -> Vec<String> {
         let mut all = self.mainnet_networks.clone();
         all.extend(self.testnet_networks.clone());
+        
+        // If empty, use keys from networks map
+        if all.is_empty() {
+            all = self.networks.keys().cloned().collect();
+        }
+        
         all
     }
 
@@ -372,6 +459,32 @@ impl Config {
             chain_id: network_config.chain_id,
             verifying_contract: token.address.clone(),
         })
+    }
+
+    /// Get transfer type for a token
+    pub fn get_transfer_type(&self, network: &str, token_address: &str) -> Option<TransferType> {
+        self.get_token_by_address(network, token_address)
+            .map(|t| t.transfer_type.clone())
+    }
+
+    /// Get forwarder address for a token
+    pub fn get_forwarder_address(&self, network: &str, token_address: &str) -> Option<String> {
+        self.get_token_by_address(network, token_address)
+            .and_then(|t| t.forwarder_address.clone())
+    }
+
+    /// Get credit cost for a network
+    pub fn get_credit_cost(&self, network: &str) -> i32 {
+        self.networks.get(network)
+            .map(|n| n.credit_cost)
+            .unwrap_or(1)
+    }
+
+    /// Check if network supports flashblocks
+    pub fn is_flashblock_network(&self, network: &str) -> bool {
+        self.networks.get(network)
+            .map(|n| n.flashblock_enabled)
+            .unwrap_or(false)
     }
 
     /// Normalize network name (handle case variations)
@@ -405,7 +518,6 @@ impl Config {
 
 /// EIP-712 domain for typed data signing
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Eip712Domain {
     pub name: String,
     pub version: String,
@@ -421,14 +533,15 @@ pub enum ConfigError {
     
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
+    
+    #[error("External config error: {0}")]
+    ExternalConfig(#[from] ConfigLoaderError),
 }
 
 /// Global configuration instance
-#[allow(dead_code)]
 pub static CONFIG: Lazy<RwLock<Option<Config>>> = Lazy::new(|| RwLock::new(None));
 
 /// Initialize global configuration
-#[allow(dead_code)]
 pub fn init_config() -> Result<(), ConfigError> {
     let config = Config::from_env()?;
     *CONFIG.write() = Some(config);
@@ -436,36 +549,8 @@ pub fn init_config() -> Result<(), ConfigError> {
 }
 
 /// Get reference to global configuration
-#[allow(dead_code)]
 pub fn get_config() -> parking_lot::RwLockReadGuard<'static, Option<Config>> {
     CONFIG.read()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_normalize_network_name() {
-        let config = Config {
-            networks: HashMap::from([
-                ("Base".to_string(), NetworkConfig {
-                    chain_id: 8453,
-                    rpc_url: "https://example.com".to_string(),
-                    native_token: NativeTokenConfig {
-                        symbol: "ETH".to_string(),
-                        name: "Ethereum".to_string(),
-                        cmc_slug: "ethereum".to_string(),
-                    },
-                    tokens: vec![],
-                }),
-            ]),
-            ..Default::default()
-        };
-
-        assert_eq!(config.normalize_network_name("base"), "Base");
-        assert_eq!(config.normalize_network_name("BASE"), "Base");
-    }
 }
 
 impl Default for Config {
@@ -510,6 +595,40 @@ impl Default for Config {
             settle_rate_limit_window_ms: 60000,
             settle_rate_limit_max: 20,
             internal_api_secret: None,
+            external: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_network_name() {
+        let config = Config {
+            networks: HashMap::from([
+                ("Base".to_string(), NetworkConfig {
+                    chain_id: 8453,
+                    network_type: NetworkType::Evm,
+                    rpc_url: "https://example.com".to_string(),
+                    flashblock_enabled: true,
+                    credit_cost: 1,
+                    gas_limit: 200000,
+                    gas_buffer_percent: 20,
+                    native_token: NativeTokenConfig {
+                        symbol: "ETH".to_string(),
+                        name: "Ethereum".to_string(),
+                        decimals: 18,
+                        cmc_slug: "ethereum".to_string(),
+                    },
+                    tokens: vec![],
+                }),
+            ]),
+            ..Default::default()
+        };
+
+        assert_eq!(config.normalize_network_name("base"), "Base");
+        assert_eq!(config.normalize_network_name("BASE"), "Base");
     }
 }
