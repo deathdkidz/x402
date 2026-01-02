@@ -506,29 +506,7 @@ export default function DemoPage() {
                 <p className="text-slate-400">Your premium content is now unlocked</p>
               </div>
 
-              {/* Premium Content with Lazy Loading */}
-              <div className="relative w-full aspect-square max-w-2xl mx-auto mb-6 rounded-lg overflow-hidden bg-slate-900/60">
-                {/* Skeleton loader while image loads */}
-                {!imageLoaded && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-slate-800/60 animate-pulse">
-                    <div className="text-center">
-                      <div className="text-4xl mb-2">🐱</div>
-                      <p className="text-slate-400 text-sm">Loading premium content...</p>
-                    </div>
-                  </div>
-                )}
-                {imageUrl && (
-                  <img
-                    src={imageUrl}
-                    alt="Premium Dancing Cat"
-                    className={`w-full h-full object-contain transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
-                    loading="lazy"
-                    onLoad={() => setImageLoaded(true)}
-                  />
-                )}
-              </div>
-
-              {/* Transaction Info */}
+              {/* Transaction Info - Show immediately after success */}
               {transactionHash && (
                 <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 mb-6">
                   <div className="flex items-start gap-2">
@@ -561,6 +539,31 @@ export default function DemoPage() {
                   </div>
                 </div>
               )}
+
+              {/* Premium Content with Lazy Loading */}
+              <div className="relative w-full aspect-square max-w-2xl mx-auto mb-6 rounded-lg overflow-hidden bg-slate-900/60">
+                {/* Skeleton loader while image loads */}
+                {!imageLoaded && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-slate-800/60">
+                    <div className="text-center">
+                      <svg className="animate-spin h-8 w-8 text-cyan-400 mx-auto mb-3" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <p className="text-slate-400 text-sm">Loading your content...</p>
+                    </div>
+                  </div>
+                )}
+                {imageUrl && (
+                  <img
+                    src={imageUrl}
+                    alt="Premium Dancing Cat"
+                    className={`w-full h-full object-contain transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                    loading="lazy"
+                    onLoad={() => setImageLoaded(true)}
+                  />
+                )}
+              </div>
 
               {/* Reset Button */}
               <button
