@@ -287,7 +287,6 @@ Verify a payment authorization without executing it. Validates the signature, ch
 ```json
 {
   "isValid": true,
-  "is_valid": true,
   "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21"
 }
 ```
@@ -297,9 +296,7 @@ Verify a payment authorization without executing it. Validates the signature, ch
 ```json
 {
   "isValid": false,
-  "is_valid": false,
-  "invalidReason": "Insufficient balance: has 500000, needs 1000000",
-  "invalid_reason": "Insufficient balance: has 500000, needs 1000000"
+  "invalidReason": "Insufficient balance: has 500000, needs 1000000"
 }
 ```
 
@@ -307,11 +304,9 @@ Verify a payment authorization without executing it. Validates the signature, ch
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `isValid` | boolean | Whether the authorization is valid (camelCase) |
-| `is_valid` | boolean | Whether the authorization is valid (snake_case, for Python compatibility) |
-| `payer` | string \| null | Payer address if valid |
-| `invalidReason` | string \| null | Reason for invalidity (camelCase) |
-| `invalid_reason` | string \| null | Reason for invalidity (snake_case, for Python compatibility) |
+| `isValid` | boolean | Whether the authorization is valid |
+| `payer` | string \| null | Payer address (only present if valid) |
+| `invalidReason` | string \| null | Reason for invalidity (only present if invalid) |
 
 #### Common Invalid Reasons
 
@@ -386,8 +381,6 @@ Same structure as `/verify`:
 {
   "success": true,
   "transaction": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-  "transactionHash": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-  "transactionStatus": "completed",
   "network": "base",
   "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
   "status": "completed"
@@ -399,9 +392,7 @@ Same structure as `/verify`:
 ```json
 {
   "success": true,
-  "transaction": "0xabcdef1234567890...",
-  "transactionHash": "0xabcdef1234567890...",
-  "transactionStatus": "preconfirmed",
+  "transaction": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
   "network": "base",
   "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
   "status": "preconfirmed",
@@ -414,9 +405,7 @@ Same structure as `/verify`:
 ```json
 {
   "success": true,
-  "transaction": "0xabcdef1234567890...",
-  "transactionHash": "0xabcdef1234567890...",
-  "transactionStatus": "completed",
+  "transaction": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
   "network": "base",
   "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
   "status": "completed",
@@ -442,12 +431,10 @@ Same structure as `/verify`:
 |-------|------|-------------|
 | `success` | boolean | Whether settlement was successful |
 | `transaction` | string \| null | Transaction hash (0x-prefixed) |
-| `transactionHash` | string \| null | Transaction hash (duplicate for compatibility) |
-| `transactionStatus` | string \| null | Status: `"pending"`, `"preconfirmed"`, `"completed"`, `"failed"` |
 | `network` | string | Network where settlement was attempted |
 | `payer` | string \| null | Payer address |
 | `errorReason` | string \| null | Error message if failed |
-| `status` | string \| null | Settlement status enum |
+| `status` | string \| null | Settlement status: `"pending"`, `"preconfirmed"`, `"completed"`, `"failed"` |
 | `cached` | boolean \| null | `true` if this was a duplicate request |
 | `message` | string \| null | Additional message |
 

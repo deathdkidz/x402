@@ -195,10 +195,6 @@ pub struct VerifyResponse {
     /// Whether the payment is valid
     pub is_valid: bool,
     
-    /// Python compatibility field
-    #[serde(rename = "is_valid")]
-    pub is_valid_snake: bool,
-    
     /// Payer address (if valid)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payer: Option<String>,
@@ -206,30 +202,22 @@ pub struct VerifyResponse {
     /// Reason for invalidity
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invalid_reason: Option<String>,
-    
-    /// Python compatibility field
-    #[serde(rename = "invalid_reason", skip_serializing_if = "Option::is_none")]
-    pub invalid_reason_snake: Option<String>,
 }
 
 impl VerifyResponse {
     pub fn valid(payer: String) -> Self {
         Self {
             is_valid: true,
-            is_valid_snake: true,
             payer: Some(payer),
             invalid_reason: None,
-            invalid_reason_snake: None,
         }
     }
 
     pub fn invalid(reason: String) -> Self {
         Self {
             is_valid: false,
-            is_valid_snake: false,
             payer: None,
-            invalid_reason: Some(reason.clone()),
-            invalid_reason_snake: Some(reason),
+            invalid_reason: Some(reason),
         }
     }
 }
@@ -262,7 +250,7 @@ pub struct SettleResponse {
     /// Whether settlement was successful
     pub success: bool,
     
-    /// Transaction hash
+    /// Transaction hash (0x-prefixed)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction: Option<String>,
     
@@ -277,21 +265,13 @@ pub struct SettleResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_reason: Option<String>,
     
-    /// Transaction hash (duplicate for compatibility)
+    /// Settlement status
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub transaction_hash: Option<String>,
-    
-    /// Current transaction status
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transaction_status: Option<String>,
+    pub status: Option<SettlementStatus>,
     
     /// Whether result was cached
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cached: Option<bool>,
-    
-    /// Settlement status
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<SettlementStatus>,
     
     /// Additional message
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -302,14 +282,12 @@ impl SettleResponse {
     pub fn success(network: String, payer: String, tx_hash: String, status: SettlementStatus) -> Self {
         Self {
             success: true,
-            transaction: Some(tx_hash.clone()),
+            transaction: Some(tx_hash),
             network,
             payer: Some(payer),
             error_reason: None,
-            transaction_hash: Some(tx_hash),
-            transaction_status: Some(status.to_string()),
-            cached: None,
             status: Some(status),
+            cached: None,
             message: None,
         }
     }
@@ -321,10 +299,8 @@ impl SettleResponse {
             network,
             payer: None,
             error_reason: Some(reason),
-            transaction_hash: None,
-            transaction_status: None,
-            cached: None,
             status: Some(SettlementStatus::Failed),
+            cached: None,
             message: None,
         }
     }
@@ -332,14 +308,12 @@ impl SettleResponse {
     pub fn cached(network: String, payer: String, tx_hash: String, status: SettlementStatus) -> Self {
         Self {
             success: true,
-            transaction: Some(tx_hash.clone()),
+            transaction: Some(tx_hash),
             network,
             payer: Some(payer),
             error_reason: None,
-            transaction_hash: Some(tx_hash),
-            transaction_status: Some(status.to_string()),
-            cached: Some(true),
             status: Some(status),
+            cached: Some(true),
             message: Some("Transaction already processed".to_string()),
         }
     }
