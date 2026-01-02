@@ -142,6 +142,8 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       },
     },
   }));
+
+  return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         {children}
