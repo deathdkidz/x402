@@ -530,13 +530,23 @@ Content-Type: application/json
                 language="bash"
                 code={`curl -X POST https://x402.netpay.id/settle \\
   -H "Content-Type: application/json" \\
-  -H "X-API-Key: pk_live_xxxxx" \\
+  -H "Authorization: Bearer pk_live_xxxxx" \\
   -d '{
-    "xPayment": "base64-encoded-payment-header",
+    "x402Version": 1,
+    "paymentPayload": {
+      "authorization": {...},
+      "signature": "0x..."
+    },
     "paymentRequirements": {
       "scheme": "exact",
       "network": "base",
-      "maxAmountRequired": "10000"
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "payTo": "0xYourWalletAddress",
+      "maxAmountRequired": "10000",
+      "resource": "https://api.example.com/data",
+      "description": "API access",
+      "mimeType": "application/json",
+      "maxTimeoutSeconds": 60
     }
   }'`}
               />
@@ -550,15 +560,19 @@ Content-Type: application/json
                 code={`// Success
 {
   "success": true,
-  "transactionHash": "0x...",
+  "transaction": "0xabcdef1234567890...",
+  "transactionHash": "0xabcdef1234567890...",
+  "transactionStatus": "completed",
   "network": "base",
+  "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
   "status": "completed"
 }
 
 // Failure
 {
   "success": false,
-  "error": "Insufficient balance",
+  "network": "base",
+  "errorReason": "Insufficient credits",
   "status": "failed"
 }`}
               />
@@ -587,7 +601,7 @@ Content-Type: application/json
                   id="verify-headers"
                   language="text"
                   code={`Content-Type: application/json
-X-API-Key: pk_live_xxxxx`}
+Authorization: Bearer pk_live_xxxxx`}
                 />
 
                 <h4 className="text-sm font-medium text-white">Request Body</h4>
@@ -595,12 +609,28 @@ X-API-Key: pk_live_xxxxx`}
                   id="verify-body"
                   language="json"
                   code={`{
-  "xPayment": "base64-encoded-payment-header",
+  "x402Version": 1,
+  "paymentPayload": {
+    "authorization": {
+      "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+      "to": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+      "value": "1000000",
+      "validAfter": "0",
+      "validBefore": "1735776000",
+      "nonce": "0x00000000000000000000000000000001"
+    },
+    "signature": "0x..."
+  },
   "paymentRequirements": {
     "scheme": "exact",
     "network": "base",
-    "maxAmountRequired": "10000",
-    "resource": "/api/endpoint"
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "payTo": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+    "maxAmountRequired": "1000000",
+    "resource": "https://api.example.com/data",
+    "description": "API access",
+    "mimeType": "application/json",
+    "maxTimeoutSeconds": 60
   }
 }`}
                 />
@@ -609,12 +639,19 @@ X-API-Key: pk_live_xxxxx`}
                 <CodeBlock
                   id="verify-response"
                   language="json"
-                  code={`{
-  "valid": true,
-  "payer": "0x...",
-  "amount": "10000",
-  "network": "base",
-  "reason": null
+                  code={`// Valid
+{
+  "isValid": true,
+  "is_valid": true,
+  "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21"
+}
+
+// Invalid
+{
+  "isValid": false,
+  "is_valid": false,
+  "invalidReason": "Insufficient balance: has 500000, needs 1000000",
+  "invalid_reason": "Insufficient balance: has 500000, needs 1000000"
 }`}
                 />
               </CardContent>
@@ -643,7 +680,7 @@ X-API-Key: pk_live_xxxxx`}
                   id="settle-headers"
                   language="text"
                   code={`Content-Type: application/json
-X-API-Key: pk_live_xxxxx`}
+Authorization: Bearer pk_live_xxxxx`}
                 />
 
                 <h4 className="text-sm font-medium text-white">Request Body</h4>
@@ -651,13 +688,28 @@ X-API-Key: pk_live_xxxxx`}
                   id="settle-body"
                   language="json"
                   code={`{
-  "xPayment": "base64-encoded-payment-header",
+  "x402Version": 1,
+  "paymentPayload": {
+    "authorization": {
+      "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+      "to": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+      "value": "1000000",
+      "validAfter": "0",
+      "validBefore": "1735776000",
+      "nonce": "0x00000000000000000000000000000001"
+    },
+    "signature": "0x..."
+  },
   "paymentRequirements": {
     "scheme": "exact",
     "network": "base",
-    "maxAmountRequired": "10000",
-    "resource": "/api/endpoint",
-    "description": "API Payment"
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "payTo": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+    "maxAmountRequired": "1000000",
+    "resource": "https://api.example.com/data",
+    "description": "API access",
+    "mimeType": "application/json",
+    "maxTimeoutSeconds": 60
   }
 }`}
                 />
@@ -668,11 +720,30 @@ X-API-Key: pk_live_xxxxx`}
                   language="json"
                   code={`{
   "success": true,
-  "transactionHash": "0xabc123...",
+  "transaction": "0xabcdef1234567890...",
+  "transactionHash": "0xabcdef1234567890...",
+  "transactionStatus": "completed",
   "network": "base",
-  "status": "completed",
-  "payer": "0x...",
-  "amount": "10000"
+  "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+  "status": "completed"
+}
+
+// Preconfirmed (flashblock)
+{
+  "success": true,
+  "transaction": "0xabcdef1234567890...",
+  "transactionHash": "0xabcdef1234567890...",
+  "transactionStatus": "preconfirmed",
+  "status": "preconfirmed",
+  "message": "Transaction preconfirmed via flashblock"
+}
+
+// Failure
+{
+  "success": false,
+  "network": "base",
+  "errorReason": "Insufficient credits",
+  "status": "failed"
 }`}
                 />
 
@@ -709,25 +780,43 @@ X-API-Key: pk_live_xxxxx`}
                   id="networks-response"
                   language="json"
                   code={`{
+  "success": true,
   "mainnet": [
     {
-      "network": "Base",
+      "network": "base",
       "chainId": 8453,
       "tokens": [{
         "symbol": "USDC",
+        "name": "USD Coin",
         "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
         "decimals": 6,
         "eip712": {
           "name": "USD Coin",
-          "version": "2"
+          "version": "2",
+          "verifyingContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
         }
       }]
+    },
+    {
+      "network": "ethereum",
+      "chainId": 1,
+      "tokens": [...]
+    },
+    {
+      "network": "optimism",
+      "chainId": 10,
+      "tokens": [...]
     }
   ],
   "testnet": [
     {
-      "network": "Base Sepolia",
+      "network": "base-sepolia",
       "chainId": 84532,
+      "tokens": [...]
+    },
+    {
+      "network": "sepolia",
+      "chainId": 11155111,
       "tokens": [...]
     }
   ]
@@ -752,9 +841,8 @@ X-API-Key: pk_live_xxxxx`}
                 Set your network to a testnet for development:
               </p>
               <ul className="list-disc list-inside text-gray-400 space-y-1">
-                <li>Base Sepolia (chainId: 84532)</li>
-                <li>Ethereum Sepolia (chainId: 11155111)</li>
-                <li>OP Sepolia (chainId: 11155420)</li>
+                <li>base-sepolia (chainId: 84532)</li>
+                <li>sepolia (chainId: 11155111)</li>
               </ul>
             </div>
 

@@ -2,65 +2,295 @@
 
 ## Overview
 
-The NetPay web dashboard needs the following API endpoints to be implemented in the x402-facilitator app. These endpoints handle merchant authentication, session management, and dashboard data retrieval.
+The NetPay web dashboard uses the x402-facilitator-rs API for merchant authentication, session management, and dashboard data retrieval.
 
 All endpoints should:
-- Use the existing MySQL database connection
-- Validate the `X-API-Key` header for internal API calls
 - Return JSON responses with `{ success: true, data: ... }` or `{ success: false, error: "..." }` format
+- Use proper authentication headers
 
 ---
 
-## 1. Authentication Endpoints
+## Base URL
 
-### POST `/merchant/auth`
-
-Authenticate a merchant wallet. If wallet doesn't exist, create new merchant account.
-
-**Request Body:**
-```json
-{
-  "address": "0x...",    // Wallet address
-  "message": "Sign in to netpay.id\n\nWallet: 0x...\nTimestamp: 2024-12-23T...",
-  "signature": "0x..."   // Signed message
-}
+```
+Production: https://x402.netpay.id
+Development: http://localhost:8080
 ```
 
-**Logic:**
-1. Verify the signature matches the address using ethers.js `verifyMessage()`
-2. Normalize address to lowercase
-3. Check if merchant exists in `merchants` table by `auth_address`
-4. If NOT exists:
-   - Create new merchant with:
-     - `auth_address` = address
-     - `business_name` = "New Merchant" (or generate from address)
-     - `api_key` = generate UUID or random string
-     - `credit_balance` = 0
-     - `status` = "active"
-   - Set `isNewUser = true`
-5. If exists, set `isNewUser = false`
-6. Create session in `merchant_sessions` table:
-   - `merchant_id` = merchant.id
-   - `session_token` = generate UUID
-   - `auth_address` = address
-   - `signature` = signature
-   - `expires_at` = NOW() + 30 days
-7. Update `merchants.last_active_at = NOW()`
+---
+
+## 1. Public Endpoints
+
+### GET `/`
+
+Returns service information and available endpoints.
 
 **Response:**
 ```json
 {
-  "merchant": {
-    "id": 1,
-    "authAddress": "0x...",
-    "businessName": "Acme Corp",
-    "apiKey": "pk_live_...",
-    "creditBalance": 9394,
-    "status": "active",
-    "createdAt": "2024-10-01T..."
+  "name": "x402 Facilitator",
+  "description": "Payment facilitator service for x402 protocol",
+  "endpoints": {
+    "health": "GET /health",
+    "networks": "GET /networks",
+    "verify": "POST /verify",
+    "settle": "POST /settle"
   },
-  "sessionToken": "uuid-session-token",
-  "isNewUser": false
+  "mainnetNetworks": ["base", "ethereum", "optimism"],
+  "testnetNetworks": ["base-sepolia", "sepolia"]
+}
+```
+
+---
+
+### GET `/health`
+
+Health check endpoint for load balancers and monitoring.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "service": "x402-facilitator",
+  "timestamp": 1767355984545,
+  "uptime": 672595.523348902
+}
+```
+
+---
+
+### GET `/networks`
+
+Returns list of supported networks and their token configurations.
+
+**Response:**
+```json
+{
+  "success": true,
+  "mainnet": [
+    {
+      "network": "base",
+      "chainId": 8453,
+      "tokens": [
+        {
+          "symbol": "USDC",
+          "name": "USD Coin",
+          "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "decimals": 6,
+          "eip712": {
+            "name": "USD Coin",
+            "version": "2",
+            "verifyingContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+          }
+        }
+      ]
+    }
+  ],
+  "testnet": [
+    {
+      "network": "base-sepolia",
+      "chainId": 84532,
+      "tokens": [
+        {
+          "symbol": "USDC",
+          "name": "USD Coin",
+          "address": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+          "decimals": 6,
+          "eip712": {
+            "name": "USD Coin",
+            "version": "2",
+            "verifyingContract": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+### GET `/metrics`
+
+Prometheus-compatible metrics endpoint.
+
+**Response:** `text/plain; version=0.0.4; charset=utf-8`
+
+---
+
+## 2. Payment Endpoints
+
+### POST `/verify`
+
+Verify a payment authorization without executing it.
+
+**Headers:**
+| Header | Type | Required | Description |
+|--------|------|----------|-------------|
+| `Content-Type` | string | Yes | Must be `application/json` |
+| `Authorization` | string | Yes | Merchant API key: `Bearer <api_key>` |
+
+**Request Body:**
+```json
+{
+  "x402Version": 1,
+  "paymentPayload": {
+    "authorization": {
+      "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+      "to": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+      "value": "1000000",
+      "validAfter": "0",
+      "validBefore": "1735776000",
+      "nonce": "0x0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    "signature": "0x..."
+  },
+  "paymentRequirements": {
+    "scheme": "exact",
+    "network": "base",
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "payTo": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+    "maxAmountRequired": "1000000",
+    "resource": "https://api.example.com/premium/data",
+    "description": "Premium API access",
+    "mimeType": "application/json",
+    "maxTimeoutSeconds": 60
+  }
+}
+```
+
+**Success Response:**
+```json
+{
+  "isValid": true,
+  "is_valid": true,
+  "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21"
+}
+```
+
+**Invalid Response:**
+```json
+{
+  "isValid": false,
+  "is_valid": false,
+  "invalidReason": "Insufficient balance: has 500000, needs 1000000",
+  "invalid_reason": "Insufficient balance: has 500000, needs 1000000"
+}
+```
+
+---
+
+### POST `/settle`
+
+Execute a payment settlement on the blockchain.
+
+**Headers:**
+| Header | Type | Required | Description |
+|--------|------|----------|-------------|
+| `Content-Type` | string | Yes | Must be `application/json` |
+| `Authorization` | string | Yes | Merchant API key: `Bearer <api_key>` |
+
+**Request Body:** Same structure as `/verify`
+
+**Success Response:**
+```json
+{
+  "success": true,
+  "transaction": "0xabcdef1234567890...",
+  "transactionHash": "0xabcdef1234567890...",
+  "transactionStatus": "completed",
+  "network": "base",
+  "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+  "status": "completed"
+}
+```
+
+**Preconfirmed Response (Flashblock Networks):**
+```json
+{
+  "success": true,
+  "transaction": "0xabcdef1234567890...",
+  "transactionHash": "0xabcdef1234567890...",
+  "transactionStatus": "preconfirmed",
+  "network": "base",
+  "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+  "status": "preconfirmed",
+  "message": "Transaction preconfirmed via flashblock"
+}
+```
+
+**Failure Response:**
+```json
+{
+  "success": false,
+  "network": "base",
+  "errorReason": "Insufficient credits",
+  "status": "failed"
+}
+```
+
+**Settlement Statuses:**
+| Status | Description |
+|--------|-------------|
+| `pending` | Transaction submitted, awaiting confirmation |
+| `preconfirmed` | Transaction preconfirmed via flashblock (fast) |
+| `completed` | Transaction confirmed on-chain |
+| `failed` | Transaction failed |
+
+---
+
+## 3. Merchant Authentication Endpoints
+
+### GET `/merchant/siwe/nonce`
+
+Generate a SIWE (Sign-In with Ethereum) nonce for authentication.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "nonce": "a1b2c3d4e5f6789012345678901234567890123456789012345678901234"
+  }
+}
+```
+
+---
+
+### POST `/merchant/siwe/verify`
+
+Verify SIWE message and authenticate merchant.
+
+**Request Body:**
+```json
+{
+  "message": "example.com wants you to sign in with your Ethereum account:\n0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21\n\nSign in to x402 Facilitator\n\nURI: https://example.com\nVersion: 1\nChain ID: 1\nNonce: a1b2c3d4e5f6...\nIssued At: 2026-01-02T12:00:00.000Z",
+  "signature": "0x..."
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "merchant": {
+      "id": 1,
+      "authAddress": "0x742d35cc6634c0532925a3b844bc9e7595f1de21",
+      "businessName": "Merchant 0x742d35",
+      "apiKey": "pk_live_abc123...",
+      "creditBalance": 100,
+      "mainnetCreditBalance": 100,
+      "testnetCreditsRemaining": 1000,
+      "testnetCreditsUsed": 0,
+      "status": "active",
+      "createdAt": "2026-01-02T12:00:00Z"
+    },
+    "sessionToken": "uuid-session-token-here",
+    "isNewUser": false,
+    "isAdmin": true,
+    "adminRole": "superadmin"
+  }
 }
 ```
 
@@ -68,7 +298,7 @@ Authenticate a merchant wallet. If wallet doesn't exist, create new merchant acc
 
 ### POST `/merchant/session`
 
-Validate a session token and return merchant data.
+Validate an existing session token.
 
 **Request Body:**
 ```json
@@ -77,23 +307,23 @@ Validate a session token and return merchant data.
 }
 ```
 
-**Logic:**
-1. Find session in `merchant_sessions` where `session_token = ?` AND `expires_at > NOW()`
-2. If not found, return error
-3. Get merchant from `merchants` table
-4. Update `merchants.last_active_at = NOW()`
-
 **Response:**
 ```json
 {
-  "merchant": {
-    "id": 1,
-    "authAddress": "0x...",
-    "businessName": "Acme Corp",
-    "apiKey": "pk_live_...",
-    "creditBalance": 9394,
-    "status": "active",
-    "createdAt": "2024-10-01T..."
+  "success": true,
+  "data": {
+    "merchant": {
+      "id": 1,
+      "authAddress": "0x742d35cc6634c0532925a3b844bc9e7595f1de21",
+      "businessName": "My Business",
+      "apiKey": "pk_live_abc123...",
+      "creditBalance": 100,
+      "mainnetCreditBalance": 100,
+      "testnetCreditsRemaining": 1000,
+      "testnetCreditsUsed": 0,
+      "status": "active",
+      "createdAt": "2026-01-02T12:00:00Z"
+    }
   }
 }
 ```
@@ -102,7 +332,7 @@ Validate a session token and return merchant data.
 
 ### POST `/merchant/logout`
 
-Invalidate a session.
+Logout and invalidate session.
 
 **Request Body:**
 ```json
@@ -111,240 +341,312 @@ Invalidate a session.
 }
 ```
 
-**Logic:**
-1. Delete from `merchant_sessions` where `session_token = ?`
-
 **Response:**
 ```json
 {
-  "success": true
+  "success": true,
+  "data": {
+    "success": true
+  }
 }
 ```
 
 ---
 
-## 2. Dashboard Data Endpoints
+## 4. Dashboard Data Endpoints
 
-### GET `/merchant/:merchantId/dashboard/stats`
+All merchant endpoints require authentication via:
+- `X-Session-Token` header with a valid session token from SIWE authentication
+- `X-Internal-Secret` header for internal service calls
+
+### GET `/merchant/:merchant_id/dashboard/stats`
 
 Get dashboard overview statistics.
 
 **Response:**
 ```json
 {
-  "creditBalance": 9394,
-  "totalTransactions": 156,
-  "totalVolume": 4523.50,
-  "successRate": 98.5,
-  "recentTransactions": [
-    {
-      "id": 123,
-      "payerAddress": "0x...",
-      "recipientAddress": "0x...",
-      "amount": 25.00,
-      "asset": "USDC",
-      "network": "base",
-      "status": "completed",
-      "txHash": "0x...",
-      "resource": "/api/premium",
-      "creditCost": 1,
-      "errorMessage": null,
-      "createdAt": "2024-12-23T...",
-      "updatedAt": "2024-12-23T..."
-    }
-  ],
-  "volumeByDay": [
-    { "date": "2024-12-17", "volume": 523.00 },
-    { "date": "2024-12-18", "volume": 892.50 }
-  ]
-}
-```
-
-**SQL Queries:**
-```sql
--- Get credit balance
-SELECT credit_balance FROM merchants WHERE id = ?
-
--- Get transaction stats
-SELECT 
-  COUNT(*) as totalTransactions,
-  COALESCE(SUM(CASE WHEN status = 'completed' THEN amount / 1000000 END), 0) as totalVolume,
-  COUNT(CASE WHEN status = 'completed' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) as successRate
-FROM transactions WHERE merchant_id = ?
-
--- Get recent transactions (last 10)
-SELECT * FROM transactions WHERE merchant_id = ? ORDER BY created_at DESC LIMIT 10
-
--- Get volume by day (last 7 days)
-SELECT 
-  DATE(created_at) as date,
-  COALESCE(SUM(CASE WHEN status = 'completed' THEN amount / 1000000 END), 0) as volume
-FROM transactions 
-WHERE merchant_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-GROUP BY DATE(created_at)
-ORDER BY date
-```
-
----
-
-### GET `/merchant/:merchantId/transactions`
-
-Get paginated transaction list.
-
-**Query Parameters:**
-- `page` (default: 1)
-- `limit` (default: 20)
-- `status` (optional): pending, preconfirmed, completed, failed
-- `network` (optional): base, base-sepolia, ethereum
-- `search` (optional): search by address or tx hash
-
-**Response:**
-```json
-{
-  "transactions": [...],
-  "pagination": {
-    "page": 1,
-    "limit": 20,
-    "total": 156,
-    "totalPages": 8
+  "success": true,
+  "data": {
+    "creditBalance": 100,
+    "mainnetCreditBalance": 100,
+    "testnetCreditsRemaining": 1000,
+    "testnetCreditsUsed": 50,
+    "testnetCreditsAllocated": 1000,
+    "currentPeriod": "2026-01",
+    "totalTransactions": 150,
+    "totalVolume": 5000.50,
+    "successRate": 98.5,
+    "recentTransactions": [
+      {
+        "id": 123,
+        "payerAddress": "0x...",
+        "recipientAddress": "0x...",
+        "amount": 10.5,
+        "asset": "USDC",
+        "network": "base",
+        "status": "completed",
+        "txHash": "0x...",
+        "resource": "https://api.example.com/data",
+        "creditCost": 1,
+        "errorMessage": null,
+        "createdAt": "2026-01-02T12:00:00Z",
+        "updatedAt": "2026-01-02T12:00:05Z"
+      }
+    ],
+    "volumeByDay": [
+      {"date": "2026-01-01", "volume": 1000.0},
+      {"date": "2026-01-02", "volume": 1500.0}
+    ]
   }
 }
 ```
 
-**SQL Query:**
-```sql
-SELECT * FROM transactions 
-WHERE merchant_id = ?
-  AND (? IS NULL OR status = ?)
-  AND (? IS NULL OR network = ?)
-  AND (? IS NULL OR payer_address LIKE ? OR transaction_hash LIKE ?)
-ORDER BY created_at DESC
-LIMIT ? OFFSET ?
-```
-
 ---
 
-### GET `/merchant/:merchantId/credits`
+### GET `/merchant/:merchant_id/transactions`
 
-Get credit balance and history.
-
-**Response:**
-```json
-{
-  "balance": 9394,
-  "lifetimePurchased": 10000,
-  "lifetimeUsed": 606,
-  "usedLast30Days": 45,
-  "transactions": [
-    {
-      "id": 1,
-      "type": "purchase",
-      "amount": 5000,
-      "balanceBefore": 4394,
-      "balanceAfter": 9394,
-      "description": "Credit purchase",
-      "createdAt": "2024-12-20T..."
-    }
-  ],
-  "purchases": [
-    {
-      "id": 1,
-      "network": "base",
-      "txHash": "0x...",
-      "tokenAmount": 50.00,
-      "creditAmount": 5000,
-      "status": "confirmed",
-      "createdAt": "2024-12-20T..."
-    }
-  ]
-}
-```
-
-**SQL Queries:**
-```sql
--- Get merchant balance and lifetime stats
-SELECT credit_balance, lifetime_credits_purchased, lifetime_credits_used 
-FROM merchants WHERE id = ?
-
--- Get usage last 30 days
-SELECT COALESCE(SUM(ABS(amount)), 0) as usedLast30Days
-FROM credit_transactions 
-WHERE merchant_id = ? AND type = 'settlement_fee' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-
--- Get credit transactions
-SELECT * FROM credit_transactions WHERE merchant_id = ? ORDER BY created_at DESC LIMIT 50
-
--- Get credit purchases
-SELECT * FROM credit_purchases WHERE merchant_id = ? ORDER BY created_at DESC LIMIT 20
-```
-
----
-
-### GET `/merchant/:merchantId/analytics`
-
-Get analytics data.
+Get paginated transaction list.
 
 **Query Parameters:**
-- `period`: 7d, 30d, 90d, all (default: 30d)
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `page` | integer | 1 | Page number (min: 1) |
+| `limit` | integer | 20 | Items per page (max: 100) |
+| `status` | string | - | Filter: `pending`, `completed`, `failed` |
+| `network` | string | - | Filter by network |
+| `search` | string | - | Search by payer address or tx hash |
 
 **Response:**
 ```json
 {
-  "totalVolume": 4523.50,
-  "totalCount": 156,
-  "avgTransaction": 29.00,
-  "successRate": 98.5,
-  "volumeByNetwork": [
-    { "name": "base", "value": 4000.00, "percentage": 88.4 },
-    { "name": "ethereum", "value": 523.50, "percentage": 11.6 }
-  ],
-  "volumeByAsset": [
-    { "name": "USDC", "value": 4200.00, "percentage": 92.8 },
-    { "name": "USDT", "value": 323.50, "percentage": 7.2 }
-  ],
-  "dailyVolume": [
-    { "date": "12/17", "volume": 523.00, "count": 15, "successRate": 100 }
-  ],
-  "hourlyDistribution": [
-    { "hour": 0, "count": 5 },
-    { "hour": 1, "count": 3 }
+  "success": true,
+  "data": {
+    "transactions": [
+      {
+        "id": 123,
+        "payerAddress": "0x...",
+        "recipientAddress": "0x...",
+        "amount": 10.5,
+        "asset": "USDC",
+        "network": "base",
+        "status": "completed",
+        "txHash": "0x...",
+        "resource": "https://api.example.com/data",
+        "creditCost": 1,
+        "errorMessage": null,
+        "createdAt": "2026-01-02T12:00:00Z",
+        "updatedAt": "2026-01-02T12:00:05Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 150,
+      "totalPages": 8
+    }
+  }
+}
+```
+
+---
+
+### GET `/merchant/:merchant_id/credits`
+
+Get merchant credit balance and history.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "balance": 100,
+    "mainnetBalance": 100,
+    "testnetRemaining": 1000,
+    "testnetUsed": 50,
+    "testnetAllocated": 1000,
+    "currentPeriod": "2026-01",
+    "lifetimePurchased": 500,
+    "lifetimeUsed": 400,
+    "usedLast30Days": 50,
+    "transactions": [
+      {
+        "id": 1,
+        "type": "debit",
+        "amount": 1.0,
+        "balanceBefore": 101.0,
+        "balanceAfter": 100.0,
+        "description": "Settlement on base",
+        "createdAt": "2026-01-02T12:00:00Z"
+      }
+    ],
+    "purchases": [
+      {
+        "id": 1,
+        "network": "base",
+        "txHash": "0x...",
+        "tokenAmount": 100.0,
+        "creditAmount": 100,
+        "status": "completed",
+        "createdAt": "2026-01-01T10:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+### GET `/merchant/:merchant_id/credits/packages`
+
+Get available credit top-up packages.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "name": "Starter",
+      "description": "Get started with x402",
+      "creditAmount": 100,
+      "priceUsdc": 10.0,
+      "bonusCredits": 0,
+      "totalCredits": 100,
+      "isPopular": false
+    },
+    {
+      "id": 2,
+      "name": "Growth",
+      "description": "Best for growing businesses",
+      "creditAmount": 500,
+      "priceUsdc": 45.0,
+      "bonusCredits": 50,
+      "totalCredits": 550,
+      "isPopular": true
+    }
   ]
 }
 ```
 
 ---
 
-### GET `/merchant/:merchantId/settings`
+### POST `/merchant/:merchant_id/credits/topup`
+
+Create a credit top-up order.
+
+**Request Body:**
+```json
+{
+  "packageId": 1,
+  "network": "base"
+}
+```
+
+Or for custom amount:
+```json
+{
+  "creditAmount": 200,
+  "network": "base"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "orderId": "uuid-order-id",
+    "merchantId": 1,
+    "creditAmount": 100,
+    "bonusCredits": 0,
+    "totalCredits": 100,
+    "priceUsdc": 10.0,
+    "network": "base",
+    "status": "pending",
+    "paymentAddress": "0x...",
+    "expiresAt": "2026-01-02T13:00:00Z",
+    "createdAt": "2026-01-02T12:00:00Z"
+  }
+}
+```
+
+---
+
+### GET `/merchant/:merchant_id/analytics`
+
+Get merchant analytics data.
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `period` | string | `"30d"` | Time period: `"7d"`, `"30d"`, `"90d"`, `"all"` |
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "totalVolume": 50000.0,
+    "totalCount": 1500,
+    "avgTransaction": 33.33,
+    "successRate": 98.5,
+    "volumeByNetwork": [
+      {"name": "base", "value": 40000.0, "percentage": 80.0},
+      {"name": "ethereum", "value": 10000.0, "percentage": 20.0}
+    ],
+    "volumeByAsset": [
+      {"name": "USDC", "value": 50000.0, "percentage": 100.0}
+    ],
+    "dailyVolume": [
+      {"date": "2026-01-01", "volume": 1000.0, "count": 50, "successRate": 98.0},
+      {"date": "2026-01-02", "volume": 1500.0, "count": 75, "successRate": 99.0}
+    ],
+    "hourlyDistribution": [
+      {"hour": 0, "count": 10},
+      {"hour": 1, "count": 5}
+    ]
+  }
+}
+```
+
+---
+
+### GET `/merchant/:merchant_id/settings`
 
 Get merchant settings.
 
 **Response:**
 ```json
 {
-  "merchant": {
-    "id": 1,
-    "businessName": "Acme Corp",
-    "businessEmail": "contact@acme.com",
-    "website": "https://acme.com",
-    "walletAddress": "0x...",
-    "supportEmail": "support@acme.com",
-    "description": "Leading AI solutions provider",
-    "apiKey": "pk_live_...",
-    "createdAt": "2024-10-01T..."
-  },
-  "notifications": {
-    "emailSettlements": true,
-    "emailFailures": true,
-    "emailCredits": true,
-    "emailWeekly": false,
-    "emailMarketing": false
+  "success": true,
+  "data": {
+    "merchant": {
+      "id": 1,
+      "businessName": "My Business",
+      "businessEmail": "contact@mybusiness.com",
+      "website": "https://mybusiness.com",
+      "walletAddress": "0x...",
+      "supportEmail": "support@mybusiness.com",
+      "description": "We provide premium APIs",
+      "apiKey": "pk_live_abc123...",
+      "createdAt": "2026-01-01T00:00:00Z"
+    },
+    "notifications": {
+      "emailSettlements": true,
+      "emailFailures": true,
+      "emailCredits": true,
+      "emailWeekly": false,
+      "emailMarketing": false
+    }
   }
 }
 ```
 
 ---
 
-### PUT `/merchant/:merchantId/settings`
+### PUT `/merchant/:merchant_id/settings`
 
 Update merchant settings.
 
@@ -352,10 +654,10 @@ Update merchant settings.
 ```json
 {
   "merchant": {
-    "businessName": "Acme Corp Updated",
-    "businessEmail": "new@acme.com",
-    "website": "https://acme.com",
-    "supportEmail": "support@acme.com",
+    "businessName": "Updated Business Name",
+    "businessEmail": "new@mybusiness.com",
+    "website": "https://mybusiness.com",
+    "supportEmail": "support@mybusiness.com",
     "description": "Updated description"
   },
   "notifications": {
@@ -371,126 +673,131 @@ Update merchant settings.
 **Response:**
 ```json
 {
-  "success": true
+  "success": true,
+  "data": {
+    "message": "Settings updated successfully"
+  }
 }
 ```
 
 ---
 
-## 3. Database Schema Requirements
+## 5. Network Identifiers
 
-Make sure these tables exist:
+| Network | Identifier | Chain ID | Type |
+|---------|------------|----------|------|
+| Base | `base` | 8453 | Mainnet |
+| Ethereum | `ethereum` | 1 | Mainnet |
+| Optimism | `optimism` | 10 | Mainnet |
+| Base Sepolia | `base-sepolia` | 84532 | Testnet |
+| Sepolia | `sepolia` | 11155111 | Testnet |
 
-```sql
--- Merchants table (should already exist)
--- Add these columns if missing:
-ALTER TABLE merchants ADD COLUMN IF NOT EXISTS business_email VARCHAR(255);
-ALTER TABLE merchants ADD COLUMN IF NOT EXISTS website VARCHAR(255);
-ALTER TABLE merchants ADD COLUMN IF NOT EXISTS support_email VARCHAR(255);
-ALTER TABLE merchants ADD COLUMN IF NOT EXISTS description TEXT;
-ALTER TABLE merchants ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP;
+---
 
--- Merchant sessions table
-CREATE TABLE IF NOT EXISTS merchant_sessions (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  merchant_id INT NOT NULL,
-  session_token VARCHAR(255) NOT NULL UNIQUE,
-  auth_address VARCHAR(42) NOT NULL,
-  signature TEXT,
-  expires_at TIMESTAMP NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE CASCADE,
-  INDEX idx_session_token (session_token),
-  INDEX idx_expires_at (expires_at)
-);
+## 6. Token Amounts
 
--- Merchant notification settings (optional - can store as JSON in merchants table)
-CREATE TABLE IF NOT EXISTS merchant_notifications (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  merchant_id INT NOT NULL UNIQUE,
-  email_settlements BOOLEAN DEFAULT TRUE,
-  email_failures BOOLEAN DEFAULT TRUE,
-  email_credits BOOLEAN DEFAULT TRUE,
-  email_weekly BOOLEAN DEFAULT FALSE,
-  email_marketing BOOLEAN DEFAULT FALSE,
-  FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE CASCADE
-);
+All token amounts are specified in the token's smallest unit:
+
+| Token | Decimals | 1 Token | Example |
+|-------|----------|---------|---------|
+| USDC | 6 | `1000000` | `"1000000"` = 1 USDC |
+
+---
+
+## 7. Error Handling
+
+### HTTP Status Codes
+
+| Status | Meaning |
+|--------|---------|
+| 200 | Request processed (check response body for result) |
+| 400 | Invalid request body or validation error |
+| 401 | Unauthorized - missing or invalid authentication |
+| 403 | Forbidden - authenticated but not authorized |
+| 500 | Internal server error |
+
+### Error Response Format
+
+```json
+{
+  "success": false,
+  "error": "Error message here"
+}
+```
+
+### Common Errors
+
+| Error | Description |
+|-------|-------------|
+| `Unauthorized: Missing authentication` | No auth header provided |
+| `Unauthorized: Invalid or expired session` | Session token invalid |
+| `Forbidden: Access denied` | Not authorized for this resource |
+| `Invalid request body` | Malformed JSON |
+| `Validation error: scheme must be "exact"` | Invalid scheme value |
+| `Insufficient credits` | Merchant has no credits |
+| `Unsupported network` | Network not configured |
+
+---
+
+## 8. Rate Limiting
+
+Rate limits are applied per API key/session:
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| POST /verify | 100 | per minute |
+| POST /settle | 50 | per minute |
+| GET endpoints | 1000 | per minute |
+
+Rate limit headers in response:
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1735776060
 ```
 
 ---
 
-## 4. Security Considerations
+## 9. Testing Examples
 
-1. **API Key Validation**: All endpoints should validate `X-API-Key` header
-2. **Signature Verification**: Use ethers.js `verifyMessage()` for wallet auth
-3. **Session Expiry**: Clean up expired sessions periodically
-4. **Rate Limiting**: Add rate limiting to auth endpoints
-5. **Input Validation**: Validate all input parameters
-
----
-
-## 5. Implementation Notes
-
-1. **File Structure** (suggested):
-```
-src/
-  routes/
-    merchant.ts         # All merchant API routes
-  services/
-    merchantAuth.ts     # Auth logic
-    merchantDashboard.ts # Dashboard data logic
-  middleware/
-    apiKeyAuth.ts       # API key validation middleware
-```
-
-2. **Dependencies**:
-```bash
-npm install ethers uuid
-```
-
-3. **Example Route Handler**:
-```typescript
-// POST /merchant/auth
-app.post('/merchant/auth', async (req, res) => {
-  try {
-    const { address, message, signature } = req.body;
-    
-    // Verify signature
-    const recoveredAddress = ethers.verifyMessage(message, signature);
-    if (recoveredAddress.toLowerCase() !== address.toLowerCase()) {
-      return res.status(401).json({ success: false, error: 'Invalid signature' });
-    }
-    
-    // Check/create merchant and session...
-    const result = await merchantAuthService.authenticate(address, signature);
-    
-    res.json({ success: true, ...result });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-```
-
----
-
-## 6. Testing
-
-Test the endpoints with these curl commands:
+### cURL Examples
 
 ```bash
-# Auth
-curl -X POST https://api.netpay.id/merchant/auth \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-internal-key" \
-  -d '{"address":"0x...","message":"...","signature":"0x..."}'
+# Health check
+curl https://x402.netpay.id/health
 
-# Session validation
-curl -X POST https://api.netpay.id/merchant/session \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-internal-key" \
-  -d '{"sessionToken":"..."}'
+# Get networks
+curl https://x402.netpay.id/networks
 
-# Dashboard stats
-curl https://api.netpay.id/merchant/1/dashboard/stats \
-  -H "X-API-Key: your-internal-key"
+# Get SIWE nonce
+curl https://x402.netpay.id/merchant/siwe/nonce
+
+# Verify SIWE
+curl -X POST https://x402.netpay.id/merchant/siwe/verify \
+  -H "Content-Type: application/json" \
+  -d '{"message": "...", "signature": "0x..."}'
+
+# Get dashboard stats (with session)
+curl https://x402.netpay.id/merchant/1/dashboard/stats \
+  -H "X-Session-Token: uuid-session-token"
+
+# Verify payment
+curl -X POST https://x402.netpay.id/verify \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer pk_live_abc123..." \
+  -d '{
+    "x402Version": 1,
+    "paymentPayload": {...},
+    "paymentRequirements": {...}
+  }'
+
+# Settle payment
+curl -X POST https://x402.netpay.id/settle \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer pk_live_abc123..." \
+  -d '{
+    "x402Version": 1,
+    "paymentPayload": {...},
+    "paymentRequirements": {...}
+  }'
 ```

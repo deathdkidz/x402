@@ -84,24 +84,38 @@ export default function DocsPage() {
 
               <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
                 <h3 className="text-lg font-bold text-slate-100 mb-3">Supported Networks</h3>
-                <ul className="space-y-2">
-                  <li className="flex items-center gap-2 text-slate-300">
-                    <span className="w-2 h-2 bg-cyan-400 rounded-full"></span>
-                    Base Sepolia (Testnet)
-                  </li>
-                  <li className="flex items-center gap-2 text-slate-300">
-                    <span className="w-2 h-2 bg-cyan-400 rounded-full"></span>
-                    Ethereum Sepolia (Testnet)
-                  </li>
-                  <li className="flex items-center gap-2 text-slate-300">
-                    <span className="w-2 h-2 bg-cyan-400 rounded-full"></span>
-                    Base (Mainnet)
-                  </li>
-                  <li className="flex items-center gap-2 text-slate-300">
-                    <span className="w-2 h-2 bg-cyan-400 rounded-full"></span>
-                    Ethereum (Mainnet)
-                  </li>
-                </ul>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-200 mb-2">Mainnet</h4>
+                    <ul className="space-y-2">
+                      <li className="flex items-center gap-2 text-slate-300">
+                        <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+                        base (Chain ID: 8453)
+                      </li>
+                      <li className="flex items-center gap-2 text-slate-300">
+                        <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+                        ethereum (Chain ID: 1)
+                      </li>
+                      <li className="flex items-center gap-2 text-slate-300">
+                        <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+                        optimism (Chain ID: 10)
+                      </li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-200 mb-2">Testnet</h4>
+                    <ul className="space-y-2">
+                      <li className="flex items-center gap-2 text-slate-300">
+                        <span className="w-2 h-2 bg-cyan-400 rounded-full"></span>
+                        base-sepolia (Chain ID: 84532)
+                      </li>
+                      <li className="flex items-center gap-2 text-slate-300">
+                        <span className="w-2 h-2 bg-cyan-400 rounded-full"></span>
+                        sepolia (Chain ID: 11155111)
+                      </li>
+                    </ul>
+                  </div>
+                </div>
               </div>
 
               <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
@@ -165,29 +179,26 @@ export default function DocsPage() {
                   <code className="text-cyan-400 font-mono">{`{
   "x402Version": 1,
   "paymentPayload": {
-    "x402Version": 1,
-    "payload": {
-      "authorization": {
-        "from": "0x1234...5678",
-        "to": "0xMERCHANT_ADDRESS",
-        "value": "1000000",
-        "validAfter": "0",
-        "validBefore": "9999999999",
-        "nonce": "0xNONCE_BYTES32"
-      },
-      "signature": "0xSIGNATURE_HEX"
-    }
+    "authorization": {
+      "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+      "to": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+      "value": "1000000",
+      "validAfter": "0",
+      "validBefore": "1735776000",
+      "nonce": "0x0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    "signature": "0x1234567890abcdef..."
   },
   "paymentRequirements": {
     "scheme": "exact",
-    "network": "Base Sepolia",
+    "network": "base-sepolia",
     "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-    "payTo": "0xMERCHANT_ADDRESS",
+    "payTo": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
     "maxAmountRequired": "1000000",
-    "resource": "/api/service",
-    "description": "Payment for service",
+    "resource": "https://api.example.com/premium/data",
+    "description": "Premium API access",
     "mimeType": "application/json",
-    "maxTimeoutSeconds": 300
+    "maxTimeoutSeconds": 60
   }
 }`}</code>
                 </pre>
@@ -270,29 +281,26 @@ export default function DocsPage() {
                   <code className="text-cyan-400 font-mono">{`{
   "x402Version": 1,
   "paymentPayload": {
-    "x402Version": 1,
-    "payload": {
-      "authorization": {
-        "from": "0x1234...5678",
-        "to": "0xMERCHANT_ADDRESS",
-        "value": "1000000",
-        "validAfter": "0",
-        "validBefore": "9999999999",
-        "nonce": "0xNONCE_BYTES32"
-      },
-      "signature": "0xSIGNATURE_HEX"
-    }
+    "authorization": {
+      "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+      "to": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+      "value": "1000000",
+      "validAfter": "0",
+      "validBefore": "1735776000",
+      "nonce": "0x0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    "signature": "0x1234567890abcdef..."
   },
   "paymentRequirements": {
     "scheme": "exact",
-    "network": "Base Sepolia",
-    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-    "payTo": "0xMERCHANT_ADDRESS",
+    "network": "base",
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "payTo": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
     "maxAmountRequired": "1000000",
-    "resource": "/api/service",
-    "description": "Payment for service",
+    "resource": "https://api.example.com/premium/data",
+    "description": "Premium API access",
     "mimeType": "application/json",
-    "maxTimeoutSeconds": 300
+    "maxTimeoutSeconds": 60
   }
 }`}</code>
                 </pre>
@@ -303,26 +311,41 @@ export default function DocsPage() {
                 <pre className="bg-slate-800/60 p-4 rounded-lg overflow-x-auto text-xs">
                   <code className="text-green-400 font-mono">{`{
   "success": true,
-  "transaction": "0xTRANSACTION_HASH",
-  "transactionHash": "0xTRANSACTION_HASH",
-  "network": "Base Sepolia",
-  "payer": "0x1234...5678",
-  "status": "completed",
-  "message": "Settlement successful"
+  "transaction": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+  "transactionHash": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+  "transactionStatus": "completed",
+  "network": "base",
+  "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+  "status": "completed"
+}`}</code>
+                </pre>
+                <p className="text-slate-400 text-sm mt-3">Transaction statuses: <code className="text-cyan-400">pending</code>, <code className="text-cyan-400">preconfirmed</code>, <code className="text-cyan-400">completed</code>, <code className="text-cyan-400">failed</code></p>
+              </div>
+
+              <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
+                <h3 className="text-lg font-bold text-slate-100 mb-3">Error Response (200 OK)</h3>
+                <pre className="bg-slate-800/60 p-4 rounded-lg overflow-x-auto text-xs">
+                  <code className="text-red-400 font-mono">{`{
+  "success": false,
+  "network": "base",
+  "errorReason": "Insufficient credits",
+  "status": "failed"
 }`}</code>
                 </pre>
               </div>
 
               <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
-                <h3 className="text-lg font-bold text-slate-100 mb-3">Error Response (200/500)</h3>
+                <h3 className="text-lg font-bold text-slate-100 mb-3">Preconfirmed Response (Flashblock Networks)</h3>
                 <pre className="bg-slate-800/60 p-4 rounded-lg overflow-x-auto text-xs">
-                  <code className="text-red-400 font-mono">{`{
-  "success": false,
-  "errorReason": "Error description",
-  "error_reason": "Error description",
-  "network": "Base Sepolia",
-  "payer": "0x1234...5678",
-  "status": "failed"
+                  <code className="text-amber-400 font-mono">{`{
+  "success": true,
+  "transaction": "0xabcdef1234567890...",
+  "transactionHash": "0xabcdef1234567890...",
+  "transactionStatus": "preconfirmed",
+  "network": "base",
+  "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+  "status": "preconfirmed",
+  "message": "Transaction preconfirmed via flashblock"
 }`}</code>
                 </pre>
               </div>
@@ -369,7 +392,7 @@ export default function DocsPage() {
   "success": true,
   "mainnet": [
     {
-      "network": "Base",
+      "network": "base",
       "chainId": 8453,
       "tokens": [
         {
@@ -378,17 +401,27 @@ export default function DocsPage() {
           "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
           "decimals": 6,
           "eip712": {
-            "name": "USDC",
+            "name": "USD Coin",
             "version": "2",
             "verifyingContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
           }
         }
       ]
+    },
+    {
+      "network": "ethereum",
+      "chainId": 1,
+      "tokens": [...]
+    },
+    {
+      "network": "optimism",
+      "chainId": 10,
+      "tokens": [...]
     }
   ],
   "testnet": [
     {
-      "network": "Base Sepolia",
+      "network": "base-sepolia",
       "chainId": 84532,
       "tokens": [
         {
@@ -397,12 +430,17 @@ export default function DocsPage() {
           "address": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
           "decimals": 6,
           "eip712": {
-            "name": "USDC",
+            "name": "USD Coin",
             "version": "2",
             "verifyingContract": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
           }
         }
       ]
+    },
+    {
+      "network": "sepolia",
+      "chainId": 11155111,
+      "tokens": [...]
     }
   ]
 }`}</code>
@@ -465,14 +503,8 @@ export default function DocsPage() {
                   <code className="text-green-400 font-mono">{`{
   "status": "ok",
   "service": "x402-facilitator",
-  "timestamp": 1701450000000,
-  "uptime": 3600,
-  "supportedNetworks": [
-    "Base Sepolia",
-    "Ethereum Sepolia",
-    "Base",
-    "Ethereum"
-  ]
+  "timestamp": 1767355984545,
+  "uptime": 672595.523348902
 }`}</code>
                 </pre>
               </div>

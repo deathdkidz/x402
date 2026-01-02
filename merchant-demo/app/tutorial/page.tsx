@@ -530,10 +530,7 @@ export default function TutorialPage() {
           }
 
           setStepData(prev => ({ ...prev, settleResponse: settleData }));
-
-          if (newIsFinal) {
-            setCurrentStep(8);
-          }
+          // Don't auto-advance - let user see the success response and click Next
           break;
 
         case 8:
