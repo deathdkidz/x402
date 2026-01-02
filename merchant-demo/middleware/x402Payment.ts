@@ -233,9 +233,9 @@ async function settlePayment(
     const result = await response.json();
     return {
       success: result.success,
-      txHash: result.transaction || result.transactionHash,
+      txHash: result.transaction,
       status: result.status,
-      reason: result.errorReason || result.error_reason
+      reason: result.errorReason
     };
   } catch (error) {
     console.error('Payment settlement error:', error);

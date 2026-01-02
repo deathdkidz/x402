@@ -194,9 +194,9 @@ export default function Home() {
             <span className="text-neutral-400 text-sm">api/premium/route.ts</span>
           </div>
           <pre className="p-4 overflow-x-auto text-sm">
-            <code className="text-neutral-300">{`const payment = await fetch('https://x402.netpay.id/settle', {
+            <code className="text-neutral-300">{`const payment = await fetch('https://api.netpay.id/settle', {
   method: 'POST',
-  headers: { 'X-API-Key': API_KEY },
+  headers: { 'Authorization': \`Bearer \${API_KEY}\` },
   body: JSON.stringify({ xPayment, paymentRequirements })
 });
 

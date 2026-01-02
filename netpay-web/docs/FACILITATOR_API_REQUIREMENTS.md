@@ -13,7 +13,7 @@ All endpoints should:
 ## Base URL
 
 ```
-Production: https://x402.netpay.id
+Production: https://api.netpay.id
 Development: http://localhost:8080
 ```
 
@@ -764,25 +764,25 @@ X-RateLimit-Reset: 1735776060
 
 ```bash
 # Health check
-curl https://x402.netpay.id/health
+curl https://api.netpay.id/health
 
 # Get networks
-curl https://x402.netpay.id/networks
+curl https://api.netpay.id/networks
 
 # Get SIWE nonce
-curl https://x402.netpay.id/merchant/siwe/nonce
+curl https://api.netpay.id/merchant/siwe/nonce
 
 # Verify SIWE
-curl -X POST https://x402.netpay.id/merchant/siwe/verify \
+curl -X POST https://api.netpay.id/merchant/siwe/verify \
   -H "Content-Type: application/json" \
   -d '{"message": "...", "signature": "0x..."}'
 
 # Get dashboard stats (with session)
-curl https://x402.netpay.id/merchant/1/dashboard/stats \
+curl https://api.netpay.id/merchant/1/dashboard/stats \
   -H "X-Session-Token: uuid-session-token"
 
 # Verify payment
-curl -X POST https://x402.netpay.id/verify \
+curl -X POST https://api.netpay.id/verify \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer pk_live_abc123..." \
   -d '{
@@ -792,7 +792,7 @@ curl -X POST https://x402.netpay.id/verify \
   }'
 
 # Settle payment
-curl -X POST https://x402.netpay.id/settle \
+curl -X POST https://api.netpay.id/settle \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer pk_live_abc123..." \
   -d '{

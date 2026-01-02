@@ -143,7 +143,7 @@ export default function DocsPage() {
                 id="middleware"
                 language="typescript"
                 code={`// middleware/payment.ts
-const FACILITATOR_URL = 'https://x402.netpay.id';
+const FACILITATOR_URL = 'https://api.netpay.id';
 const API_KEY = process.env.NETPAY_API_KEY;
 
 export async function verifyPayment(request: Request, config: {
@@ -167,7 +167,7 @@ export async function verifyPayment(request: Request, config: {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': API_KEY,
+      'Authorization': \`Bearer \${API_KEY}\`,
     },
     body: JSON.stringify({
       xPayment: paymentHeader,
@@ -301,7 +301,7 @@ export async function GET(request: Request) {
                 id="nextjs-util"
                 language="typescript"
                 code={`// lib/netpay.ts
-const FACILITATOR_URL = 'https://x402.netpay.id';
+const FACILITATOR_URL = 'https://api.netpay.id';
 
 export interface PaymentConfig {
   amount: string;
@@ -348,7 +348,7 @@ export async function settlePayment(xPayment: string, config: PaymentConfig) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': process.env.NETPAY_API_KEY!,
+      'Authorization': \`Bearer \${process.env.NETPAY_API_KEY}\`,
     },
     body: JSON.stringify({
       xPayment,
@@ -423,7 +423,7 @@ export async function GET(request: Request) {
               code={`import express from 'express';
 
 const app = express();
-const FACILITATOR_URL = 'https://x402.netpay.id';
+const FACILITATOR_URL = 'https://api.netpay.id';
 const API_KEY = process.env.NETPAY_API_KEY;
 
 // Payment middleware factory
@@ -448,7 +448,7 @@ function requirePayment(config: { amount: string; recipient: string; network?: s
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': API_KEY,
+        'Authorization': \`Bearer \${API_KEY}\`,
       },
       body: JSON.stringify({
         xPayment,
@@ -528,7 +528,7 @@ Content-Type: application/json
               <CodeBlock
                 id="any-settle"
                 language="bash"
-                code={`curl -X POST https://x402.netpay.id/settle \\
+                code={`curl -X POST https://api.netpay.id/settle \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer pk_live_xxxxx" \\
   -d '{
@@ -592,7 +592,7 @@ Content-Type: application/json
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 bg-green-400/20 text-green-400 text-xs font-medium rounded">POST</span>
-                  <code className="text-white">https://x402.netpay.id/verify</code>
+                  <code className="text-white">https://api.netpay.id/verify</code>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -671,7 +671,7 @@ Authorization: Bearer pk_live_xxxxx`}
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 bg-green-400/20 text-green-400 text-xs font-medium rounded">POST</span>
-                  <code className="text-white">https://x402.netpay.id/settle</code>
+                  <code className="text-white">https://api.netpay.id/settle</code>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -771,7 +771,7 @@ Authorization: Bearer pk_live_xxxxx`}
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 bg-blue-400/20 text-blue-400 text-xs font-medium rounded">GET</span>
-                  <code className="text-white">https://x402.netpay.id/networks</code>
+                  <code className="text-white">https://api.netpay.id/networks</code>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -982,7 +982,7 @@ Authorization: Bearer pk_live_xxxxx`}
 
           <Card className="p-4">
             <h4 className="text-sm font-medium text-white">API Base URL</h4>
-            <code className="text-xs text-cyan-400 mt-1 block">https://x402.netpay.id</code>
+            <code className="text-xs text-cyan-400 mt-1 block">https://api.netpay.id</code>
             <p className="text-xs text-gray-500 mt-2">
               All API requests should be made to this URL.
             </p>

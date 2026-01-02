@@ -209,21 +209,17 @@ export default function DocsPage() {
                 <pre className="bg-slate-800/60 p-4 rounded-lg overflow-x-auto text-xs">
                   <code className="text-green-400 font-mono">{`{
   "isValid": true,
-  "is_valid": true,
   "payer": "0x1234...5678"
 }`}</code>
                 </pre>
               </div>
 
               <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
-                <h3 className="text-lg font-bold text-slate-100 mb-3">Error Response (200/500)</h3>
+                <h3 className="text-lg font-bold text-slate-100 mb-3">Invalid Response (200 OK)</h3>
                 <pre className="bg-slate-800/60 p-4 rounded-lg overflow-x-auto text-xs">
                   <code className="text-red-400 font-mono">{`{
   "isValid": false,
-  "is_valid": false,
-  "invalidReason": "Error description",
-  "invalid_reason": "Error description",
-  "payer": "0x1234...5678"
+  "invalidReason": "Insufficient balance: has 500000, needs 1000000"
 }`}</code>
                 </pre>
               </div>
@@ -312,8 +308,6 @@ export default function DocsPage() {
                   <code className="text-green-400 font-mono">{`{
   "success": true,
   "transaction": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-  "transactionHash": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-  "transactionStatus": "completed",
   "network": "base",
   "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
   "status": "completed"
@@ -340,8 +334,6 @@ export default function DocsPage() {
                   <code className="text-amber-400 font-mono">{`{
   "success": true,
   "transaction": "0xabcdef1234567890...",
-  "transactionHash": "0xabcdef1234567890...",
-  "transactionStatus": "preconfirmed",
   "network": "base",
   "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
   "status": "preconfirmed",
@@ -597,7 +589,6 @@ export default function DocsPage() {
                     <h4 className="text-green-300 font-semibold mb-2">Valid Payment</h4>
                     <pre className="text-xs overflow-x-auto"><code className="text-green-400">{`{
   "isValid": true,
-  "is_valid": true,
   "payer": "0x67B662afAc6AE778134803aeB9a32d4fF0ECe84C"
 }`}</code></pre>
                     <p className="text-sm text-green-300/70 mt-2">HTTP 200 + <code>isValid: true</code> = Payment signature is valid</p>
@@ -607,10 +598,7 @@ export default function DocsPage() {
                     <h4 className="text-red-300 font-semibold mb-2">Invalid Payment</h4>
                     <pre className="text-xs overflow-x-auto"><code className="text-red-400">{`{
   "isValid": false,
-  "is_valid": false,
-  "invalidReason": "Network 'base-sepolia' is not supported...",
-  "invalid_reason": "Network 'base-sepolia' is not supported...",
-  "payer": "0x67B662afAc6AE778134803aeB9a32d4fF0ECe84C"
+  "invalidReason": "Insufficient balance: has 500000, needs 1000000"
 }`}</code></pre>
                     <p className="text-sm text-red-300/70 mt-2">HTTP 200 + <code>isValid: false</code> = Check <code>invalidReason</code> for details</p>
                   </div>
@@ -639,8 +627,7 @@ export default function DocsPage() {
                     <pre className="text-xs overflow-x-auto"><code className="text-amber-400">{`{
   "success": true,
   "transaction": "0x8f5e9c7b...",
-  "transactionHash": "0x8f5e9c7b...",
-  "network": "Base Sepolia",
+  "network": "base-sepolia",
   "payer": "0x67B662...",
   "status": "pending",
   "message": "Transaction submitted and pending confirmation..."
@@ -657,8 +644,7 @@ export default function DocsPage() {
                     <pre className="text-xs overflow-x-auto"><code className="text-green-400">{`{
   "success": true,
   "transaction": "0x8f5e9c7b...",
-  "transactionHash": "0x8f5e9c7b...",
-  "network": "Base Sepolia",
+  "network": "base-sepolia",
   "payer": "0x67B662...",
   "status": "completed"
 }`}</code></pre>
@@ -672,11 +658,7 @@ export default function DocsPage() {
                     <pre className="text-xs overflow-x-auto"><code className="text-red-400">{`{
   "success": false,
   "errorReason": "Transaction already settled with this nonce",
-  "error_reason": "Transaction already settled with this nonce",
-  "network": "Base Sepolia",
-  "payer": "0x67B662...",
-  "transactionHash": "0xexisting...",
-  "transactionStatus": "confirmed",
+  "network": "base-sepolia",
   "status": "failed"
 }`}</code></pre>
                     <p className="text-sm text-red-300/70 mt-2">
@@ -782,7 +764,7 @@ export default function DocsPage() {
                   <p>2. <strong>Check both HTTP status AND result fields</strong> - Don't rely on status code alone</p>
                   <p>3. <strong>Handle pending status gracefully</strong> - Show loading indicator but serve content</p>
                   <p>4. <strong>Provide user-friendly error messages</strong> - Map <code>errorReason</code> to readable text</p>
-                  <p>5. <strong>Use exact network names</strong> - "Base Sepolia" not "base-sepolia"</p>
+                  <p>5. <strong>Use lowercase network identifiers</strong> - "base-sepolia" not "Base Sepolia"</p>
                 </div>
               </div>
             </div>

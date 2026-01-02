@@ -475,7 +475,7 @@ export default function TutorialPage() {
             });
 
             const verifyData = await verifyResponse.json();
-            if (!verifyResponse.ok || (!verifyData.isValid && !verifyData.is_valid)) {
+            if (!verifyResponse.ok || !verifyData.isValid) {
               throw new Error(verifyData.invalidReason || 'Verification failed');
             }
 
@@ -524,7 +524,6 @@ export default function TutorialPage() {
           if (!settleResponse.ok || !didSucceed) {
             throw new Error(
               settleData.errorReason ||
-              settleData.error_reason ||
               `Settlement failed (status: ${newSettlementStatus || 'unknown'})`
             );
           }

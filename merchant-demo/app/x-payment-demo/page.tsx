@@ -382,7 +382,7 @@ export default function XPaymentDemo() {
           status: verifyResponse.status,
           result: verifyResult,
           notes: [
-            `Valid: ${verifyResult.isValid || verifyResult.is_valid}`,
+            `Valid: ${verifyResult.isValid}`,
             verifyResult.payer ? `Payer: ${verifyResult.payer}` : '',
             verifyResult.invalidReason ? `Reason: ${verifyResult.invalidReason}` : '',
             'Verified: signature, recipient, amount, time, balance'
@@ -390,7 +390,7 @@ export default function XPaymentDemo() {
         }
       );
 
-      if (!verifyResult.isValid && !verifyResult.is_valid) {
+      if (!verifyResult.isValid) {
         throw new Error(verifyResult.invalidReason || 'Payment verification failed');
       }
 

@@ -56,7 +56,7 @@ export default function DemoContent() {
   const [transactionHash, setTransactionHash] = useState('');
   const [paymentNetwork, setPaymentNetwork] = useState('');
 
-  const facilitatorUrl = process.env.NEXT_PUBLIC_FACILITATOR_URL || 'https://x402.netpay.id';
+  const facilitatorUrl = process.env.NEXT_PUBLIC_FACILITATOR_URL || 'https://api.netpay.id';
   const DAILY_LIMIT = 5; // 5 settlements per address per day
 
   const { address, isConnected } = useAccount();
