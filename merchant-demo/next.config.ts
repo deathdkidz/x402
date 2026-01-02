@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Enable compression for faster static file serving
+  compress: true,
+  
+  // Optimize images
+  images: {
+    formats: ['image/avif', 'image/webp'],
+  },
+  
   webpack: (config) => {
     // Suppress warnings for optional React Native dependencies
     config.resolve.fallback = {

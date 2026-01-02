@@ -98,10 +98,10 @@ async function verifyPayment(
     const result = JSON.parse(responseText);
     console.log('📋 Verification response:', result);
     return {
-      isValid: result.isValid || result.is_valid || false,
+      isValid: result.isValid || false,
       payer: result.payer,
       raw: result,
-      reason: result.invalidReason || result.invalid_reason
+      reason: result.invalidReason
     };
   } catch (error) {
     console.error('Payment verification error:', error);
@@ -149,10 +149,10 @@ async function settlePayment(
     
     return {
       success: result.success || false,
-      status: result.status || result.state,
-      message: result.message || result.errorReason || result.error_reason,
-      transaction: result.transaction || result.transactionHash || result.txHash,
-      flashblockHash: result.flashblockHash || result.flashblock_id || result.flashblockId,
+      status: result.status,
+      message: result.message || result.errorReason,
+      transaction: result.transaction,
+      flashblockHash: result.flashblockHash,
       payer: result.payer,
       raw: result
     };
@@ -193,6 +193,9 @@ export async function middleware(request: NextRequest) {
       maxTimeoutSeconds: defaultConfig.maxTimeoutSeconds
     };
 
+    // Encode requirements as base64 for X-PAYMENT-REQUIRED header
+    const encodedRequirements = Buffer.from(JSON.stringify(requirements)).toString('base64');
+
     return new NextResponse(
       JSON.stringify({
         error: 'Payment Required',
@@ -202,7 +205,7 @@ export async function middleware(request: NextRequest) {
         status: 402,
         headers: {
           'Content-Type': 'application/json',
-          'X-402': `version=1 scheme=${requirements.scheme} network=${requirements.network} amount=${protection.amount} resource=${path}`
+          'X-PAYMENT-REQUIRED': encodedRequirements
         }
       }
     );
@@ -235,12 +238,14 @@ export async function middleware(request: NextRequest) {
   };
 
   // Settle payment (includes verification + execution)
+  const settleStart = Date.now();
   console.log('💰 Settling payment on blockchain...');
   console.log('   Network:', requirements.network);
   console.log('   Amount:', requirements.maxAmountRequired);
   console.log('   PayTo:', requirements.payTo);
 
   const settlementResult = await settlePayment(paymentPayload, requirements);
+  console.log(`   Settlement took: ${Date.now() - settleStart}ms`);
 
   if (!settlementResult.success) {
     console.log('❌ Payment rejected by facilitator during settlement');
@@ -273,8 +278,13 @@ export async function middleware(request: NextRequest) {
     flashblockHash: settlementResult.flashblockHash
   };
 
-  const response = NextResponse.next();
-  response.headers.set('X-PAYMENT-RESPONSE', Buffer.from(JSON.stringify(paymentResponsePayload)).toString('base64'));
+  const encodedPaymentResponse = Buffer.from(JSON.stringify(paymentResponsePayload)).toString('base64');
+
+  // Use rewrite to serve static files - this is faster than NextResponse.next()
+  // because it goes directly to the static file handler
+  const response = NextResponse.rewrite(request.nextUrl);
+  response.headers.set('X-PAYMENT-RESPONSE', encodedPaymentResponse);
+  response.headers.set('Cache-Control', 'no-store');
 
   return response;
 }

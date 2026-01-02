@@ -342,8 +342,8 @@ export default function TutorialPage() {
             mimeType: 'image/jpeg',
             maxTimeoutSeconds: 3600
           };
-          const x402Header = `X-402 version=1 scheme=exact network=${selectedNetwork} asset=${token.address} payto=${recipientAddress} amount=10000 resource=/premium/content`;
-          setStepData(prev => ({ ...prev, paymentRequirements, x402PaymentRequired: x402Header }));
+          const encodedRequirements = Buffer.from(JSON.stringify(paymentRequirements)).toString('base64');
+          setStepData(prev => ({ ...prev, paymentRequirements, x402PaymentRequired: encodedRequirements }));
         }
 
         // Step 2: Generate authorization
@@ -950,8 +950,8 @@ export default function TutorialPage() {
   return formatHttpResponse(
     'HTTP/1.1 402 Payment Required',
     {
-      'Content-Length': '0',
-      'X-402': encodedHeader
+      'Content-Type': 'application/json',
+      'X-PAYMENT-REQUIRED': encodedHeader
     }
   );
 })()}
@@ -959,7 +959,7 @@ export default function TutorialPage() {
                       </div>
                     </div>
                     <div className="mb-4">
-                      <h3 className="text-sm font-semibold text-slate-300 mb-2">X-402 Header (Decoded)</h3>
+                      <h3 className="text-sm font-semibold text-slate-300 mb-2">X-PAYMENT-REQUIRED Header (Decoded)</h3>
                       <div className={`bg-slate-900/60 border border-slate-700/40 rounded-lg p-4 transition-all duration-500 ${
                         highlightChange ? 'ring-2 ring-cyan-500/50 bg-cyan-500/5' : ''
                       }`}>
@@ -974,7 +974,7 @@ export default function TutorialPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <div className="text-sm text-blue-300">
-                          The <strong>X-402 header</strong> contains base64-encoded payment requirements. Servers can omit the response body entirely and rely on this header when the client understands the X-402 protocol.
+                          The <strong>X-PAYMENT-REQUIRED header</strong> contains base64-encoded payment requirements. Clients should decode this header to extract payment details for the X-402 protocol.
                         </div>
                       </div>
                     </div>

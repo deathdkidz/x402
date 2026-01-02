@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAccount, useSignTypedData } from 'wagmi';
 import Link from 'next/link';
+import Image from 'next/image';
 import WalletConnect from '../components/WalletConnect';
 
 // Helper function to get block explorer URL
@@ -66,8 +67,10 @@ export default function DemoPage() {
   // Loading states
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [processingStep, setProcessingStep] = useState<string>('');
   const [error, setError] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [imageLoaded, setImageLoaded] = useState(false);
   const [transactionHash, setTransactionHash] = useState('');
   const [paymentNetwork, setPaymentNetwork] = useState('');
 
@@ -149,6 +152,7 @@ export default function DemoPage() {
     }
 
     setProcessing(true);
+    setProcessingStep('Preparing payment...');
     setError('');
 
     try {
@@ -160,6 +164,8 @@ export default function DemoPage() {
       const now = Math.floor(Date.now() / 1000);
       const validAfter = now;
       const validBefore = now + 3600; // 1 hour validity
+
+      setProcessingStep('Waiting for signature...');
 
       // Create authorization message
       const authorization = {
@@ -226,6 +232,8 @@ export default function DemoPage() {
       };
       const xPaymentHeader = Buffer.from(JSON.stringify(xPaymentData)).toString('base64');
 
+      setProcessingStep('Settling payment on-chain...');
+
       // Request protected resource with payment (cache-busting to force new payment each time)
       const response = await fetch(`${PROTECTED_RESOURCE}?t=${Date.now()}`, {
         headers: {
@@ -235,6 +243,8 @@ export default function DemoPage() {
       });
 
       if (response.ok) {
+        setProcessingStep('Loading content...');
+        
         // Payment accepted - get the image
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -267,6 +277,7 @@ export default function DemoPage() {
       setError(err.message || 'Payment failed. Please try again.');
     } finally {
       setProcessing(false);
+      setProcessingStep('');
     }
   };
 
@@ -275,6 +286,7 @@ export default function DemoPage() {
       URL.revokeObjectURL(imageUrl);
     }
     setImageUrl('');
+    setImageLoaded(false);
     setTransactionHash('');
     setPaymentNetwork('');
     setStep('locked');
@@ -438,6 +450,19 @@ export default function DemoPage() {
                 </div>
               )}
 
+              {/* Processing Status */}
+              {processing && processingStep && (
+                <div className="mb-6 bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <svg className="animate-spin h-5 w-5 text-cyan-400" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span className="text-cyan-300 font-medium">{processingStep}</span>
+                  </div>
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div className="flex gap-3">
                 <button
@@ -481,13 +506,24 @@ export default function DemoPage() {
                 <p className="text-slate-400">Your premium content is now unlocked</p>
               </div>
 
-              {/* Premium Content */}
+              {/* Premium Content with Lazy Loading */}
               <div className="relative w-full aspect-square max-w-2xl mx-auto mb-6 rounded-lg overflow-hidden bg-slate-900/60">
+                {/* Skeleton loader while image loads */}
+                {!imageLoaded && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-slate-800/60 animate-pulse">
+                    <div className="text-center">
+                      <div className="text-4xl mb-2">🐱</div>
+                      <p className="text-slate-400 text-sm">Loading premium content...</p>
+                    </div>
+                  </div>
+                )}
                 {imageUrl && (
                   <img
                     src={imageUrl}
                     alt="Premium Dancing Cat"
-                    className="w-full h-full object-contain"
+                    className={`w-full h-full object-contain transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                    loading="lazy"
+                    onLoad={() => setImageLoaded(true)}
                   />
                 )}
               </div>
