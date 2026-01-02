@@ -4,7 +4,7 @@
 [credit_system]
 # Base credit costs per network environment
 mainnet_base_credit_cost = 1
-testnet_base_credit_cost = 0
+testnet_base_credit_cost = 1
 
 # Credit bonus tiers for purchases (USD value -> bonus percentage)
 [[credit_system.bonus_tiers]]
@@ -47,7 +47,7 @@ bonus_percent = 30
 [[credit_packages.packages]]
 id = "starter"
 name = "Starter Pack"
-credits = 100
+credits = 500
 price_usd = 5.00
 bonus_credits = 0
 popular = false
@@ -55,50 +55,50 @@ popular = false
 [[credit_packages.packages]]
 id = "basic"
 name = "Basic Pack"
-credits = 250
+credits = 1000
 price_usd = 10.00
-bonus_credits = 12
+bonus_credits = 50
 popular = false
 
 [[credit_packages.packages]]
 id = "standard"
 name = "Standard Pack"
-credits = 500
-price_usd = 20.00
-bonus_credits = 25
+credits = 2500
+price_usd = 25.00
+bonus_credits = 250
 popular = true
 
 [[credit_packages.packages]]
 id = "pro"
 name = "Pro Pack"
-credits = 1000
-price_usd = 35.00
-bonus_credits = 50
+credits = 5000
+price_usd = 50.00
+bonus_credits = 750
 popular = false
 
 [[credit_packages.packages]]
 id = "business"
 name = "Business Pack"
-credits = 2500
-price_usd = 75.00
-bonus_credits = 187
+credits = 10000
+price_usd = 100.00
+bonus_credits = 1200
 popular = false
 
 [[credit_packages.packages]]
 id = "enterprise"
 name = "Enterprise Pack"
-credits = 5000
-price_usd = 125.00
-bonus_credits = 500
+credits = 25000
+price_usd = 250.00
+bonus_credits = 31250
 popular = false
 
 [testnet_credits]
 # Free testnet credits for new merchants
 initial_allocation = 1000
 # Monthly reset amount (0 = no reset)
-monthly_reset = 0
+monthly_reset = 1000
 # Maximum testnet credits per merchant
-max_balance = 10000
+max_balance = 1000
 
 [gas_tracking]
 # Enable automatic gas cost tracking

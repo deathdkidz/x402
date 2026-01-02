@@ -17,14 +17,15 @@
 //! 3. Forwarder calls token.permit() then token.transferFrom()
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, Duration};
 use async_trait::async_trait;
 use tracing::{info, debug, warn};
 use alloy::primitives::{Address, U256, keccak256, B256};
 use alloy::signers::k256::ecdsa::{RecoveryId, Signature as K256Signature, VerifyingKey};
-use alloy::providers::ProviderBuilder;
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::network::EthereumWallet;
 use alloy::sol;
+use tokio::time::timeout;
 
 use crate::config::external::{TransferType, ExternalConfig};
 use crate::services::provider_pool::{ProviderPool, ProviderType};
@@ -460,17 +461,6 @@ impl TransferStrategy for Erc2612Strategy {
         let rpc_url = self.config.get_rpc_url(network)
             .ok_or_else(|| StrategyError::NetworkError(format!("No RPC URL for network: {}", network)))?;
         
-        // Convert WebSocket URL to HTTP if needed
-        let http_url = rpc_url.replace("wss://", "https://").replace("ws://", "http://");
-        
-        // Create wallet and provider
-        let wallet = EthereumWallet::from(signer.clone());
-        
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(wallet)
-            .on_http(http_url.parse().map_err(|e| StrategyError::NetworkError(format!("Invalid URL: {}", e)))?);
-        
         // Parse parameters
         let owner: Address = payload.from.parse()
             .map_err(|_| StrategyError::InvalidPayload("Invalid from address".to_string()))?;
@@ -487,15 +477,14 @@ impl TransferStrategy for Erc2612Strategy {
         let token: Address = token_address.parse()
             .map_err(|_| StrategyError::InvalidPayload("Invalid token address".to_string()))?;
         
-        // Create forwarder contract instance
-        let contract = IPermitForwarder::new(forwarder, &provider);
-        
         // Get gas limit from config
         let gas_limit = self.config.get_network(network)
             .map(|n| n.gas_limit)
             .unwrap_or(200000);
         
-        // Build and send transaction
+        // Build wallet
+        let wallet = EthereumWallet::from(signer.clone());
+        
         info!("📤 Sending permitAndTransfer via forwarder...");
         info!("   Token: {}", token);
         info!("   Owner: {}", owner);
@@ -503,25 +492,81 @@ impl TransferStrategy for Erc2612Strategy {
         info!("   Value: {}", value);
         info!("   Deadline: {}", deadline);
         
-        let tx = contract.permitAndTransfer(
-            token,
-            owner,
-            recipient_addr,
-            value,
-            deadline,
-            sig.v,
-            sig.r_bytes(),
-            sig.s_bytes(),
-        );
+        // Determine connection type and execute
+        let is_ws_url = rpc_url.starts_with("wss://") || rpc_url.starts_with("ws://");
+        let mut used_websocket = false;
         
-        let tx_with_gas = tx.gas(gas_limit);
+        let tx_hash = if is_ws_url {
+            // Try WebSocket first
+            let ws_result: Result<String, StrategyError> = async {
+                let ws_connect = WsConnect::new(rpc_url.clone());
+                let provider = timeout(
+                    Duration::from_secs(10),
+                    ProviderBuilder::new()
+                        .with_recommended_fillers()
+                        .wallet(wallet.clone())
+                        .on_ws(ws_connect)
+                ).await
+                    .map_err(|_| StrategyError::NetworkError("WebSocket connection timeout".to_string()))?
+                    .map_err(|e| StrategyError::NetworkError(format!("WebSocket connect failed: {}", e)))?;
+                
+                let contract = IPermitForwarder::new(forwarder, &provider);
+                let tx = contract.permitAndTransfer(
+                    token, owner, recipient_addr, value, deadline,
+                    sig.v, sig.r_bytes(), sig.s_bytes(),
+                ).gas(gas_limit);
+                
+                let pending = tx.send().await
+                    .map_err(|e| StrategyError::ExecutionError(format!("Transaction send failed: {}", e)))?;
+                Ok(format!("{:?}", pending.tx_hash()))
+            }.await;
+            
+            match ws_result {
+                Ok(hash) => {
+                    used_websocket = true;
+                    hash
+                }
+                Err(ws_err) => {
+                    warn!("⚠️ WebSocket failed ({}), falling back to HTTP", ws_err);
+                    let http_url = rpc_url.replace("wss://", "https://").replace("ws://", "http://");
+                    let provider = ProviderBuilder::new()
+                        .with_recommended_fillers()
+                        .wallet(wallet.clone())
+                        .on_http(http_url.parse().map_err(|e| StrategyError::NetworkError(format!("Invalid URL: {}", e)))?);
+                    
+                    let contract = IPermitForwarder::new(forwarder, &provider);
+                    let tx = contract.permitAndTransfer(
+                        token, owner, recipient_addr, value, deadline,
+                        sig.v, sig.r_bytes(), sig.s_bytes(),
+                    ).gas(gas_limit);
+                    
+                    let pending = tx.send().await
+                        .map_err(|e| StrategyError::ExecutionError(format!("Transaction send failed: {}", e)))?;
+                    format!("{:?}", pending.tx_hash())
+                }
+            }
+        } else {
+            // HTTP only
+            let provider = ProviderBuilder::new()
+                .with_recommended_fillers()
+                .wallet(wallet.clone())
+                .on_http(rpc_url.parse().map_err(|e| StrategyError::NetworkError(format!("Invalid URL: {}", e)))?);
+            
+            let contract = IPermitForwarder::new(forwarder, &provider);
+            let tx = contract.permitAndTransfer(
+                token, owner, recipient_addr, value, deadline,
+                sig.v, sig.r_bytes(), sig.s_bytes(),
+            ).gas(gas_limit);
+            
+            let pending = tx.send().await
+                .map_err(|e| StrategyError::ExecutionError(format!("Transaction send failed: {}", e)))?;
+            format!("{:?}", pending.tx_hash())
+        };
         
-        let pending_tx = tx_with_gas.send().await
-            .map_err(|e| StrategyError::ExecutionError(format!("Transaction send failed: {}", e)))?;
-        
-        let tx_hash = format!("{:?}", pending_tx.tx_hash());
-        
-        info!("✅ Transaction sent: {} ({}ms)", tx_hash, start.elapsed().as_millis());
+        info!("✅ Transaction sent via {}: {} ({}ms)", 
+              if used_websocket { "WebSocket" } else { "HTTP" }, 
+              tx_hash, 
+              start.elapsed().as_millis());
         
         Ok(ExecuteResult::pending(tx_hash))
     }

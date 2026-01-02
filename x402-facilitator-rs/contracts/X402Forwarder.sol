@@ -206,43 +206,28 @@ contract X402Forwarder is Ownable, ReentrancyGuard, Pausable {
         if (recipient == address(0)) revert ZeroAddress();
         
         // Step 1: Execute permit (approve this contract to spend owner's tokens)
-        bytes memory permitData = abi.encodeWithSelector(
-            PERMIT_SELECTOR,
-            owner,
-            address(this), // spender is this contract
-            value,
-            deadline,
-            v,
-            r,
-            s
-        );
-        
-        (bool permitSuccess, bytes memory permitResult) = token.call{gas: maxGasPerCall}(permitData);
-        
-        if (!permitSuccess) {
-            string memory reason = _getRevertReason(permitResult);
-            emit PermitTransferExecuted(token, owner, recipient, value, false, reason);
-            return false;
+        {
+            (bool permitSuccess, bytes memory permitResult) = token.call{gas: maxGasPerCall}(
+                abi.encodeWithSelector(PERMIT_SELECTOR, owner, address(this), value, deadline, v, r, s)
+            );
+            
+            if (!permitSuccess) {
+                emit PermitTransferExecuted(token, owner, recipient, value, false, _getRevertReason(permitResult));
+                return false;
+            }
         }
         
         // Step 2: Execute transferFrom (this contract is now approved as spender)
-        bytes memory transferData = abi.encodeWithSelector(
-            TRANSFER_FROM_SELECTOR,
-            owner,
-            recipient,
-            value
+        (bool transferSuccess, bytes memory transferResult) = token.call{gas: maxGasPerCall}(
+            abi.encodeWithSelector(TRANSFER_FROM_SELECTOR, owner, recipient, value)
         );
         
-        (bool transferSuccess, bytes memory transferResult) = token.call{gas: maxGasPerCall}(transferData);
-        
-        string memory reason = "";
         if (transferSuccess) {
             totalTransfers++;
+            emit PermitTransferExecuted(token, owner, recipient, value, true, "");
         } else {
-            reason = _getRevertReason(transferResult);
+            emit PermitTransferExecuted(token, owner, recipient, value, false, _getRevertReason(transferResult));
         }
-        
-        emit PermitTransferExecuted(token, owner, recipient, value, transferSuccess, reason);
         
         return transferSuccess;
     }

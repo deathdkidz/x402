@@ -298,6 +298,17 @@ impl ProviderPool {
             .map(|p| p.is_websocket())
             .unwrap_or(false)
     }
+
+    /// Get RPC URL for a network
+    pub fn get_rpc_url(&self, network: &str) -> Option<String> {
+        let normalized = self.config.normalize_network_name(network);
+        self.config.get_rpc_url(&normalized).map(|s| s.to_string())
+    }
+
+    /// Get WebSocket connect timeout
+    pub fn get_ws_timeout(&self) -> Duration {
+        self.ws_connect_timeout
+    }
 }
 
 /// Provider pool statistics

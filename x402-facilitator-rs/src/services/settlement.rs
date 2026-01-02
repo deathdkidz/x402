@@ -26,10 +26,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, warn, error, debug};
 use alloy::primitives::{Address, U256, FixedBytes};
-use alloy::providers::{Provider, ProviderBuilder};
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::network::EthereumWallet;
 use alloy::sol;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use crate::config::{Config, TransferType};
 use crate::types::{PaymentPayload, PaymentRequirements, SettleResponse, SettlementStatus, Merchant};
 use crate::services::provider_pool::{ProviderPool, ProviderType};
@@ -888,18 +888,10 @@ impl SettlementService {
         let rpc_url = self.config.get_rpc_url(network)
             .ok_or_else(|| format!("No RPC URL for network: {}", network))?;
         
-        // Convert WebSocket URL to HTTP if needed
-        let http_url = rpc_url.replace("wss://", "https://").replace("ws://", "http://");
-        
-        // Create wallet and provider
+        // Create wallet
         let wallet = EthereumWallet::from(signer.clone());
         
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(wallet)
-            .on_http(http_url.parse().map_err(|e| format!("Invalid URL: {}", e))?);
-
-        // Parse parameters
+        // Parse all transaction parameters upfront
         let from: Address = payload.authorization.from.parse()
             .map_err(|_| "Invalid from address")?;
         let to: Address = payload.authorization.to.parse()
@@ -934,49 +926,92 @@ impl SettlementService {
         let r: FixedBytes<32> = FixedBytes::from_slice(&sig_bytes[0..32]);
         let s: FixedBytes<32> = FixedBytes::from_slice(&sig_bytes[32..64]);
         let v = sig_bytes[64];
-        
-        // Normalize v value
         let v_normalized = if v >= 27 { v } else { v + 27 };
 
         let token: Address = requirements.asset.parse()
             .map_err(|_| "Invalid token address")?;
-
-        // Create contract instance
-        let contract = IERC3009::new(token, &provider);
-
-        // Build and send transaction
+        
+        let gas_limit = self.config.settlement_gas_limit;
+        
         info!("📤 Sending transferWithAuthorization...");
         info!("   From: {}", from);
         info!("   To: {}", to);
         info!("   Value: {}", value);
         info!("   Nonce: 0x{}", hex::encode(nonce));
-
-        let tx = contract.transferWithAuthorization(
-            from,
-            to,
-            value,
-            valid_after,
-            valid_before,
-            nonce,
-            v_normalized,
-            r,
-            s,
-        );
-
-        // Set gas limit with buffer to prevent out-of-gas failures
-        // Default is 200000, configurable via SETTLEMENT_GAS_LIMIT env var
-        let gas_limit = self.config.settlement_gas_limit;
-        let tx_with_gas = tx.gas(gas_limit);
         
-        debug!("   Gas limit: {}", gas_limit);
-
-        let pending_tx = tx_with_gas.send().await
-            .map_err(|e| format!("Transaction send failed: {}", e))?;
-
-        let tx_hash = format!("{:?}", pending_tx.tx_hash());
+        // Determine connection type and execute
+        let is_ws_url = rpc_url.starts_with("wss://") || rpc_url.starts_with("ws://");
+        let mut used_websocket = false;
         
-        info!("✅ Transaction sent: {}", tx_hash);
-
+        let tx_hash = if is_ws_url {
+            // Try WebSocket first
+            let ws_result: Result<String, String> = async {
+                let ws_connect = WsConnect::new(rpc_url.clone());
+                let provider = timeout(
+                    Duration::from_secs(10),
+                    ProviderBuilder::new()
+                        .with_recommended_fillers()
+                        .wallet(wallet.clone())
+                        .on_ws(ws_connect)
+                ).await
+                    .map_err(|_| "WebSocket connection timeout".to_string())?
+                    .map_err(|e| format!("WebSocket connect failed: {}", e))?;
+                
+                let contract = IERC3009::new(token, &provider);
+                let tx = contract.transferWithAuthorization(
+                    from, to, value, valid_after, valid_before, nonce,
+                    v_normalized, r, s,
+                ).gas(gas_limit);
+                
+                let pending = tx.send().await
+                    .map_err(|e| format!("Transaction send failed: {}", e))?;
+                Ok(format!("{:?}", pending.tx_hash()))
+            }.await;
+            
+            match ws_result {
+                Ok(hash) => {
+                    used_websocket = true;
+                    hash
+                }
+                Err(ws_err) => {
+                    warn!("⚠️ WebSocket failed ({}), falling back to HTTP", ws_err);
+                    let http_url = rpc_url.replace("wss://", "https://").replace("ws://", "http://");
+                    let provider = ProviderBuilder::new()
+                        .with_recommended_fillers()
+                        .wallet(wallet.clone())
+                        .on_http(http_url.parse().map_err(|e| format!("Invalid URL: {}", e))?);
+                    
+                    let contract = IERC3009::new(token, &provider);
+                    let tx = contract.transferWithAuthorization(
+                        from, to, value, valid_after, valid_before, nonce,
+                        v_normalized, r, s,
+                    ).gas(gas_limit);
+                    
+                    let pending = tx.send().await
+                        .map_err(|e| format!("Transaction send failed: {}", e))?;
+                    format!("{:?}", pending.tx_hash())
+                }
+            }
+        } else {
+            // HTTP only
+            let provider = ProviderBuilder::new()
+                .with_recommended_fillers()
+                .wallet(wallet.clone())
+                .on_http(rpc_url.parse().map_err(|e| format!("Invalid URL: {}", e))?);
+            
+            let contract = IERC3009::new(token, &provider);
+            let tx = contract.transferWithAuthorization(
+                from, to, value, valid_after, valid_before, nonce,
+                v_normalized, r, s,
+            ).gas(gas_limit);
+            
+            let pending = tx.send().await
+                .map_err(|e| format!("Transaction send failed: {}", e))?;
+            format!("{:?}", pending.tx_hash())
+        };
+        
+        info!("✅ Transaction sent via {}: {}", if used_websocket { "WebSocket" } else { "HTTP" }, tx_hash);
+        
         Ok(tx_hash)
     }
 }

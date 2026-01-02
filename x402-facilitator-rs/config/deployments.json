@@ -1,0 +1,39 @@
+{
+  "forwarders": {
+    "Base Sepolia": {
+      "chain_id": 84532,
+      "address": "0xcdc71f1fca99eb1d98a4c91e471d61c510407042",
+      "tx_hash": "0x52692dcc91e35a816c6d9f35258fcb9010d2b3ba72853acd5c5c6a6716ff41ae",
+      "owner": "0x7b5f1298f62ce5127B2f86E0AFfE37a7437D7ebD",
+      "deployed_at": "2025-12-25T11:17:21Z"
+    },
+    "Ethereum Sepolia": {
+      "chain_id": 11155111,
+      "address": "0x2a6adfaf9a72da6dc53c7a9eb5348f65a330306a",
+      "tx_hash": "0x97dd0a1ef96ee2295edc43de97773dadc9fd25b6be16e1d23b1d207b2da79829",
+      "owner": "0x7b5f1298f62ce5127B2f86E0AFfE37a7437D7ebD",
+      "deployed_at": "2025-12-25T11:18:00Z"
+    },
+    "OP Sepolia": {
+      "chain_id": 11155420,
+      "address": "0x652764470f84a1e46442c14559451590394b7ce0",
+      "tx_hash": "0x21785641171d5873bcac71d5a672c431a1c5a692fd19bc8fd981637441905f2d",
+      "owner": "0x7b5f1298f62ce5127B2f86E0AFfE37a7437D7ebD",
+      "deployed_at": "2025-12-25T11:18:32Z"
+    },
+    "HyperEVM Testnet": {
+      "chain_id": 998,
+      "address": "0x85e7fff847320367ecd9dec0516a86d68be89299",
+      "tx_hash": "0x1d226f0bec0ef77fdfe102c0f1132fcba04b08c79a0b855706851a04bf1b9a51",
+      "owner": "0x7b5f1298f62ce5127B2f86E0AFfE37a7437D7ebD",
+      "deployed_at": "2025-12-25T11:19:08Z"
+    },
+    "BNB Smart Chain Testnet": {
+      "chain_id": 97,
+      "address": "0x7b5f1298f62ce5127b2f86e0affe37a7437d7ebd",
+      "tx_hash": "",
+      "owner": "0x7b5f1298f62ce5127B2f86E0AFfE37a7437D7ebD",
+      "deployed_at": "2025-12-25T11:09:27Z"
+    }
+  }
+}
