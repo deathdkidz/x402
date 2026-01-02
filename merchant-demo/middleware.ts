@@ -13,6 +13,39 @@ const FACILITATOR_URL = process.env.NEXT_PUBLIC_FACILITATOR_URL || 'https://api.
 const API_KEY = process.env.X402_API_KEY || '';
 const MERCHANT_ADDRESS = process.env.NEXT_PUBLIC_MERCHANT_ADDRESS || '';
 
+// Cache for network data (5 minute TTL)
+let cachedNetworks: any[] | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getCachedNetworks(): Promise<any[]> {
+  const now = Date.now();
+  
+  // Return cached if still valid
+  if (cachedNetworks && (now - cacheTimestamp) < CACHE_TTL) {
+    return cachedNetworks;
+  }
+  
+  try {
+    const response = await fetch(`${FACILITATOR_URL}/networks`, {
+      headers: { 'Connection': 'keep-alive' },
+      keepalive: true
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      cachedNetworks = [...(data.testnet || []), ...(data.mainnet || [])];
+      cacheTimestamp = now;
+      return cachedNetworks;
+    }
+  } catch (error) {
+    console.error('Failed to fetch networks:', error);
+  }
+  
+  // Return empty or stale cache on error
+  return cachedNetworks || [];
+}
+
 /**
  * Decode X-PAYMENT header
  * Client sends: { authorization: {...}, signature: "...", network: "...", asset: "..." }
@@ -181,25 +214,53 @@ export async function middleware(request: NextRequest) {
   
   if (!xPaymentHeader) {
     // No payment provided - return 402 Payment Required
-    const requirements = {
-      scheme: defaultConfig.scheme,
-      network: protection.network || defaultConfig.network,
-      asset: protection.asset || defaultConfig.asset,
-      payTo: MERCHANT_ADDRESS,
-      maxAmountRequired: protection.amount,
-      resource: path,
-      description: protection.description,
-      mimeType: getContentType(path),
-      maxTimeoutSeconds: defaultConfig.maxTimeoutSeconds
-    };
+    // Use cached networks for faster response
+    const allNetworks = await getCachedNetworks();
+    
+    // Build payment options for each supported network/token combination
+    let paymentOptions = allNetworks.flatMap((network: any) => 
+      (network.tokens || [])
+        .filter((token: any) => token.address && token.eip712)
+        .map((token: any) => ({
+          scheme: defaultConfig.scheme,
+          network: network.network,
+          chainId: network.chainId,
+          asset: token.address,
+          assetSymbol: token.symbol,
+          assetName: token.name,
+          decimals: token.decimals,
+          eip712: token.eip712,
+          payTo: MERCHANT_ADDRESS,
+          maxAmountRequired: protection.amount,
+          resource: path,
+          description: protection.description,
+          mimeType: getContentType(path),
+          maxTimeoutSeconds: defaultConfig.maxTimeoutSeconds
+        }))
+    );
+    
+    // Fallback to default if no networks fetched
+    if (paymentOptions.length === 0) {
+      paymentOptions = [{
+        scheme: defaultConfig.scheme,
+        network: protection.network || defaultConfig.network,
+        asset: protection.asset || defaultConfig.asset,
+        payTo: MERCHANT_ADDRESS,
+        maxAmountRequired: protection.amount,
+        resource: path,
+        description: protection.description,
+        mimeType: getContentType(path),
+        maxTimeoutSeconds: defaultConfig.maxTimeoutSeconds
+      }];
+    }
 
     // Encode requirements as base64 for X-PAYMENT-REQUIRED header
-    const encodedRequirements = Buffer.from(JSON.stringify(requirements)).toString('base64');
+    const encodedRequirements = Buffer.from(JSON.stringify({ paymentOptions })).toString('base64');
 
     return new NextResponse(
       JSON.stringify({
         error: 'Payment Required',
-        paymentRequirements: requirements
+        paymentOptions
       }),
       {
         status: 402,

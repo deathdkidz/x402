@@ -22,7 +22,8 @@ interface NetworkConfig {
 }
 
 interface StepData {
-  paymentRequirements?: any;
+  paymentOptions?: any[];
+  selectedPaymentOption?: any;
   authorization?: any;
   signature?: string;
   xPaymentHeader?: string;
@@ -129,8 +130,6 @@ export default function TutorialPage() {
   const [recipientAddress, setRecipientAddress] = useState('');
   const [configReady, setConfigReady] = useState(false);
   const [networks, setNetworks] = useState<NetworkConfig[]>([]);
-  const [selectedNetwork, setSelectedNetwork] = useState('base-sepolia');
-  const [selectedToken, setSelectedToken] = useState('');
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const [loadingNetworks, setLoadingNetworks] = useState(true);
@@ -161,14 +160,8 @@ export default function TutorialPage() {
         if (response.ok) {
           const data = await response.json();
           // Combine mainnet and testnet networks
-          const allNetworks = [...(data.mainnet || []), ...(data.testnet || [])];
+          const allNetworks = [...(data.testnet || []), ...(data.mainnet || [])];
           setNetworks(allNetworks);
-          if (allNetworks.length > 0) {
-            setSelectedNetwork(allNetworks[0].network);
-            if (allNetworks[0].tokens.length > 0) {
-              setSelectedToken(allNetworks[0].tokens[0].address);
-            }
-          }
         }
       } catch (error) {
         console.error('Failed to fetch networks:', error);
@@ -246,12 +239,14 @@ export default function TutorialPage() {
   })();
 
   const getXPaymentPayload = () => {
-    if (!stepData.authorization || !stepData.signature) {
+    if (!stepData.authorization || !stepData.signature || !stepData.selectedPaymentOption) {
       return null;
     }
     return {
       authorization: stepData.authorization,
-      signature: stepData.signature
+      signature: stepData.signature,
+      network: stepData.selectedPaymentOption.network,
+      asset: stepData.selectedPaymentOption.asset
     };
   };
 
@@ -325,37 +320,50 @@ export default function TutorialPage() {
       if (processing) return;
 
       try {
-        // Step 1: Generate 402 response (regenerate when network/token changes)
-        if (currentStep === 1 && recipientAddress && networks.length > 0) {
-          const network = networks.find(n => n.network === selectedNetwork);
-          if (!network?.tokens?.length) return;
-
-          const token = network.tokens.find(t => t.address === selectedToken) || network.tokens[0];
-          const paymentRequirements = {
-            scheme: 'exact',
-            network: selectedNetwork,
-            asset: token.address,
-            payTo: recipientAddress,
-            maxAmountRequired: '10000',
-            resource: '/premium/content',
-            description: 'Premium cat image access',
-            mimeType: 'image/jpeg',
-            maxTimeoutSeconds: 3600
-          };
-          const encodedRequirements = Buffer.from(JSON.stringify(paymentRequirements)).toString('base64');
-          setStepData(prev => ({ ...prev, paymentRequirements, x402PaymentRequired: encodedRequirements }));
+        // Step 1: Generate 402 response with all payment options
+        if (currentStep === 1 && recipientAddress && networks.length > 0 && !stepData.paymentOptions) {
+          // Build payment options for all supported networks
+          const paymentOptions = networks.flatMap(network => 
+            (network.tokens || [])
+              .filter(token => token.address && token.eip712)
+              .map(token => ({
+                scheme: 'exact',
+                network: network.network,
+                chainId: network.chainId,
+                asset: token.address,
+                assetSymbol: token.symbol,
+                assetName: token.name,
+                decimals: token.decimals,
+                eip712: token.eip712,
+                payTo: recipientAddress,
+                maxAmountRequired: '10000',
+                resource: '/premium/content',
+                description: 'Premium cat image access',
+                mimeType: 'image/jpeg',
+                maxTimeoutSeconds: 3600
+              }))
+          );
+          
+          const encodedRequirements = Buffer.from(JSON.stringify({ paymentOptions })).toString('base64');
+          setStepData(prev => ({ 
+            ...prev, 
+            paymentOptions, 
+            x402PaymentRequired: encodedRequirements,
+            // Default to first testnet option (Base Sepolia if available)
+            selectedPaymentOption: paymentOptions.find(opt => opt.network === 'Base Sepolia') || paymentOptions[0]
+          }));
         }
 
-        // Step 2: Generate authorization
-        if (currentStep === 2 && !stepData.authorization && address && recipientAddress) {
+        // Step 2: Generate authorization (only if payment option selected)
+        if (currentStep === 2 && !stepData.authorization && address && stepData.selectedPaymentOption) {
           const validAfter = Math.floor(Date.now() / 1000);
           const validBefore = validAfter + 3600;
           const nonce = '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
             .map(b => b.toString(16).padStart(2, '0')).join('');
           const authorization = {
             from: address,
-            to: recipientAddress,
-            value: '10000',
+            to: stepData.selectedPaymentOption.payTo,
+            value: stepData.selectedPaymentOption.maxAmountRequired,
             validAfter: validAfter.toString(),
             validBefore: validBefore.toString(),
             nonce
@@ -364,13 +372,16 @@ export default function TutorialPage() {
         }
 
         // Step 4+: Generate base64 encoding with protocol metadata
-        if (currentStep >= 4 && stepData.authorization && stepData.signature) {
-          const payload = getXPaymentPayload();
-          if (payload) {
-            const base64Encoded = Buffer.from(JSON.stringify(payload)).toString('base64');
-            if (stepData.xPaymentHeader !== base64Encoded || !stepData.xPaymentPayload) {
-              setStepData(prev => ({ ...prev, xPaymentHeader: base64Encoded, xPaymentPayload: payload }));
-            }
+        if (currentStep >= 4 && stepData.authorization && stepData.signature && stepData.selectedPaymentOption) {
+          const payload = {
+            authorization: stepData.authorization,
+            signature: stepData.signature,
+            network: stepData.selectedPaymentOption.network,
+            asset: stepData.selectedPaymentOption.asset
+          };
+          const base64Encoded = Buffer.from(JSON.stringify(payload)).toString('base64');
+          if (stepData.xPaymentHeader !== base64Encoded || !stepData.xPaymentPayload) {
+            setStepData(prev => ({ ...prev, xPaymentHeader: base64Encoded, xPaymentPayload: payload }));
           }
         }
       } catch (err) {
@@ -379,7 +390,7 @@ export default function TutorialPage() {
     };
 
     autoGenerateData();
-  }, [currentStep, recipientAddress, networks, address, selectedNetwork, selectedToken, stepData, processing]);
+  }, [currentStep, recipientAddress, networks, address, stepData, processing]);
 
   const handleNext = async () => {
     setError('');
@@ -401,22 +412,21 @@ export default function TutorialPage() {
             setCurrentStep(4);
           } else {
             // Need to sign
-            if (!stepData.authorization) {
-              throw new Error('Authorization not created');
+            if (!stepData.authorization || !stepData.selectedPaymentOption) {
+              throw new Error('Authorization not created or payment option not selected');
             }
 
-            const net = networks.find(n => n.network === selectedNetwork);
-            const tokenConfig = net?.tokens.find(t => t.address === selectedToken) || net?.tokens[0];
-            if (!net || !tokenConfig || !tokenConfig.eip712) {
-              throw new Error('Network or token configuration missing');
+            const selectedOption = stepData.selectedPaymentOption;
+            if (!selectedOption.eip712) {
+              throw new Error('EIP-712 configuration missing for selected payment option');
             }
 
             const signature = await signTypedDataAsync({
               domain: {
-                name: tokenConfig.eip712.name,
-                version: tokenConfig.eip712.version,
-                chainId: net.chainId,
-                verifyingContract: tokenConfig.eip712.verifyingContract as `0x${string}`
+                name: selectedOption.eip712.name,
+                version: selectedOption.eip712.version,
+                chainId: selectedOption.chainId,
+                verifyingContract: selectedOption.eip712.verifyingContract as `0x${string}`
               },
               types: {
                 TransferWithAuthorization: [
@@ -433,7 +443,7 @@ export default function TutorialPage() {
             });
 
             setStepData(prev => ({ ...prev, signature }));
-            // Stay on step 2 to show the signature data
+            // Stay on step 3 to show the signature data
           }
           break;
 
@@ -450,7 +460,7 @@ export default function TutorialPage() {
             setCurrentStep(7);
           } else {
             // Need to verify
-            if (!stepData.authorization || !stepData.signature || !stepData.paymentRequirements) {
+            if (!stepData.authorization || !stepData.signature || !stepData.selectedPaymentOption) {
               throw new Error('Missing payment data');
             }
 
@@ -467,9 +477,15 @@ export default function TutorialPage() {
                   signature: stepData.signature
                 },
                 paymentRequirements: {
-                  ...(stepData.paymentRequirements || {}),
                   scheme: 'exact',
-                  network: stepData.paymentRequirements?.network || selectedNetwork
+                  network: stepData.selectedPaymentOption.network,
+                  asset: stepData.selectedPaymentOption.asset,
+                  payTo: stepData.selectedPaymentOption.payTo,
+                  maxAmountRequired: stepData.selectedPaymentOption.maxAmountRequired,
+                  resource: stepData.selectedPaymentOption.resource || '/dancing-cat.gif',
+                  description: stepData.selectedPaymentOption.description || 'Premium content',
+                  mimeType: stepData.selectedPaymentOption.mimeType || 'image/gif',
+                  maxTimeoutSeconds: stepData.selectedPaymentOption.maxTimeoutSeconds || 60
                 }
               })
             });
@@ -486,7 +502,7 @@ export default function TutorialPage() {
 
         case 7:
           // Server settles payment
-          if (!stepData.authorization || !stepData.signature || !stepData.paymentRequirements) {
+          if (!stepData.authorization || !stepData.signature || !stepData.selectedPaymentOption) {
             throw new Error('Missing payment data');
           }
 
@@ -508,9 +524,15 @@ export default function TutorialPage() {
                   signature: stepData.signature
                 },
                 paymentRequirements: {
-                  ...(stepData.paymentRequirements || {}),
                   scheme: 'exact',
-                  network: stepData.paymentRequirements?.network || selectedNetwork
+                  network: stepData.selectedPaymentOption.network,
+                  asset: stepData.selectedPaymentOption.asset,
+                  payTo: stepData.selectedPaymentOption.payTo,
+                  maxAmountRequired: stepData.selectedPaymentOption.maxAmountRequired,
+                  resource: stepData.selectedPaymentOption.resource || '/dancing-cat.gif',
+                  description: stepData.selectedPaymentOption.description || 'Premium content',
+                  mimeType: stepData.selectedPaymentOption.mimeType || 'image/gif',
+                  maxTimeoutSeconds: stepData.selectedPaymentOption.maxTimeoutSeconds || 60
                 }
               })
             });
@@ -560,11 +582,11 @@ export default function TutorialPage() {
       case 0:
         return true;
       case 1:
-        return !!recipientAddress && networks.length > 0;
+        return !!recipientAddress && networks.length > 0 && !!stepData.selectedPaymentOption;
       case 2:
-        return !!recipientAddress;
+        return !!stepData.selectedPaymentOption && !!stepData.authorization;
       case 3:
-        return isConnected && !!recipientAddress;
+        return isConnected && !!stepData.authorization;
       case 4:
       case 5:
       case 6:
@@ -818,76 +840,82 @@ export default function TutorialPage() {
           </div>
         </div>
 
-        {/* Network and Token Selection */}
-        <div className="bg-slate-800/40 border border-slate-700/40 rounded-lg p-5 mb-6">
-          <h3 className="text-sm font-semibold text-slate-300 mb-4">Payment Configuration</h3>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2">
-                <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                </svg>
-                Network
-              </label>
-              <select
-                value={selectedNetwork}
-                onChange={(e) => {
-                  setSelectedNetwork(e.target.value);
-                  const network = networks.find(n => n.network === e.target.value);
-                  if (network?.tokens.length) {
-                    setSelectedToken(network.tokens[0].address);
-                  }
-                  if (currentStep === 1) {
-                    setHighlightChange(true);
-                    setTimeout(() => setHighlightChange(false), 1000);
-                  }
-                }}
-                disabled={loadingNetworks || currentStep > 1}
-                className="w-full px-4 py-2.5 bg-slate-900/60 border border-slate-700/40 rounded-lg text-slate-100 text-sm focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                {networks.map((net) => (
-                  <option key={net.network} value={net.network}>
-                    {net.network} (Chain ID: {net.chainId})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2">
-                <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Token
-              </label>
-              <select
-                value={selectedToken}
-                onChange={(e) => {
-                  setSelectedToken(e.target.value);
-                  if (currentStep === 1) {
-                    setHighlightChange(true);
-                    setTimeout(() => setHighlightChange(false), 1000);
-                  }
-                }}
-                disabled={loadingNetworks || currentStep > 1 || !selectedNetwork}
-                className="w-full px-4 py-2.5 bg-slate-900/60 border border-slate-700/40 rounded-lg text-slate-100 text-sm focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                {(networks.find(n => n.network === selectedNetwork)?.tokens || []).map((token) => (
-                  <option key={token.address} value={token.address}>
-                    {token.symbol} - {token.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {currentStep > 1 && (
-            <div className="mt-3 text-xs text-slate-500 flex items-center gap-2">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        {/* Network and Token Selection - Only show after step 1 */}
+        {currentStep >= 1 && stepData.paymentOptions && stepData.paymentOptions.length > 0 && (
+          <div className="bg-slate-800/40 border border-slate-700/40 rounded-lg p-5 mb-6">
+            <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
+              <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
               </svg>
-              Network and token locked once tutorial starts
+              Select Payment Method
+              <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-full ml-2">
+                {stepData.paymentOptions.length} options available
+              </span>
+            </h3>
+            <div className="grid gap-3">
+              {stepData.paymentOptions.map((option, index) => (
+                <button
+                  key={`${option.network}-${option.asset}`}
+                  onClick={() => {
+                    if (currentStep <= 1) {
+                      setStepData(prev => ({ 
+                        ...prev, 
+                        selectedPaymentOption: option,
+                        // Reset downstream data when changing payment option
+                        authorization: undefined,
+                        signature: undefined,
+                        xPaymentHeader: undefined,
+                        xPaymentPayload: undefined,
+                        verifyResponse: undefined,
+                        settleResponse: undefined
+                      }));
+                      setHighlightChange(true);
+                      setTimeout(() => setHighlightChange(false), 1000);
+                    }
+                  }}
+                  disabled={currentStep > 1}
+                  className={`flex items-center justify-between p-4 rounded-lg border transition-all ${
+                    stepData.selectedPaymentOption?.network === option.network && 
+                    stepData.selectedPaymentOption?.asset === option.asset
+                      ? 'bg-cyan-500/10 border-cyan-500/50 ring-2 ring-cyan-500/30'
+                      : 'bg-slate-900/40 border-slate-700/40 hover:border-slate-600/60'
+                  } ${currentStep > 1 ? 'opacity-60 cursor-not-allowed' : ''}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      stepData.selectedPaymentOption?.network === option.network && 
+                      stepData.selectedPaymentOption?.asset === option.asset
+                        ? 'bg-cyan-500/20'
+                        : 'bg-slate-700/50'
+                    }`}>
+                      <span className="text-sm font-bold text-slate-300">{option.assetSymbol}</span>
+                    </div>
+                    <div className="text-left">
+                      <div className="font-semibold text-slate-200">{option.network}</div>
+                      <div className="text-xs text-slate-400">
+                        {option.assetName} • Chain ID: {option.chainId}
+                      </div>
+                    </div>
+                  </div>
+                  {stepData.selectedPaymentOption?.network === option.network && 
+                   stepData.selectedPaymentOption?.asset === option.asset && (
+                    <svg className="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  )}
+                </button>
+              ))}
             </div>
-          )}
-        </div>
+            {currentStep > 1 && (
+              <div className="mt-3 text-xs text-slate-500 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Payment method locked once you proceed to Step 2
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Current Step */}
         <div className="bg-slate-800/40 border border-slate-700/40 rounded-lg p-6 mb-6">
@@ -937,7 +965,7 @@ export default function TutorialPage() {
                   </div>
                 </div>
 
-                {stepData.paymentRequirements && stepData.x402PaymentRequired && (
+                {stepData.paymentOptions && stepData.x402PaymentRequired && (
                   <>
                     <div className="mb-4">
                       <h3 className="text-sm font-semibold text-slate-300 mb-2">HTTP Response (402 Payment Required)</h3>
@@ -945,16 +973,13 @@ export default function TutorialPage() {
                         highlightChange ? 'ring-2 ring-cyan-500/50 bg-cyan-500/5' : ''
                       }`}>
                         <pre className="text-xs text-red-200 font-mono whitespace-pre-wrap break-words">
-{(() => {
-  const encodedHeader = Buffer.from(JSON.stringify(stepData.paymentRequirements)).toString('base64');
-  return formatHttpResponse(
+{formatHttpResponse(
     'HTTP/1.1 402 Payment Required',
     {
       'Content-Type': 'application/json',
-      'X-PAYMENT-REQUIRED': encodedHeader
+      'X-PAYMENT-REQUIRED': stepData.x402PaymentRequired.substring(0, 50) + '...'
     }
-  );
-})()}
+)}
                         </pre>
                       </div>
                     </div>
@@ -963,21 +988,36 @@ export default function TutorialPage() {
                       <div className={`bg-slate-900/60 border border-slate-700/40 rounded-lg p-4 transition-all duration-500 ${
                         highlightChange ? 'ring-2 ring-cyan-500/50 bg-cyan-500/5' : ''
                       }`}>
-                        <pre className="text-xs text-slate-300 overflow-x-auto">
-                          {JSON.stringify(stepData.paymentRequirements, null, 2)}
+                        <pre className="text-xs text-slate-300 overflow-x-auto max-h-60">
+{JSON.stringify({ paymentOptions: stepData.paymentOptions.slice(0, 3) }, null, 2)}
+{stepData.paymentOptions.length > 3 && `\n// ... and ${stepData.paymentOptions.length - 3} more payment options`}
                         </pre>
                       </div>
                     </div>
-                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 mb-4">
                       <div className="flex items-start gap-3">
                         <svg className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <div className="text-sm text-blue-300">
-                          The <strong>X-PAYMENT-REQUIRED header</strong> contains base64-encoded payment requirements. Clients should decode this header to extract payment details for the X-402 protocol.
+                          <strong>Multi-Payment Support:</strong> The server returns multiple payment options. The client can choose any supported network to pay on. Select your preferred payment method above before proceeding.
                         </div>
                       </div>
                     </div>
+                    {stepData.selectedPaymentOption && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <svg className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div className="text-sm text-emerald-300">
+                            <strong>Selected:</strong> {stepData.selectedPaymentOption.network} ({stepData.selectedPaymentOption.assetSymbol})
+                            <br />
+                            <span className="text-emerald-400/70 text-xs font-mono">{stepData.selectedPaymentOption.asset}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -1026,15 +1066,14 @@ export default function TutorialPage() {
                       <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
                         <pre className="text-xs text-purple-300 overflow-x-auto font-mono leading-relaxed">
 {(() => {
-  const net = networks.find(n => n.network === selectedNetwork);
-  const token = net?.tokens.find(t => t.address === selectedToken) || net?.tokens[0];
-  if (!net || !token?.eip712) return 'Loading...';
+  const selectedOption = stepData.selectedPaymentOption;
+  if (!selectedOption?.eip712) return 'Loading...';
   return JSON.stringify({
     domain: {
-      name: token.eip712.name,
-      version: token.eip712.version,
-      chainId: net.chainId,
-      verifyingContract: token.eip712.verifyingContract
+      name: selectedOption.eip712.name,
+      version: selectedOption.eip712.version,
+      chainId: selectedOption.chainId,
+      verifyingContract: selectedOption.eip712.verifyingContract
     },
     types: {
       TransferWithAuthorization: [
@@ -1071,13 +1110,10 @@ export default function TutorialPage() {
                       <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
                         <pre className="text-xs overflow-x-auto font-mono leading-relaxed whitespace-pre">
 {JSON.stringify(xPaymentPayload || {
-  x402Version: 1,
-  scheme: 'exact',
-  network: stepData.paymentRequirements?.network || selectedNetwork,
-  payload: {
-    authorization: stepData.authorization,
-    signature: stepData.signature
-  }
+  authorization: stepData.authorization,
+  signature: stepData.signature,
+  network: stepData.selectedPaymentOption?.network,
+  asset: stepData.selectedPaymentOption?.asset
 }, null, 2)}
                         </pre>
                       </div>
@@ -1103,14 +1139,11 @@ export default function TutorialPage() {
                   <h3 className="text-sm font-semibold text-slate-300 mb-2">Before Encoding (JSON)</h3>
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
                     <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
-{JSON.stringify(xPaymentPayload || {
-  x402Version: 1,
-  scheme: 'exact',
-  network: stepData.paymentRequirements?.network || selectedNetwork,
-  payload: {
-    authorization: stepData.authorization,
-    signature: stepData.signature
-  }
+{JSON.stringify(stepData.xPaymentPayload || {
+  authorization: stepData.authorization,
+  signature: stepData.signature,
+  network: stepData.selectedPaymentOption?.network,
+  asset: stepData.selectedPaymentOption?.asset
 }, null, 2)}
                     </pre>
                   </div>
@@ -1163,14 +1196,11 @@ export default function TutorialPage() {
                   <h3 className="text-sm font-semibold text-slate-300 mb-2">X-PAYMENT Header Content (Decoded)</h3>
                   <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4">
                     <pre className="text-xs text-slate-300 overflow-x-auto font-mono whitespace-pre">
-{JSON.stringify(xPaymentPayload || {
-  x402Version: 1,
-  scheme: 'exact',
-  network: stepData.paymentRequirements?.network || selectedNetwork,
-  payload: {
-    authorization: stepData.authorization,
-    signature: stepData.signature
-  }
+{JSON.stringify(stepData.xPaymentPayload || {
+  authorization: stepData.authorization,
+  signature: stepData.signature,
+  network: stepData.selectedPaymentOption?.network,
+  asset: stepData.selectedPaymentOption?.asset
 }, null, 2)}
                     </pre>
                   </div>
@@ -1201,9 +1231,11 @@ export default function TutorialPage() {
     signature: stepData.signature
   },
   paymentRequirements: {
-    ...(stepData.paymentRequirements || {}),
     scheme: 'exact',
-    network: stepData.paymentRequirements?.network || selectedNetwork
+    network: stepData.selectedPaymentOption?.network,
+    asset: stepData.selectedPaymentOption?.asset,
+    payTo: stepData.selectedPaymentOption?.payTo,
+    maxAmountRequired: stepData.selectedPaymentOption?.maxAmountRequired
   }
 }, null, 2)}
                     </pre>
@@ -1243,9 +1275,11 @@ export default function TutorialPage() {
     signature: stepData.signature
   },
   paymentRequirements: {
-    ...(stepData.paymentRequirements || {}),
     scheme: 'exact',
-    network: stepData.paymentRequirements?.network || selectedNetwork
+    network: stepData.selectedPaymentOption?.network,
+    asset: stepData.selectedPaymentOption?.asset,
+    payTo: stepData.selectedPaymentOption?.payTo,
+    maxAmountRequired: stepData.selectedPaymentOption?.maxAmountRequired
   }
 }, null, 2)}
                     </pre>
@@ -1293,7 +1327,7 @@ export default function TutorialPage() {
                             <div className="mt-2">
                               <p className="font-mono text-xs text-slate-100/80 mb-1">Transaction:</p>
                               <a 
-                                href={getExplorerUrl(selectedNetwork, transactionHash)}
+                                href={getExplorerUrl(stepData.selectedPaymentOption?.network || '', transactionHash)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="font-mono text-xs break-all text-cyan-400 hover:text-cyan-300 underline inline-flex items-center gap-1"
