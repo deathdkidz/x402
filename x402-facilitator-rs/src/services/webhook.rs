@@ -80,7 +80,7 @@ impl WebhookService {
     /// Send a webhook notification for a transaction
     pub async fn send_transaction_webhook(
         &self,
-        merchant_id: i64,
+        api_key: &str,
         webhook_url: &str,
         event_type: WebhookEventType,
         transaction_id: i64,
@@ -118,7 +118,7 @@ impl WebhookService {
 
         // Log initial delivery attempt
         if let Err(e) = self.database.log_webhook_delivery_v2(
-            merchant_id,
+            api_key,
             Some(transaction_id),
             &delivery_id,
             &event_str,
@@ -147,7 +147,7 @@ impl WebhookService {
                     
                     // Update delivery status to success
                     if let Err(e) = self.database.log_webhook_delivery_v2(
-                        merchant_id,
+                        api_key,
                         Some(transaction_id),
                         &delivery_id,
                         &event_str,
@@ -172,7 +172,7 @@ impl WebhookService {
                     // Update with retry status
                     let status = if attempt == max_attempts { "failed" } else { "retrying" };
                     if let Err(e) = self.database.log_webhook_delivery_v2(
-                        merchant_id,
+                        api_key,
                         Some(transaction_id),
                         &delivery_id,
                         &event_str,

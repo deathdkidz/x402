@@ -10,37 +10,28 @@
 6. [Troubleshooting](#troubleshooting)
 7. [Performance Analysis](#performance-analysis)
 8. [Pre-flight Checks Audit](#pre-flight-checks-audit)
-9. [Bottleneck Analysis](#bottleneck-analysis)
-10. [Resource Usage](#resource-usage)
-11. [Optimization Recommendations](#optimization-recommendations)
+9. [Resource Usage](#resource-usage)
+10. [Implemented Optimizations](#implemented-optimizations)
 
 ---
 
 ## Quick Start
 
-### Start the Server
+### Start the Server (Production)
 
 ```bash
-# Development mode (with cargo watch for auto-reload)
-cd /srv/x402/x402-facilitator-rs
-cargo run
+# Using systemd (recommended)
+sudo systemctl start x402-facilitator-rs
 
-# Production mode (optimized release build)
-cargo build --release
-./target/release/x402-facilitator-rs
+# Check status
+sudo systemctl status x402-facilitator-rs
 ```
 
-### With PM2 (Recommended for Production)
+### Development Mode
 
 ```bash
-# Start with PM2
 cd /srv/x402/x402-facilitator-rs
-pm2 start ecosystem.config.cjs
-
-# Quick commands
-pm2 restart x402-facilitator-rs
-pm2 stop x402-facilitator-rs
-pm2 delete x402-facilitator-rs
+cargo run
 ```
 
 ---
@@ -50,63 +41,51 @@ pm2 delete x402-facilitator-rs
 ### Start Server
 
 ```bash
-# Option 1: Direct cargo (development)
-cargo run
-
-# Option 2: PM2 process manager (production)
-pm2 start ecosystem.config.cjs
-
-# Option 3: Run release binary directly
-./target/release/x402-facilitator
-
-# Option 4: Systemd service
 sudo systemctl start x402-facilitator-rs
 ```
 
 ### Stop Server
 
 ```bash
-# PM2
-pm2 stop x402-facilitator-rs
-
-# Direct process (find and kill)
-pkill -f x402-facilitator-rs
-
-# Graceful shutdown (sends SIGTERM)
-kill -15 $(pgrep -f x402-facilitator-rs)
-
-# Systemd
 sudo systemctl stop x402-facilitator-rs
+
+# If there are orphan processes (started manually), kill them:
+pkill -f x402-facilitator
 ```
 
 ### Restart Server
 
 ```bash
-# PM2 (zero-downtime restart)
-pm2 restart x402-facilitator-rs
-
-# Full rebuild and restart
-cargo build --release && pm2 restart x402-facilitator-rs
-
-# Systemd
 sudo systemctl restart x402-facilitator-rs
+
+# After rebuilding:
+cargo build --release && sudo systemctl restart x402-facilitator-rs
 ```
 
 ### Check Server Status
 
 ```bash
-# PM2 status
-pm2 status
+# Systemd status
+sudo systemctl status x402-facilitator-rs
 
 # Health endpoint
 curl http://localhost:8080/health
 
-# Check process
+# Check if process is running
 ps aux | grep x402-facilitator
 
 # Check port binding
 lsof -i :8080
-netstat -tlnp | grep 8080
+```
+
+### Enable/Disable Auto-start
+
+```bash
+# Enable on boot
+sudo systemctl enable x402-facilitator-rs
+
+# Disable on boot
+sudo systemctl disable x402-facilitator-rs
 ```
 
 ---
@@ -116,20 +95,17 @@ netstat -tlnp | grep 8080
 ### View Live Logs
 
 ```bash
-# PM2 logs (real-time)
-pm2 logs x402-facilitator-rs
+# Via journalctl (recommended)
+sudo journalctl -u x402-facilitator-rs -f
 
-# PM2 logs with timestamp
-pm2 logs x402-facilitator-rs --timestamp
-
-# Last 100 lines
-pm2 logs x402-facilitator-rs --lines 100
-
-# Follow log file directly
+# Via log file
 tail -f /srv/x402/x402-facilitator-rs/logs/x402-facilitator.log
 
+# Last 100 lines
+sudo journalctl -u x402-facilitator-rs -n 100
+
 # With color highlighting
-tail -f logs/x402-facilitator.log | grep --color=auto -E '(ERROR|WARN|INFO|✅|❌|⚡)'
+tail -f /srv/x402/x402-facilitator-rs/logs/x402-facilitator.log | grep --color=auto -E '(ERROR|WARN|INFO|✅|❌|⚡)'
 ```
 
 ### Log Filtering
@@ -151,26 +127,31 @@ tail -f logs/x402-facilitator.log | grep -E '(monitor|Monitor|pending)'
 tail -f logs/x402-facilitator.log | grep -E '(⚡|Flashblock)'
 ```
 
-### PM2 Monitoring Dashboard
+### Log Rotation (Systemd)
 
-```bash
-# Real-time dashboard
-pm2 monit
+Systemd handles log rotation via journald. Configure in `/etc/systemd/journald.conf`:
 
-# Web-based dashboard (requires pm2-web)
-pm2 web
+```ini
+[Journal]
+SystemMaxUse=500M
+MaxRetentionSec=7day
 ```
 
-### Log Rotation
+For file logs, use logrotate:
 
 ```bash
-# Install log rotation
-pm2 install pm2-logrotate
-
-# Configure (keep 7 days, 10MB max)
-pm2 set pm2-logrotate:max_size 10M
-pm2 set pm2-logrotate:retain 7
-pm2 set pm2-logrotate:compress true
+# Create /etc/logrotate.d/x402-facilitator
+cat > /etc/logrotate.d/x402-facilitator << 'EOF'
+/srv/x402/x402-facilitator-rs/logs/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+EOF
 ```
 
 ---
@@ -187,11 +168,6 @@ source $HOME/.cargo/env
 # Install system dependencies (Ubuntu/Debian)
 sudo apt update
 sudo apt install -y build-essential pkg-config libssl-dev
-
-# Install Node.js + PM2 (for process management)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-sudo npm install -g pm2
 ```
 
 ### Clone & Build
@@ -221,7 +197,6 @@ nano .env
 ```env
 # Server
 PORT=8080
-NODE_ENV=production
 LOG_LEVEL=info
 
 # Database (MySQL)
@@ -230,28 +205,27 @@ DB_PORT=3306
 DB_USER=x402user
 DB_PASSWORD=your_secure_password
 DB_DATABASE=x402_facilitator
-DB_CONNECTION_LIMIT=20
+DB_CONNECTION_LIMIT=50
 
 # Redis
 REDIS_URL=redis://localhost:6379
 
 # Networks (comma-separated)
-MAINNET_NETWORKS=base,ethereum,optimism
-TESTNET_NETWORKS=base-sepolia
+MAINNET_NETWORKS=Base,OP Mainnet,HyperEVM
+TESTNET_NETWORKS=Base Sepolia,OP Sepolia,HyperEVM Testnet
 
-# Paymaster (one per network)
-BASE_SEPOLIA_PAYMASTER_KEY=0x...
+# Paymaster keys (comma-separated)
+PAYMASTER_PRIVATE_KEYS=0x...,0x...,...
 
 # RPC URLs
-BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
-BASE_RPC_URL=https://mainnet.base.org
+BASE_RPC=wss://...
+BASE_SEPOLIA_RPC=wss://...
+OP_MAINNET_RPC=wss://...
+OP_SEPOLIA_RPC=wss://...
 
 # Security
 SECURITY_BAN_THRESHOLD=100
 SECURITY_BAN_DURATION_MS=3600000
-
-# Transaction Monitor
-TRANSACTION_MONITOR_INTERVAL_MS=20000
 ```
 
 ### Database Setup
@@ -264,9 +238,6 @@ CREATE USER 'x402user'@'localhost' IDENTIFIED BY 'your_password';
 GRANT ALL PRIVILEGES ON x402_facilitator.* TO 'x402user'@'localhost';
 FLUSH PRIVILEGES;
 EOF
-
-# Run migrations (from Node.js version or SQL files)
-mysql -u x402user -p x402_facilitator < schema.sql
 ```
 
 ### Redis Setup
@@ -283,48 +254,11 @@ sudo systemctl enable redis-server
 redis-cli ping
 ```
 
-### Start Service
-
-#### Option A: PM2 (Process Manager)
-
-```bash
-# Create PM2 ecosystem config
-cat > ecosystem.config.cjs << 'EOF'
-module.exports = {
-  apps: [{
-    name: 'x402-facilitator-rs',
-    script: './target/release/x402-facilitator',
-    cwd: '/srv/x402/x402-facilitator-rs',
-    env: {
-      NODE_ENV: 'production',
-    },
-    instances: 1,
-    autorestart: true,
-    watch: false,
-    max_memory_restart: '1G',
-    error_file: './logs/error.log',
-    out_file: './logs/out.log',
-    log_file: './logs/combined.log',
-    time: true,
-  }]
-};
-EOF
-
-# Start with PM2
-pm2 start ecosystem.config.cjs
-
-# Save PM2 configuration
-pm2 save
-
-# Setup PM2 startup script
-pm2 startup
-```
-
-#### Option B: Systemd (Recommended for Production)
+### Create Systemd Service
 
 ```bash
 # Create systemd service file
-sudo cat > /etc/systemd/system/x402-facilitator-rs.service << 'EOF'
+sudo tee /etc/systemd/system/x402-facilitator-rs.service << 'EOF'
 [Unit]
 Description=x402 Facilitator (Rust)
 Documentation=https://github.com/your-org/x402
@@ -364,9 +298,6 @@ sudo systemctl start x402-facilitator-rs
 
 # Check status
 sudo systemctl status x402-facilitator-rs
-
-# View logs
-sudo journalctl -u x402-facilitator-rs -f
 ```
 
 ### Nginx Reverse Proxy (Optional)
@@ -374,7 +305,7 @@ sudo journalctl -u x402-facilitator-rs -f
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name facilitator.yourdomain.com;
+    server_name api.yourdomain.com;
 
     ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
@@ -430,7 +361,7 @@ curl http://localhost:8080/networks
 
 ```bash
 #!/bin/bash
-# health-check.sh
+# /usr/local/bin/x402-health-check.sh
 
 ENDPOINT="http://localhost:8080/health"
 RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $ENDPOINT)
@@ -440,7 +371,7 @@ if [ "$RESPONSE" -eq 200 ]; then
     exit 0
 else
     echo "❌ Facilitator unhealthy (HTTP $RESPONSE)"
-    pm2 restart x402-facilitator-rs
+    sudo systemctl restart x402-facilitator-rs
     exit 1
 fi
 ```
@@ -462,6 +393,21 @@ kill -9 <PID>
 
 # Or change port in .env
 PORT=8081
+```
+
+#### Service Won't Stop (Orphan Process)
+
+If `systemctl stop` doesn't kill the process, it may have been started manually:
+
+```bash
+# Check for running processes
+ps aux | grep x402-facilitator
+
+# Kill all x402-facilitator processes
+pkill -f x402-facilitator
+
+# Verify stopped
+ps aux | grep x402-facilitator | grep -v grep
 ```
 
 #### Database Connection Failed
@@ -494,21 +440,21 @@ cat .env | grep REDIS
 
 ```bash
 # Check memory usage
-pm2 monit
+ps aux --sort=-%mem | head -10
 
-# Increase limits
-pm2 restart x402-facilitator-rs --max-memory-restart 2G
+# Check service memory limit in systemd
+systemctl show x402-facilitator-rs | grep Memory
 ```
 
 #### Permission Errors
 
 ```bash
 # Fix log directory permissions
-mkdir -p logs
-chmod 755 logs
+mkdir -p /srv/x402/x402-facilitator-rs/logs
+chmod 755 /srv/x402/x402-facilitator-rs/logs
 
 # Fix binary permissions
-chmod +x target/release/x402-facilitator
+chmod +x /srv/x402/x402-facilitator-rs/target/release/x402-facilitator
 ```
 
 #### Paymaster Insufficient Gas
@@ -518,17 +464,7 @@ chmod +x target/release/x402-facilitator
 insufficient funds for gas * price + value: balance 0, tx cost 104924436545, overshot 104924436545
 ```
 
-**Cause:** The paymaster wallet assigned to handle the settlement has 0 ETH balance on that network. The paymaster needs native tokens (ETH) to pay for gas when submitting the `transferWithAuthorization` transaction.
-
-**Merchant Response:**
-```json
-{
-  "success": false,
-  "network": "OP Sepolia",
-  "errorReason": "Transaction send failed: server returned an error response: error code -32000: insufficient funds for gas * price + value: balance 0, tx cost 104924436545, overshot 104924436545",
-  "status": "failed"
-}
-```
+**Cause:** The paymaster wallet has 0 ETH balance on that network.
 
 **Fix:**
 ```bash
@@ -537,7 +473,6 @@ cd /srv/x402/x402-facilitator-rs
 node scripts/check-balances.mjs
 
 # Fund the paymaster wallet on the affected network
-# Send ~0.01 ETH to the paymaster address shown in logs
 ```
 
 ---
@@ -631,66 +566,6 @@ node scripts/check-balances.mjs
 
 ---
 
-## Implemented Optimizations
-
-### ✅ 1. Parallel RPC Checks
-Balance and nonce checks run in parallel using `tokio::join!`.
-**Savings**: ~50ms per settlement request
-
-### ✅ 2. Timing Instrumentation
-Detailed timing logs added to settlement service with `Instant::now()`.
-
-### ✅ 3. Pre-warm Merchant Cache
-On startup, all active merchants are pre-loaded into Redis cache (1 hour TTL).
-**Benefit**: First request from each merchant is fast (no DB lookup).
-
-### ✅ 4. Connection Pool Tuning
-Database pool increased to 50 connections in `.env`.
-
-### ✅ 5. Response Compression
-Gzip/Brotli compression enabled via `tower-http CompressionLayer`.
-**Benefit**: Smaller response sizes for `/networks` endpoint.
-
-### ✅ 6. Gas Tracking Logging
-Gas usage logged on transaction confirmation:
-```
-⛽ Gas used: 65000 units @ 0.1 gwei = 6500 gwei (~0.000006 ETH) [Base Sepolia]
-```
-
-### ✅ 7. Environment Cleanup
-Removed unused/redundant variables from `.env`:
-- Removed `PRIVATE_KEY` (unused)
-- Removed `DB_NAME` (duplicate of `DB_DATABASE`)
-- Removed rate limit vars (using governor crate)
-- Removed webhook/settlement/gas configs (using defaults)
-- Simplified to essential vars only
-
-### ✅ 8. Time Window Check (Simplified)
-Removed safety buffers - client is responsible for proper timing.
-
-### ✅ 9. Prometheus Metrics
-Metrics collection for monitoring (localhost only at `/metrics`):
-- Request latency histograms
-- Settlement/verification counters
-- RPC call durations
-- Gas usage tracking
-
-Access: `curl http://localhost:8080/metrics`
-
-### ✅ 10. WebSocket Providers
-All RPC providers now use WebSocket connections with HTTP fallback:
-- **Benefit**: Instant block notifications (no polling delay)
-- **Benefit**: Lower latency for transaction confirmations
-- **Benefit**: Reduced RPC call volume
-
-Startup log shows:
-```
-🔌 Base: WebSocket connected (chain_id: 8453, 164ms)
-🔌 Ethereum: WebSocket connected (chain_id: 1, 113ms)
-```
-
----
-
 ## Resource Usage
 
 ### Memory Profile
@@ -698,12 +573,12 @@ Startup log shows:
 | Component | Estimated Memory |
 |-----------|-----------------|
 | Base binary | ~15MB |
-| MySQL pool (20 conn) | ~40MB |
+| MySQL pool (50 conn) | ~100MB |
 | Redis pool (10 conn) | ~10MB |
-| Provider pool (5 networks) | ~20MB |
+| Provider pool (6 networks) | ~25MB |
 | Request handling | ~2MB per concurrent |
-| **Total idle** | **~85MB** |
-| **Under load (100 concurrent)** | **~285MB** |
+| **Total idle** | **~150MB** |
+| **Under load (100 concurrent)** | **~350MB** |
 
 ### CPU Profile
 
@@ -725,10 +600,10 @@ acquire_timeout = 10s
 idle_timeout = 60s
 
 [redis]
-pool_size = 10  # deadpool default
+pool_size = 10
 
 [providers]
-# One HTTP client per network
+# One WebSocket client per network
 ```
 
 ### File Descriptors
@@ -738,59 +613,39 @@ pool_size = 10  # deadpool default
 ls /proc/$(pgrep x402-facilitator)/fd | wc -l
 
 # Expected: ~70-150 FDs
-# - 50 MySQL connections
-# - 10 Redis connections
-# - 8 HTTP providers (4 mainnet + 4 testnet)
-# - stdin/stdout/stderr
-# - Log files
 ```
 
 ---
 
-## Environment Variables Reference
+## Implemented Optimizations
 
-### Required Variables
+### ✅ 1. Parallel RPC Checks
+Balance and nonce checks run in parallel using `tokio::join!`.
+**Savings**: ~50ms per settlement request
 
-```env
-PORT=8080                          # Server port
-LOG_LEVEL=info                     # Logging level
-DB_HOST=localhost                  # MySQL host
-DB_PORT=3306                       # MySQL port
-DB_DATABASE=x402_facilitator       # Database name
-DB_USER=root                       # Database user
-DB_PASSWORD=xxx                    # Database password
-DB_CONNECTION_LIMIT=50             # Connection pool size
-REDIS_URL=redis://localhost:6379   # Redis connection
-PAYMASTER_PRIVATE_KEYS=0x...,0x... # Comma-separated keys
-MAINNET_NETWORKS=Base,Ethereum,... # Mainnet networks
-TESTNET_NETWORKS=Base Sepolia,...  # Testnet networks
+### ✅ 2. Timing Instrumentation
+Detailed timing logs added to settlement service.
+
+### ✅ 3. Pre-warm Merchant Cache
+On startup, all active merchants are pre-loaded into Redis cache (1 hour TTL).
+
+### ✅ 4. Connection Pool Tuning
+Database pool increased to 50 connections.
+
+### ✅ 5. Response Compression
+Gzip/Brotli compression enabled via `tower-http CompressionLayer`.
+
+### ✅ 6. Gas Tracking Logging
+```
+⛽ Gas used: 65000 units @ 0.1 gwei = 6500 gwei (~0.000006 ETH) [Base]
 ```
 
-### RPC URLs (per network)
-
-```env
-BASE_SEPOLIA_RPC=wss://...
-ETHEREUM_SEPOLIA_RPC=wss://...
-OP_SEPOLIA_RPC=wss://...
-BASE_RPC=wss://...
-ETHEREUM_RPC=wss://...
-OP_MAINNET_RPC=wss://...
-```
-
-### Security & Monitoring
-
-```env
-SECURITY_BAN_THRESHOLD=100             # Suspicious requests before ban
-SECURITY_BAN_DURATION_MS=3600000       # Ban duration (1 hour)
-SECURITY_CLEANUP_INTERVAL_MS=600000    # Cleanup interval (10 min)
-TRANSACTION_MONITOR_INTERVAL_MS=20000  # Pending tx check interval
-```
+### ✅ 7. WebSocket Providers
+All RPC providers use WebSocket connections with HTTP fallback.
 
 ---
 
 ## Quick Reference Commands
-
-### Systemd (Recommended)
 
 ```bash
 # Start
@@ -811,46 +666,17 @@ sudo journalctl -u x402-facilitator-rs -f
 # Logs (last 100 lines)
 sudo journalctl -u x402-facilitator-rs -n 100
 
-# Enable on boot
-sudo systemctl enable x402-facilitator-rs
-```
+# Logs (file)
+tail -f /srv/x402/x402-facilitator-rs/logs/x402-facilitator.log
 
-### PM2 (Alternative)
-
-```bash
-# Start
-pm2 start ecosystem.config.cjs
-
-# Stop
-pm2 stop x402-facilitator-rs
-
-# Restart
-pm2 restart x402-facilitator-rs
-
-# Logs
-pm2 logs x402-facilitator-rs --lines 100
-
-# Monitor
-pm2 monit
-
-# Status
-pm2 status
-```
-
-### General
-
-```bash
 # Health check
 curl http://localhost:8080/health
-
-# Metrics (localhost only)
-curl http://localhost:8080/metrics
 
 # Build release
 cargo build --release
 
-# Application logs
-tail -f /srv/x402/x402-facilitator-rs/logs/x402-facilitator.log
+# Kill orphan processes
+pkill -f x402-facilitator
 ```
 
 ---
@@ -858,8 +684,8 @@ tail -f /srv/x402/x402-facilitator-rs/logs/x402-facilitator.log
 ## Support
 
 For issues or questions:
-1. Check logs: `pm2 logs x402-facilitator-rs`
+1. Check logs: `sudo journalctl -u x402-facilitator-rs -n 100`
 2. Verify health: `curl http://localhost:8080/health`
-3. Check metrics: `curl http://localhost:8080/metrics`
-4. Check database: `mysql -u x402user -p x402_facilitator`
-5. Check Redis: `redis-cli ping`
+3. Check database: `mysql -u x402user -p x402_facilitator`
+4. Check Redis: `redis-cli ping`
+5. Check processes: `ps aux | grep x402-facilitator`

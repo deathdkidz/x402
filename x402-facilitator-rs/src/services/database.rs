@@ -1,13 +1,12 @@
 //! Database Service
 //! 
-//! MySQL connection pool and merchant/transaction operations
-
-#![allow(dead_code)]
+//! MySQL connection pool and transaction operations for API key model.
+//! Merchant-specific operations moved to api_key_db.rs
 
 use sqlx::{mysql::MySqlPoolOptions, MySqlPool, FromRow};
 use tracing::info;
 use crate::config::Config;
-use crate::types::{Merchant, Transaction};
+use crate::types::Transaction;
 
 /// Database service wrapping SQLx MySQL pool
 pub struct Database {
@@ -43,123 +42,22 @@ impl Database {
         Ok(Self { pool })
     }
 
-    /// Get merchant by API key
-    pub async fn get_merchant_by_api_key(&self, api_key: &str) -> Result<Option<Merchant>, DatabaseError> {
-        let result: Option<MerchantRow> = sqlx::query_as(
-            r#"
-            SELECT 
-                id, auth_address, business_name, api_key,
-                created_at, updated_at, is_active, webhook_url, webhook_secret,
-                webhook_events, email, profile_image_url,
-                credit_balance, lifetime_credits_purchased, lifetime_credits_used,
-                status, last_active_at
-            FROM merchants 
-            WHERE api_key = ? AND is_active = TRUE
-            "#
-        )
-        .bind(api_key)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-
-        Ok(result.map(|r| r.into()))
-    }
-
-    /// Get all active merchants for cache pre-warming
-    pub async fn get_active_merchants(&self) -> Result<Vec<Merchant>, DatabaseError> {
-        let results: Vec<MerchantRow> = sqlx::query_as(
-            r#"
-            SELECT 
-                id, auth_address, business_name, api_key,
-                created_at, updated_at, is_active, webhook_url, webhook_secret,
-                webhook_events, email, profile_image_url,
-                credit_balance, lifetime_credits_purchased, lifetime_credits_used,
-                status, last_active_at
-            FROM merchants 
-            WHERE is_active = TRUE
-            "#
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-
-        Ok(results.into_iter().map(|r| r.into()).collect())
-    }
-
-    /// Get merchant by auth address
-    pub async fn get_merchant_by_auth_address(&self, auth_address: &str) -> Result<Option<Merchant>, DatabaseError> {
-        let lower_address = auth_address.to_lowercase();
-        
-        let result: Option<MerchantRow> = sqlx::query_as(
-            r#"
-            SELECT 
-                id, auth_address, business_name, api_key,
-                created_at, updated_at, is_active, webhook_url, webhook_secret,
-                webhook_events, email, profile_image_url,
-                credit_balance, lifetime_credits_purchased, lifetime_credits_used,
-                status, last_active_at
-            FROM merchants 
-            WHERE auth_address = ? AND is_active = TRUE
-            "#
-        )
-        .bind(&lower_address)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-
-        Ok(result.map(|r| r.into()))
-    }
-
-    /// Deduct credits from merchant account
-    pub async fn deduct_credits(&self, merchant_id: i64, amount: i32, reference_id: &str, description: &str) -> Result<i32, DatabaseError> {
-        // Get current balance
-        let balance: (i32,) = sqlx::query_as("SELECT credit_balance FROM merchants WHERE id = ?")
-            .bind(merchant_id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-        
-        let new_balance = balance.0 - amount;
-        
-        // Update balance
-        sqlx::query("UPDATE merchants SET credit_balance = ?, lifetime_credits_used = lifetime_credits_used + ?, last_active_at = NOW() WHERE id = ?")
-            .bind(new_balance)
-            .bind(amount)
-            .bind(merchant_id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-        
-        // Log credit transaction
-        sqlx::query(
-            r#"INSERT INTO credit_transactions (merchant_id, type, amount, balance_before, balance_after, reference_type, reference_id, description)
-               VALUES (?, 'settlement_fee', ?, ?, ?, 'settlement', ?, ?)"#
-        )
-        .bind(merchant_id)
-        .bind(-amount)
-        .bind(balance.0)
-        .bind(new_balance)
-        .bind(reference_id)
-        .bind(description)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-        
-        Ok(new_balance)
-    }
+    // =========================================================================
+    // TRANSACTION OPERATIONS
+    // =========================================================================
 
     /// Create a new transaction record
     pub async fn create_transaction(&self, tx: &CreateTransaction) -> Result<i64, DatabaseError> {
         let result = sqlx::query(
             r#"
             INSERT INTO transactions (
-                merchant_id, payer_address, recipient_address, network, asset,
+                api_key, payer_address, recipient_address, network, asset,
                 amount, nonce, transaction_hash, status, valid_after, valid_before,
-                resource, description, credit_cost, timeout_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                resource, description, timeout_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
-        .bind(tx.merchant_id)
+        .bind(&tx.api_key)
         .bind(&tx.payer_address)
         .bind(&tx.recipient_address)
         .bind(&tx.network)
@@ -172,7 +70,6 @@ impl Database {
         .bind(&tx.valid_before)
         .bind(&tx.resource)
         .bind(&tx.description)
-        .bind(tx.credit_cost)
         .bind(&tx.timeout_at)
         .execute(&self.pool)
         .await
@@ -211,9 +108,9 @@ impl Database {
         let results: Vec<TransactionRow> = sqlx::query_as(
             r#"
             SELECT 
-                id, merchant_id, payer_address, recipient_address, network, asset,
+                id, api_key, payer_address, recipient_address, network, asset,
                 amount, nonce, transaction_hash, status, valid_after, valid_before,
-                resource, description, credit_cost, created_at, updated_at, timeout_at
+                resource, description, created_at, updated_at, timeout_at
             FROM transactions 
             WHERE status IN ('pending', 'preconfirmed')
             ORDER BY created_at ASC
@@ -233,9 +130,9 @@ impl Database {
         let result: Option<TransactionRow> = sqlx::query_as(
             r#"
             SELECT 
-                id, merchant_id, payer_address, recipient_address, network, asset,
+                id, api_key, payer_address, recipient_address, network, asset,
                 amount, nonce, transaction_hash, status, valid_after, valid_before,
-                resource, description, credit_cost, created_at, updated_at, timeout_at
+                resource, description, created_at, updated_at, timeout_at
             FROM transactions 
             WHERE payer_address = ? AND nonce = ?
             ORDER BY created_at DESC
@@ -251,38 +148,46 @@ impl Database {
         Ok(result.map(|r| r.into()))
     }
 
-    /// Log webhook delivery
-    pub async fn log_webhook_delivery(
+    /// Update transaction with gas data after settlement
+    pub async fn update_transaction_gas_data(
         &self,
         transaction_id: i64,
-        webhook_url: &str,
-        event: &str,
-        status: &str,
-        response_code: Option<i32>,
-        attempts: i32,
-        error_message: Option<&str>,
+        gas_used: u64,
+        gas_price_wei: u128,
+        gas_cost_native: rust_decimal::Decimal,
+        gas_cost_usd: rust_decimal::Decimal,
+        native_usd_price: rust_decimal::Decimal,
+        service_fee: rust_decimal::Decimal,
+        total_deducted: rust_decimal::Decimal,
     ) -> Result<(), DatabaseError> {
         sqlx::query(
-            r#"
-            INSERT INTO webhook_logs (
-                transaction_id, webhook_url, event, status, 
-                response_code, attempts, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            "#
+            r#"UPDATE transactions 
+               SET gas_used = ?, effective_gas_price_wei = ?, 
+                   gas_cost_native = CAST(? AS DECIMAL(36,18)), 
+                   gas_cost_usd = CAST(? AS DECIMAL(20,10)), 
+                   native_usd_price = CAST(? AS DECIMAL(20,10)), 
+                   service_fee_usd = CAST(? AS DECIMAL(20,10)),
+                   total_usd_deducted = CAST(? AS DECIMAL(20,10)), 
+                   deduction_status = 'deducted', deducted_at = NOW()
+               WHERE id = ?"#
         )
+        .bind(gas_used as i64)
+        .bind(gas_price_wei as i64)
+        .bind(gas_cost_native.to_string())
+        .bind(gas_cost_usd.to_string())
+        .bind(native_usd_price.to_string())
+        .bind(service_fee.to_string())
+        .bind(total_deducted.to_string())
         .bind(transaction_id)
-        .bind(webhook_url)
-        .bind(event)
-        .bind(status)
-        .bind(response_code)
-        .bind(attempts)
-        .bind(error_message)
         .execute(&self.pool)
         .await
         .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-
         Ok(())
     }
+
+    // =========================================================================
+    // GAS TRACKING (For Analytics)
+    // =========================================================================
 
     /// Log gas tracking data
     pub async fn log_gas_tracking(
@@ -290,21 +195,21 @@ impl Database {
         network: &str,
         gas_price_gwei: f64,
         gas_used: Option<u64>,
-        eth_cost: Option<f64>,
+        native_cost: Option<f64>,
         usd_cost: Option<f64>,
         transaction_hash: Option<&str>,
     ) -> Result<(), DatabaseError> {
         sqlx::query(
             r#"
-            INSERT INTO gas_tracking (
-                network, gas_price_gwei, gas_used, eth_cost, usd_cost, transaction_hash
+            INSERT INTO gas_stats (
+                network, gas_price_gwei, gas_used, native_cost, usd_cost, transaction_hash
             ) VALUES (?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(network)
         .bind(gas_price_gwei)
         .bind(gas_used.map(|v| v as i64))
-        .bind(eth_cost)
+        .bind(native_cost)
         .bind(usd_cost)
         .bind(transaction_hash)
         .execute(&self.pool)
@@ -330,7 +235,7 @@ impl Database {
             ) VALUES (?, ?, ?, ?, ?)
             "#
         )
-        .bind(transaction_id as i32) // Match INT type in table
+        .bind(transaction_id as i32)
         .bind(event_type)
         .bind(old_status)
         .bind(new_status)
@@ -345,7 +250,7 @@ impl Database {
     /// Log webhook delivery attempt
     pub async fn log_webhook_delivery_v2(
         &self,
-        merchant_id: i64,
+        api_key: &str,
         transaction_id: Option<i64>,
         delivery_id: &str,
         event_type: &str,
@@ -360,7 +265,7 @@ impl Database {
         sqlx::query(
             r#"
             INSERT INTO webhook_deliveries (
-                merchant_id, transaction_id, delivery_id, event_type, webhook_url,
+                api_key, transaction_id, delivery_id, event_type, webhook_url,
                 request_body, response_status, response_body, status, attempts, error_message,
                 last_attempt_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
@@ -374,7 +279,7 @@ impl Database {
                 completed_at = CASE WHEN VALUES(status) IN ('success', 'failed') THEN NOW() ELSE completed_at END
             "#
         )
-        .bind(merchant_id as i32) // Match INT type in table
+        .bind(api_key)
         .bind(transaction_id.map(|v| v as i32))
         .bind(delivery_id)
         .bind(event_type)
@@ -392,63 +297,25 @@ impl Database {
         Ok(())
     }
 
-    /// Get pool reference for advanced queries
+    // =========================================================================
+    // UTILITY
+    // =========================================================================
+
+    /// Get pool reference for advanced queries (used by api_key_db)
     pub fn pool(&self) -> &MySqlPool {
         &self.pool
     }
 }
 
-/// Internal row type for merchant queries
-#[derive(Debug, FromRow)]
-struct MerchantRow {
-    id: i64,
-    auth_address: String,
-    business_name: Option<String>,
-    api_key: String,
-    created_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::DateTime<chrono::Utc>,
-    is_active: i8,
-    webhook_url: Option<String>,
-    webhook_secret: Option<String>,
-    webhook_events: String,
-    email: Option<String>,
-    profile_image_url: Option<String>,
-    credit_balance: i32,
-    lifetime_credits_purchased: i32,
-    lifetime_credits_used: i32,
-    status: String,
-    last_active_at: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-impl From<MerchantRow> for Merchant {
-    fn from(row: MerchantRow) -> Self {
-        Merchant {
-            id: row.id,
-            auth_address: row.auth_address,
-            business_name: row.business_name,
-            api_key: row.api_key,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            is_active: row.is_active != 0,
-            webhook_url: row.webhook_url,
-            webhook_secret: row.webhook_secret,
-            webhook_events: row.webhook_events,
-            email: row.email,
-            profile_image_url: row.profile_image_url,
-            credit_balance: row.credit_balance,
-            lifetime_credits_purchased: row.lifetime_credits_purchased,
-            lifetime_credits_used: row.lifetime_credits_used,
-            status: row.status,
-            last_active_at: row.last_active_at,
-        }
-    }
-}
+// =========================================================================
+// ROW TYPES
+// =========================================================================
 
 /// Internal row type for transaction queries
 #[derive(Debug, FromRow)]
 struct TransactionRow {
     id: i64,
-    merchant_id: Option<i64>,
+    api_key: String,
     payer_address: String,
     recipient_address: String,
     network: String,
@@ -461,7 +328,6 @@ struct TransactionRow {
     valid_before: Option<i64>,
     resource: Option<String>,
     description: Option<String>,
-    credit_cost: i32,
     created_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
     timeout_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -471,7 +337,7 @@ impl From<TransactionRow> for Transaction {
     fn from(row: TransactionRow) -> Self {
         Transaction {
             id: row.id,
-            merchant_id: row.merchant_id,
+            api_key: Some(row.api_key),
             payer_address: row.payer_address,
             recipient_address: row.recipient_address,
             network: row.network,
@@ -484,7 +350,6 @@ impl From<TransactionRow> for Transaction {
             valid_before: row.valid_before.map(|v| v.to_string()),
             resource: row.resource,
             description: row.description,
-            credit_cost: row.credit_cost,
             created_at: row.created_at,
             updated_at: row.updated_at,
             timeout_at: row.timeout_at,
@@ -492,10 +357,14 @@ impl From<TransactionRow> for Transaction {
     }
 }
 
-/// Transaction creation parameters
+// =========================================================================
+// REQUEST TYPES
+// =========================================================================
+
+/// Transaction creation parameters (simplified for API key model)
 #[derive(Debug, Clone)]
 pub struct CreateTransaction {
-    pub merchant_id: i64,
+    pub api_key: String,
     pub payer_address: String,
     pub recipient_address: String,
     pub network: String,
@@ -508,9 +377,12 @@ pub struct CreateTransaction {
     pub valid_before: String,
     pub resource: Option<String>,
     pub description: Option<String>,
-    pub credit_cost: i32,
     pub timeout_at: Option<chrono::DateTime<chrono::Utc>>,
 }
+
+// =========================================================================
+// ERROR TYPES
+// =========================================================================
 
 /// Database error types
 #[derive(Debug, thiserror::Error)]

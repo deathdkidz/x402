@@ -1,10 +1,8 @@
 //! Rate Limiting Middleware
 //! 
-//! Simplified rate limiting:
-//! - Unauthenticated endpoints: 200 requests/minute (IP-based)
-//! - Authenticated endpoints: 1500 requests/minute (API key based)
-
-#![allow(dead_code)]
+//! Simplified rate limiting for API key model:
+//! - Public endpoints: 200 requests/minute (IP-based) - /health, /help, /credits
+//! - Authenticated endpoints: 1500 requests/minute (API key based) - /verify, /settle
 
 use std::sync::Arc;
 
@@ -20,22 +18,21 @@ use std::num::NonZeroU32;
 use tracing::{warn, debug};
 
 use crate::types::ErrorResponse;
-use crate::middleware::auth::AuthenticatedMerchant;
+use crate::types::api_key::ApiKey;
 
 /// Rate limiter type alias
 pub type KeyedRateLimiter = RateLimiter<String, DefaultKeyedStateStore<String>, DefaultClock>;
 
 /// Rate limit configuration
 /// For AI agents with high polling rates, we use generous limits
-pub const UNAUTHENTICATED_LIMIT_PER_MIN: u32 = 200;   // Health checks, public endpoints
-pub const AUTHENTICATED_LIMIT_PER_MIN: u32 = 1500;    // /verify - high for AI agents
-pub const SETTLE_LIMIT_PER_MIN: u32 = 1500;            // /settle - also high for AI agents
+pub const PUBLIC_LIMIT_PER_MIN: u32 = 200;        // Health checks, help, credits balance
+pub const AUTHENTICATED_LIMIT_PER_MIN: u32 = 1500; // /verify, /settle - high for AI agents
 
 /// Rate limit state
 #[derive(Clone)]
 pub struct RateLimitState {
-    /// Unauthenticated rate limiter (IP-based) - 200/min
-    pub unauthenticated: Arc<KeyedRateLimiter>,
+    /// Public rate limiter (IP-based) - 200/min
+    pub public: Arc<KeyedRateLimiter>,
     /// Authenticated rate limiter (API key based) - 1500/min
     pub authenticated: Arc<KeyedRateLimiter>,
 }
@@ -44,8 +41,8 @@ impl RateLimitState {
     /// Create rate limiters with default quotas
     pub fn new() -> Self {
         Self {
-            unauthenticated: Arc::new(RateLimiter::keyed(
-                Quota::per_minute(NonZeroU32::new(UNAUTHENTICATED_LIMIT_PER_MIN).unwrap())
+            public: Arc::new(RateLimiter::keyed(
+                Quota::per_minute(NonZeroU32::new(PUBLIC_LIMIT_PER_MIN).unwrap())
             )),
             authenticated: Arc::new(RateLimiter::keyed(
                 Quota::per_minute(NonZeroU32::new(AUTHENTICATED_LIMIT_PER_MIN).unwrap())
@@ -54,10 +51,10 @@ impl RateLimitState {
     }
     
     /// Create rate limiters with custom quotas
-    pub fn with_limits(unauth_per_min: u32, auth_per_min: u32) -> Self {
+    pub fn with_limits(public_per_min: u32, auth_per_min: u32) -> Self {
         Self {
-            unauthenticated: Arc::new(RateLimiter::keyed(
-                Quota::per_minute(NonZeroU32::new(unauth_per_min).unwrap())
+            public: Arc::new(RateLimiter::keyed(
+                Quota::per_minute(NonZeroU32::new(public_per_min).unwrap())
             )),
             authenticated: Arc::new(RateLimiter::keyed(
                 Quota::per_minute(NonZeroU32::new(auth_per_min).unwrap())
@@ -72,58 +69,57 @@ impl Default for RateLimitState {
     }
 }
 
-/// General rate limiter for unauthenticated endpoints (IP-based)
-/// Skips rate limiting if request has Authorization header (will use merchant limiter instead)
+/// General rate limiter for public endpoints (IP-based)
+/// Skips rate limiting if request has X-Api-Key header (will use api_key_rate_limiter instead)
 pub async fn general_rate_limiter(
     State(state): State<Arc<RateLimitState>>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     request: Request,
     next: Next,
 ) -> Response {
-    // Skip IP-based rate limiting if request has Authorization header
-    // These requests will be rate-limited by merchant_rate_limiter instead
-    if request.headers().contains_key("authorization") {
+    // Skip IP-based rate limiting if request has API key header
+    // These requests will be rate-limited by api_key_rate_limiter instead
+    if request.headers().contains_key("x-api-key") {
         return next.run(request).await;
     }
     
     let ip = addr.ip().to_string();
     
-    if state.unauthenticated.check_key(&ip).is_err() {
-        warn!("Rate limit exceeded for IP: {} (limit: {}/min)", ip, UNAUTHENTICATED_LIMIT_PER_MIN);
-        return rate_limit_response(UNAUTHENTICATED_LIMIT_PER_MIN, 0, "unauthenticated");
+    if state.public.check_key(&ip).is_err() {
+        warn!("Rate limit exceeded for IP: {} (limit: {}/min)", ip, PUBLIC_LIMIT_PER_MIN);
+        return rate_limit_response(PUBLIC_LIMIT_PER_MIN, "public");
     }
 
     next.run(request).await
 }
 
-/// Merchant rate limiter for authenticated endpoints (API key based, 1500/min)
-pub async fn merchant_rate_limiter(
+/// API key rate limiter for authenticated endpoints (1500/min per API key)
+pub async fn api_key_rate_limiter(
     State(state): State<Arc<RateLimitState>>,
     request: Request,
     next: Next,
 ) -> Response {
-    // Get authenticated merchant
-    let merchant_key = match request.extensions().get::<AuthenticatedMerchant>() {
-        Some(am) => am.0.auth_address.clone(),
+    // Get authenticated API key from extensions (set by auth middleware)
+    let api_key = match request.extensions().get::<ApiKey>() {
+        Some(key) => key.api_key.clone(),
         None => {
-            // No merchant auth - this shouldn't happen on authenticated routes
-            // but if it does, allow the request (auth middleware will handle it)
+            // No API key auth - allow request (auth middleware will handle it)
             return next.run(request).await;
         }
     };
 
     let path = request.uri().path().to_string();
-    let key = format!("{}:{}", merchant_key, path);
+    let key = format!("{}:{}", api_key, path);
 
     if state.authenticated.check_key(&key).is_err() {
         warn!(
-            "Merchant rate limit exceeded: {} on {} (limit: {}/min)",
-            merchant_key, path, AUTHENTICATED_LIMIT_PER_MIN
+            "API key rate limit exceeded: {}... on {} (limit: {}/min)",
+            &api_key[..12], path, AUTHENTICATED_LIMIT_PER_MIN
         );
-        return rate_limit_response(AUTHENTICATED_LIMIT_PER_MIN, 0, "authenticated");
+        return rate_limit_response(AUTHENTICATED_LIMIT_PER_MIN, "authenticated");
     }
 
-    debug!("Merchant {} rate check passed on {}", merchant_key, path);
+    debug!("API key {}... rate check passed on {}", &api_key[..12], path);
 
     let mut response = next.run(request).await;
     
@@ -135,13 +131,13 @@ pub async fn merchant_rate_limiter(
 }
 
 /// Create a rate limit exceeded response
-fn rate_limit_response(limit: u32, remaining: u32, tier: &str) -> Response {
+fn rate_limit_response(limit: u32, tier: &str) -> Response {
     let mut response = (
         StatusCode::TOO_MANY_REQUESTS,
         Json(ErrorResponse::new(
             "Too Many Requests",
             format!(
-                "Rate limit exceeded. Limit: {} requests/minute for {} requests.",
+                "Rate limit exceeded. Limit: {} requests/minute for {} requests. Wait 60 seconds.",
                 limit, tier
             ),
         )),
@@ -150,7 +146,7 @@ fn rate_limit_response(limit: u32, remaining: u32, tier: &str) -> Response {
     // Add rate limit headers
     let headers = response.headers_mut();
     headers.insert("X-RateLimit-Limit", limit.to_string().parse().unwrap());
-    headers.insert("X-RateLimit-Remaining", remaining.to_string().parse().unwrap());
+    headers.insert("X-RateLimit-Remaining", "0".parse().unwrap());
     headers.insert("Retry-After", "60".parse().unwrap());
     
     response

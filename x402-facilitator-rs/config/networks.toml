@@ -1,6 +1,10 @@
 # x402 Facilitator - Network & Token Configuration
 # This file allows adding new networks and tokens without code changes
 # Simply update this file and restart the service
+#
+# Each network and token can be enabled/disabled:
+# - enabled = true (default): Network/token is active
+# - enabled = false: Network/token is disabled but config is preserved
 
 [settings]
 # Default gas buffer percentage for all networks
@@ -19,6 +23,7 @@ name = "Base"
 chain_id = 8453
 network_type = "evm"
 environment = "mainnet"
+enabled = true
 rpc_url_env = "BASE_RPC"
 rpc_url_default = "wss://base-rpc.publicnode.com"
 explorer_url = "https://basescan.org"
@@ -64,6 +69,7 @@ name = "Ethereum"
 chain_id = 1
 network_type = "evm"
 environment = "mainnet"
+enabled = false
 rpc_url_env = "ETHEREUM_RPC"
 rpc_url_default = "wss://ethereum-rpc.publicnode.com"
 explorer_url = "https://etherscan.io"
@@ -175,6 +181,7 @@ name = "Arbitrum One"
 chain_id = 42161
 network_type = "evm"
 environment = "mainnet"
+enabled = false
 rpc_url_env = "ARBITRUM_RPC"
 rpc_url_default = "wss://arbitrum-one-rpc.publicnode.com"
 explorer_url = "https://arbiscan.io"
@@ -215,6 +222,7 @@ name = "Polygon"
 chain_id = 137
 network_type = "evm"
 environment = "mainnet"
+enabled = false
 rpc_url_env = "POLYGON_RPC"
 rpc_url_default = "wss://polygon-bor-rpc.publicnode.com"
 explorer_url = "https://polygonscan.com"
@@ -255,6 +263,7 @@ name = "Avalanche C-Chain"
 chain_id = 43114
 network_type = "evm"
 environment = "mainnet"
+enabled = false
 rpc_url_env = "AVALANCHE_RPC"
 rpc_url_default = "wss://avalanche-c-chain-rpc.publicnode.com"
 explorer_url = "https://snowtrace.io"
@@ -295,6 +304,7 @@ name = "BNB Smart Chain"
 chain_id = 56
 network_type = "evm"
 environment = "mainnet"
+enabled = false
 rpc_url_env = "BSC_RPC"
 rpc_url_default = "wss://bsc-rpc.publicnode.com"
 explorer_url = "https://bscscan.com"
@@ -402,6 +412,7 @@ name = "Ethereum Sepolia"
 chain_id = 11155111
 network_type = "evm"
 environment = "testnet"
+enabled = false
 rpc_url_env = "ETHEREUM_SEPOLIA_RPC"
 rpc_url_default = "wss://ethereum-sepolia-rpc.publicnode.com"
 explorer_url = "https://sepolia.etherscan.io"
@@ -502,7 +513,7 @@ decimals = 6
 transfer_type = "erc3009"
 eip712_name = "USDC"
 eip712_version = "2"
-enabled = false
+enabled = true
 
 # -----------------------------------------------------------------------------
 
@@ -511,6 +522,7 @@ name = "Arbitrum Sepolia"
 chain_id = 421614
 network_type = "evm"
 environment = "testnet"
+enabled = false
 rpc_url_env = "ARBITRUM_SEPOLIA_RPC"
 rpc_url_default = "wss://arbitrum-sepolia-rpc.publicnode.com"
 explorer_url = "https://sepolia.arbiscan.io"
@@ -551,6 +563,7 @@ name = "Polygon Amoy"
 chain_id = 80002
 network_type = "evm"
 environment = "testnet"
+enabled = false
 rpc_url_env = "POLYGON_AMOY_RPC"
 rpc_url_default = "wss://polygon-amoy-bor-rpc.publicnode.com"
 explorer_url = "https://amoy.polygonscan.com"
@@ -591,6 +604,7 @@ name = "Avalanche Fuji"
 chain_id = 43113
 network_type = "evm"
 environment = "testnet"
+enabled = false
 rpc_url_env = "AVALANCHE_FUJI_RPC"
 rpc_url_default = "wss://avalanche-fuji-c-chain-rpc.publicnode.com"
 explorer_url = "https://testnet.snowtrace.io"
@@ -631,6 +645,7 @@ name = "BNB Smart Chain Testnet"
 chain_id = 97
 network_type = "evm"
 environment = "testnet"
+enabled = false
 rpc_url_env = "BSC_TESTNET_RPC"
 rpc_url_default = "wss://bsc-testnet-rpc.publicnode.com"
 explorer_url = "https://testnet.bscscan.com"

@@ -30,6 +30,7 @@ pub fn create_merchant_router() -> Router<Arc<AppState>> {
         .route("/merchant/:merchant_id/dashboard/stats", get(dashboard_stats_handler))
         .route("/merchant/:merchant_id/transactions", get(transactions_handler))
         .route("/merchant/:merchant_id/credits", get(credits_handler))
+        .route("/merchant/:merchant_id/credits/balance", get(usd_balance_handler))
         .route("/merchant/:merchant_id/credits/packages", get(topup_packages_handler))
         .route("/merchant/:merchant_id/credits/topup", post(create_topup_order_handler))
         .route("/merchant/:merchant_id/credits/topup/:order_id", get(get_topup_order_handler))
@@ -963,6 +964,110 @@ async fn credits_handler(
         used_last_30_days: used_30d.0,
         transactions,
         purchases,
+    })
+}
+
+// ============ USD Balance Types ============
+
+/// USD balance response (with proper 4 decimal rounding for display)
+#[derive(Debug, Serialize)]
+pub struct UsdBalanceResponse {
+    /// Current USD credit balance (rounded to 4 decimal places for display)
+    #[serde(rename = "usdBalance")]
+    usd_balance: String,
+    /// Raw balance value (full precision for calculations)
+    #[serde(rename = "rawBalance")]
+    raw_balance: String,
+    /// Lifetime USD credits purchased
+    #[serde(rename = "lifetimePurchased")]
+    lifetime_purchased: String,
+    /// Lifetime USD credits used
+    #[serde(rename = "lifetimeUsed")]
+    lifetime_used: String,
+    /// Service fee per transaction
+    #[serde(rename = "serviceFeePerTx")]
+    service_fee_per_tx: String,
+    /// Current ETH/USD price used for gas calculations
+    #[serde(rename = "ethUsdPrice")]
+    eth_usd_price: String,
+}
+
+/// Get USD credit balance with precise decimal values
+/// Rounds to 4 decimal places for UI display, but also returns raw precision
+async fn usd_balance_handler(
+    State(state): State<Arc<AppState>>,
+    Path(merchant_id): Path<i64>,
+    headers: HeaderMap,
+) -> Response {
+    use rust_decimal::prelude::*;
+    use std::str::FromStr;
+    
+    let db = &state.database;
+    let pool = db.pool();
+
+    // Validate session token
+    if let Err(response) = validate_merchant_auth(pool, &headers, merchant_id, state.config.internal_api_secret.as_deref()).await {
+        return response;
+    }
+
+    // Get precise USD balance from database (as strings for precise parsing)
+    let balance_row: Option<(String, String, String)> = 
+        sqlx::query_as::<_, (String, String, String)>(
+            "SELECT CAST(usd_credit_balance AS CHAR), CAST(lifetime_usd_credits_purchased AS CHAR), CAST(lifetime_usd_credits_used AS CHAR) FROM merchants WHERE id = ?"
+        )
+        .bind(merchant_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+
+    let (raw_balance, lifetime_purchased, lifetime_used) = match balance_row {
+        Some((b, p, u)) => {
+            let bal = rust_decimal::Decimal::from_str(&b).unwrap_or(rust_decimal::Decimal::ZERO);
+            let pur = rust_decimal::Decimal::from_str(&p).unwrap_or(rust_decimal::Decimal::ZERO);
+            let used = rust_decimal::Decimal::from_str(&u).unwrap_or(rust_decimal::Decimal::ZERO);
+            (bal, pur, used)
+        },
+        None => {
+            // Fallback: Try to get legacy integer balance and convert
+            let legacy: Option<(i32, i32, i32)> = sqlx::query_as(
+                "SELECT credit_balance, lifetime_credits_purchased, lifetime_credits_used FROM merchants WHERE id = ?"
+            )
+            .bind(merchant_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+            
+            match legacy {
+                Some((b, p, u)) => {
+                    // Convert legacy integer credits to USD (1 credit = $0.01)
+                    let dec_b = rust_decimal::Decimal::from(b) / rust_decimal::Decimal::from(100);
+                    let dec_p = rust_decimal::Decimal::from(p) / rust_decimal::Decimal::from(100);
+                    let dec_u = rust_decimal::Decimal::from(u) / rust_decimal::Decimal::from(100);
+                    (dec_b, dec_p, dec_u)
+                }
+                None => {
+                    return error_response("Merchant not found", StatusCode::NOT_FOUND);
+                }
+            }
+        }
+    };
+
+    // Round to 4 decimal places for display
+    let display_balance = raw_balance.round_dp(4);
+    
+    // Get current ETH price from the gas cost watcher
+    let eth_price = state.gas_cost_watcher.get_eth_price();
+    
+    // Get service fee constant
+    let service_fee = crate::services::gas_cost_watcher::SERVICE_FEE_USD;
+
+    success_response(UsdBalanceResponse {
+        usd_balance: format!("{:.4}", display_balance),
+        raw_balance: raw_balance.to_string(),
+        lifetime_purchased: format!("{:.4}", lifetime_purchased.round_dp(4)),
+        lifetime_used: format!("{:.4}", lifetime_used.round_dp(4)),
+        service_fee_per_tx: format!("{:.4}", service_fee),
+        eth_usd_price: format!("{:.2}", eth_price),
     })
 }
 

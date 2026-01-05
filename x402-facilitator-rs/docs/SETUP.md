@@ -153,6 +153,32 @@ OP_MAINNET_RPC=wss://opt-mainnet.g.alchemy.com/v2/YOUR_API_KEY
 PAYMASTER_PRIVATE_KEYS=0xYOUR_PRIVATE_KEY_1,0xYOUR_PRIVATE_KEY_2
 
 # =====================================================
+# Vault Configuration (for /account endpoint)
+# =====================================================
+# Vault address to receive credit purchase payments
+VAULT_ADDRESS=0xYOUR_VAULT_ADDRESS
+# Vault private key (for internal operations)
+VAULT_PRIVATE_KEY=0xYOUR_VAULT_PRIVATE_KEY
+
+# =====================================================
+# Internal API Security
+# =====================================================
+# Secret for authenticating internal API calls (like /account)
+INTERNAL_API_SECRET=your-internal-api-secret-here
+
+# =====================================================
+# Price Feeds
+# =====================================================
+# CoinMarketCap API key for token price lookups
+COINMARKETCAP_API_KEY=your-cmc-api-key
+
+# =====================================================
+# External Config Directory (optional)
+# =====================================================
+# Path to external TOML config files (defaults to ./config)
+CONFIG_DIR=/srv/x402/x402-facilitator-rs/config
+
+# =====================================================
 # Security Configuration
 # =====================================================
 SECURITY_BAN_THRESHOLD=100
@@ -171,8 +197,13 @@ TRANSACTION_MONITOR_INTERVAL_MS=20000
 |----------|----------|-------------|
 | `PAYMASTER_PRIVATE_KEYS` | ✅ Yes | At least one funded wallet private key |
 | `DB_*` | ✅ Yes | MySQL database connection |
+| `INTERNAL_API_SECRET` | ✅ Yes | Secret for /account endpoint authentication |
+| `VAULT_ADDRESS` | ⚠️ Required for /account | Address to receive credit payments |
+| `VAULT_PRIVATE_KEY` | ⚠️ Required for /account | Private key for vault operations |
 | `REDIS_URL` | ⚠️ Recommended | Defaults to localhost:6379 |
 | `*_RPC` | ⚠️ Recommended | Use your own Alchemy/Infura keys |
+| `COINMARKETCAP_API_KEY` | ⚠️ Recommended | For token price lookups |
+| `CONFIG_DIR` | ❌ No | Defaults to ./config |
 | `PORT` | ❌ No | Defaults to 8080 |
 | All others | ❌ No | Have sensible defaults |
 
@@ -195,16 +226,33 @@ This creates:
 
 | Table | Description |
 |-------|-------------|
-| `merchants` | Merchant accounts with credit balances |
+| `api_keys` | API key accounts with separate mainnet/testnet balances |
+| `merchants` | Merchant accounts (legacy) |
 | `transactions` | Settlement transaction records |
 | `credit_transactions` | Credit movement history |
-| `credit_purchases` | Blockchain credit purchases |
+| `credit_purchases` | Blockchain credit purchases with network tracking |
 | `webhook_logs` | Webhook delivery logs |
 | `auth_nonces` | SIWE authentication nonces |
 | `merchant_sessions` | Login sessions |
 | `gas_tracking` | Gas price analytics |
 | `transaction_events` | Transaction status audit log |
 | `webhook_deliveries` | Detailed webhook tracking |
+| `network_aliases` | Network name mappings (canonical → alias) |
+
+### API Keys Balance Structure
+
+The `api_keys` table has separate balances for testnet and mainnet:
+
+- `mainnet_balance` - Credits available for mainnet settlements
+- `testnet_balance` - Credits available for testnet settlements  
+- `usd_balance` - Combined balance (auto-calculated via trigger)
+- `lifetime_mainnet_purchased` - Total mainnet credits ever purchased
+- `lifetime_testnet_purchased` - Total testnet credits ever purchased
+
+Run the migration to add these columns:
+```bash
+sudo mysql x402_facilitator < scripts/migrations/003_separate_testnet_mainnet_balance.sql
+```
 
 ### Manual Database Creation
 

@@ -31,13 +31,13 @@ use alloy::network::EthereumWallet;
 use alloy::sol;
 use tokio::time::{sleep, timeout};
 use crate::config::{Config, TransferType};
-use crate::types::{PaymentPayload, PaymentRequirements, SettleResponse, SettlementStatus, Merchant};
+use crate::types::{PaymentPayload, PaymentRequirements, SettleResponse, SettlementStatus, ApiKey};
 use crate::services::provider_pool::{ProviderPool, ProviderType};
 use crate::services::paymaster_pool::PaymasterPool;
 use crate::services::redis::Redis;
 use crate::services::database::{Database, CreateTransaction};
 use crate::services::verification::VerificationService;
-use crate::services::webhook::{WebhookService, WebhookEventType};
+use crate::services::webhook::WebhookService;
 use crate::services::metrics;
 use crate::strategies::{StrategyFactory, UnifiedPayload};
 
@@ -118,7 +118,7 @@ impl SettlementService {
         &self,
         payload: &PaymentPayload,
         requirements: &PaymentRequirements,
-        merchant: &Merchant,
+        api_key: &ApiKey,
     ) -> SettleResponse {
         let total_start = Instant::now();
         
@@ -139,7 +139,7 @@ impl SettlementService {
         debug!("⏱️ Paymaster selection: {}µs", start.elapsed().as_micros());
 
         info!("Using paymaster wallet: {}", signer.address());
-        info!("Settling payment to merchant: {}", merchant.auth_address);
+        info!("Settling payment for API key: {}...{}", &api_key.api_key[..8], &api_key.api_key[api_key.api_key.len()-4..]);
         info!("=== STARTING PAYMENT SETTLEMENT ===");
         info!("Network: {}", normalized_network);
         info!("Asset: {}", requirements.asset);
@@ -234,23 +234,28 @@ impl SettlementService {
         debug!("⏱️ Parallel RPC checks (balance + nonce): {}ms", start.elapsed().as_millis());
         info!("✓ Parallel checks completed successfully");
 
-        // Check merchant has sufficient credits
-        let credit_cost = 1; // 1 credit per settlement
-        if !merchant.has_credits(credit_cost) {
-            warn!("Merchant {} has insufficient credits: {} < {}", 
-                  merchant.auth_address, merchant.credit_balance, credit_cost);
+        // Check API key has sufficient USD credits
+        // With new model: gas is deducted atomically after confirmation
+        // So we just check they have some balance (minimum $0.01)
+        use crate::services::price_feed::SERVICE_FEE_USD;
+        
+        let min_balance = SERVICE_FEE_USD; // $0.001 service fee minimum
+        let total_balance = api_key.total_balance();
+        if total_balance < min_balance {
+            warn!("API key {}... has insufficient USD credits: ${} < ${}", 
+                  &api_key.api_key[..8], total_balance, min_balance);
             return SettleResponse::failure(
                 normalized_network, 
-                format!("Insufficient credits. Required: {}, Available: {}", credit_cost, merchant.credit_balance)
+                format!("Insufficient USD credits. Balance: ${}, Minimum: ${}", total_balance, min_balance)
             );
         }
 
         // Create transaction record
         let start = Instant::now();
         let tx_record = CreateTransaction {
-            merchant_id: merchant.id,
+            api_key: api_key.api_key.clone(),
             payer_address: payer.to_lowercase(),
-            recipient_address: merchant.auth_address.clone(),
+            recipient_address: requirements.pay_to.clone(),
             network: normalized_network.clone(),
             asset: requirements.asset.clone(),
             amount: requirements.max_amount_required.clone(),
@@ -261,7 +266,6 @@ impl SettlementService {
             valid_before: payload.authorization.valid_before.clone(),
             resource: Some(requirements.resource.clone()),
             description: Some(requirements.description.clone()),
-            credit_cost,
             timeout_at: Some(chrono::Utc::now() + chrono::Duration::seconds(requirements.max_timeout_seconds as i64)),
         };
 
@@ -309,28 +313,17 @@ impl SettlementService {
                     // Log completed event
                     self.log_tx_event(transaction_id, "confirmed", Some("pending"), Some("completed"), None).await;
                     
-                    // Send webhook notification
-                    self.send_webhook(
-                        merchant,
-                        WebhookEventType::TransactionCompleted,
-                        transaction_id,
-                        Some(&tx_hash),
-                        "completed",
-                        &normalized_network,
-                        &requirements.asset,
-                        &requirements.max_amount_required,
-                        payer,
-                        Some(&requirements.resource),
-                    ).await;
-                    
-                    // Deduct credits from merchant
-                    if let Err(e) = self.database.deduct_credits(
-                        merchant.id, 
-                        credit_cost, 
-                        &tx_hash,
-                        &format!("Settlement fee for tx {}", &tx_hash[..10])
-                    ).await {
-                        error!("Failed to deduct credits: {}", e);
+                    // Atomic USD credit deduction (gas cost + service fee)
+                    // This happens synchronously to ensure balance is deducted before response
+                    if let Some(ref receipt) = receipt {
+                        if let Err(e) = self.deduct_credits_for_settlement(
+                            &api_key.api_key,
+                            transaction_id,
+                            receipt,
+                            &normalized_network,
+                        ).await {
+                            warn!("Failed to deduct USD credits: {} (non-fatal)", e);
+                        }
                     }
 
                     // Update database with completed status
@@ -355,20 +348,6 @@ impl SettlementService {
                     // Log failed event
                     self.log_tx_event(transaction_id, "reverted", Some("pending"), Some("failed"), Some("{\"reason\":\"Transaction reverted on-chain\"}")).await;
                     
-                    // Send webhook notification
-                    self.send_webhook(
-                        merchant,
-                        WebhookEventType::TransactionFailed,
-                        transaction_id,
-                        Some(&tx_hash),
-                        "failed",
-                        &normalized_network,
-                        &requirements.asset,
-                        &requirements.max_amount_required,
-                        payer,
-                        Some(&requirements.resource),
-                    ).await;
-                    
                     // Update database with failed status
                     if let Err(e) = self.database.update_transaction(transaction_id, "failed").await {
                         error!("Failed to update transaction status: {}", e);
@@ -381,32 +360,9 @@ impl SettlementService {
 
                     SettleResponse::failure(normalized_network, "Transaction reverted on-chain".to_string())
                 } else {
-                    // Not confirmed yet - return pending (background monitor will update)
+                    // Not confirmed yet - return pending with preconfirmed status
+                    // Note: We don't deduct until confirmation (atomic deduction model)
                     info!("⏳ Transaction pending, will be monitored: {}", tx_hash);
-                    
-                    // Send webhook notification
-                    self.send_webhook(
-                        merchant,
-                        WebhookEventType::TransactionPending,
-                        transaction_id,
-                        Some(&tx_hash),
-                        "pending",
-                        &normalized_network,
-                        &requirements.asset,
-                        &requirements.max_amount_required,
-                        payer,
-                        Some(&requirements.resource),
-                    ).await;
-                    
-                    // Deduct credits (we submitted successfully, just waiting for confirmation)
-                    if let Err(e) = self.database.deduct_credits(
-                        merchant.id, 
-                        credit_cost, 
-                        &tx_hash,
-                        &format!("Settlement fee for tx {}", &tx_hash[..10])
-                    ).await {
-                        error!("Failed to deduct credits: {}", e);
-                    }
 
                     // Cache the nonce with pending status
                     if let Err(e) = self.redis.cache_used_nonce(payer, nonce, &tx_hash, "pending", 86400).await {
@@ -426,21 +382,6 @@ impl SettlementService {
                 
                 // Log failed event
                 self.log_tx_event(transaction_id, "execution_failed", Some("pending"), Some("failed"), Some(&format!("{{\"reason\":\"{}\"}}", reason.replace('"', "\\\"")))).await;
-                
-                // Send webhook notification
-                self.send_webhook(
-                    merchant,
-                    WebhookEventType::TransactionFailed,
-                    transaction_id,
-                    None,
-                    "failed",
-                    &normalized_network,
-                    &requirements.asset,
-                    &requirements.max_amount_required,
-                    payer,
-                    Some(&requirements.resource),
-                ).await;
-                
                 // Update database
                 if let Err(e) = self.database.update_transaction(transaction_id, "failed").await {
                     error!("Failed to update transaction status: {}", e);
@@ -449,6 +390,97 @@ impl SettlementService {
                 SettleResponse::failure(normalized_network, reason)
             }
         }
+    }
+
+    /// Settle payment to vault address for credit purchase
+    /// Similar to settle() but:
+    /// 1. Pay_to is the vault address (not merchant)
+    /// 2. Does NOT deduct credits (this is a purchase, not a use)
+    /// 3. Returns the USD value of the payment for crediting
+    pub async fn settle_to_vault(
+        &self,
+        payload: &PaymentPayload,
+        requirements: &PaymentRequirements,
+        vault_address: &str,
+    ) -> Result<(String, rust_decimal::Decimal), String> {
+        // Validate vault address matches requirements
+        if payload.authorization.to.to_lowercase() != vault_address.to_lowercase() {
+            return Err(format!(
+                "Payment recipient {} does not match vault {}",
+                payload.authorization.to, vault_address
+            ));
+        }
+        
+        // Get normalized network
+        let normalized_network = self.validate_network(&requirements.network)?;
+
+        // Get paymaster signer
+        let signer = match self.paymaster_pool.get_next_signer() {
+            Ok(s) => s,
+            Err(e) => return Err(format!("Paymaster error: {}", e)),
+        };
+
+        info!("💰 Processing credit purchase to vault");
+        info!("Network: {}", normalized_network);
+        info!("Asset: {}", requirements.asset);
+        info!("Amount: {}", requirements.max_amount_required);
+
+        let payer = &payload.authorization.from;
+        let nonce = &payload.authorization.nonce;
+
+        // Validate token
+        self.validate_token(&normalized_network, &requirements.asset)?;
+
+        // Verify time window
+        self.verify_time_window(&payload.authorization.valid_after, &payload.authorization.valid_before)?;
+
+        // Check for duplicate
+        if let Ok(Some(cached)) = self.redis.get_nonce_transaction(payer, nonce).await {
+            if cached.status == "completed" {
+                return Err("This payment has already been processed".to_string());
+            }
+        }
+
+        // Verify balance
+        self.verify_balance(payer, &requirements.asset, &requirements.max_amount_required, &normalized_network).await?;
+
+        // Verify nonce unused
+        self.check_nonce_unused(payer, nonce, &requirements.asset, &normalized_network).await?;
+
+        // Execute the transfer
+        let tx_hash = self.execute_transfer(payload, requirements, &normalized_network, &signer).await?;
+        
+        info!("⏳ Credit purchase transaction submitted: {}", tx_hash);
+
+        // Wait for confirmation
+        let (confirmed, final_status, _receipt) = self.wait_for_confirmation_with_receipt(&tx_hash, &normalized_network).await;
+
+        if !confirmed || final_status != "completed" {
+            // Cache failed nonce
+            let _ = self.redis.cache_used_nonce(payer, nonce, &tx_hash, &final_status, 86400).await;
+            return Err(format!("Transaction failed with status: {}", final_status));
+        }
+
+        info!("✅ Credit purchase confirmed: {}", tx_hash);
+
+        // Cache successful nonce
+        let _ = self.redis.cache_used_nonce(payer, nonce, &tx_hash, "completed", 86400).await;
+
+        // Calculate USD value (USDC has 6 decimals)
+        let amount_str = &requirements.max_amount_required;
+        let amount = amount_str.parse::<u128>().map_err(|e| format!("Invalid amount: {}", e))?;
+        
+        // Get token decimals (default to 6 for USDC)
+        let decimals = self.config.get_token_by_address(&normalized_network, &requirements.asset)
+            .map(|t| t.decimals)
+            .unwrap_or(6);
+        
+        let divisor = 10u128.pow(decimals as u32);
+        let usd_value = rust_decimal::Decimal::from(amount) / rust_decimal::Decimal::from(divisor);
+
+        info!("💵 Credit purchase value: ${:.2}", usd_value);
+
+        Ok((tx_hash, usd_value))
     }
 
     /// Validate network
@@ -664,6 +696,72 @@ impl SettlementService {
         }
     }
 
+    /// Atomic USD credit deduction after settlement confirmation
+    /// Calculates actual gas cost and service fee, then deducts from API key balance
+    async fn deduct_credits_for_settlement(
+        &self,
+        api_key_str: &str,
+        transaction_id: i64,
+        receipt: &alloy::rpc::types::TransactionReceipt,
+        network: &str,
+    ) -> Result<rust_decimal::Decimal, String> {
+        use crate::services::{ApiKeyDb, PriceFeedService, price_feed::SERVICE_FEE_USD};
+        use crate::services::api_key_db::GasDeductionData;
+        use crate::types::api_key::BalanceType;
+        use crate::config::network_resolver;
+        
+        // Get gas data from receipt
+        let gas_used: u64 = receipt.gas_used.try_into()
+            .map_err(|_| "Gas used overflow")?;
+        let gas_price = receipt.effective_gas_price;
+        
+        // Calculate gas cost in USD using price feed
+        let gas_cost_usd = PriceFeedService::calculate_gas_cost_from_receipt(
+            receipt,
+            network,
+            &self.database,
+        ).await.map_err(|e| format!("Price calculation failed: {}", e))?;
+        
+        let total_usd = gas_cost_usd + SERVICE_FEE_USD;
+        
+        // Determine balance type based on network
+        let is_testnet = network_resolver::is_testnet(network).unwrap_or(false);
+        let balance_type = if is_testnet { BalanceType::Testnet } else { BalanceType::Mainnet };
+        
+        info!(
+            "💰 Deducting ${:.6} from {} balance (gas: ${:.6} + fee: ${:.6})",
+            total_usd, balance_type.as_str(), gas_cost_usd, SERVICE_FEE_USD
+        );
+        
+        // Get API key info to get the ID
+        let api_key = ApiKeyDb::get_api_key(self.database.pool(), api_key_str)
+            .await
+            .map_err(|e| format!("API key lookup failed: {}", e))?;
+        
+        // Prepare gas data for ledger
+        let gas_data = GasDeductionData {
+            gas_used,
+            gas_price_wei: gas_price,
+            gas_cost_native: rust_decimal::Decimal::new(gas_used as i64, 0) 
+                * rust_decimal::Decimal::new(gas_price as i64, 18),
+            gas_cost_usd,
+            native_usd_price: rust_decimal::Decimal::ZERO, // Will be looked up
+            service_fee_usd: SERVICE_FEE_USD,
+            network: network.to_string(),
+        };
+        
+        // Atomic deduction from appropriate balance
+        ApiKeyDb::deduct_settlement_costs(
+            self.database.pool(),
+            api_key.id,
+            transaction_id,
+            balance_type,
+            SERVICE_FEE_USD,
+            gas_cost_usd,
+            &gas_data,
+        ).await.map_err(|e| format!("Credit deduction failed: {}", e))
+    }
+
     /// Log transaction event to database for audit trail
     async fn log_tx_event(&self, transaction_id: i64, event_type: &str, old_status: Option<&str>, new_status: Option<&str>, metadata: Option<&str>) {
         if let Err(e) = self.database.log_transaction_event(
@@ -675,66 +773,6 @@ impl SettlementService {
         ).await {
             warn!("Failed to log transaction event: {}", e);
         }
-    }
-
-    /// Send webhook notification to merchant (if configured)
-    async fn send_webhook(
-        &self,
-        merchant: &Merchant,
-        event_type: WebhookEventType,
-        transaction_id: i64,
-        tx_hash: Option<&str>,
-        status: &str,
-        network: &str,
-        asset: &str,
-        amount: &str,
-        payer: &str,
-        resource: Option<&str>,
-    ) {
-        // Check if merchant has webhook configured
-        let webhook_url = match &merchant.webhook_url {
-            Some(url) if !url.is_empty() => url,
-            _ => return, // No webhook configured
-        };
-
-        // Check if this event type is enabled
-        let event_str = event_type.to_string();
-        let events = &merchant.webhook_events;
-        if !events.contains("all") && !events.contains(&event_str) {
-            debug!("Webhook event {} not enabled for merchant {}", event_str, merchant.id);
-            return;
-        }
-
-        // Clone for async move
-        let webhook_service = self.webhook_service.clone();
-        let merchant_id = merchant.id;
-        let webhook_url = webhook_url.clone();
-        let tx_hash = tx_hash.map(String::from);
-        let status = status.to_string();
-        let network = network.to_string();
-        let asset = asset.to_string();
-        let amount = amount.to_string();
-        let payer = payer.to_string();
-        let recipient = merchant.auth_address.clone();
-        let resource = resource.map(String::from);
-
-        // Fire and forget - don't block settlement on webhook delivery
-        tokio::spawn(async move {
-            webhook_service.send_transaction_webhook(
-                merchant_id,
-                &webhook_url,
-                event_type,
-                transaction_id,
-                tx_hash.as_deref(),
-                &status,
-                &network,
-                &asset,
-                &amount,
-                &payer,
-                &recipient,
-                resource.as_deref(),
-            ).await;
-        });
     }
 
     /// Verify balance

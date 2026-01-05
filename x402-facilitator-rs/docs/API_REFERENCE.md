@@ -1,41 +1,88 @@
 # x402 Facilitator API Reference
 
-Complete API documentation for the x402 payment facilitator service.
+Complete API documentation for the x402 v2 payment facilitator service.
+
+## x402 Protocol Version 2
+
+This API implements the **x402 v2 standard** with the following features:
+
+- **Standardized Headers**: `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE`, `PAYMENT-VERSION`
+- **Base64 Encoding**: All headers except `PAYMENT-VERSION` are Base64 encoded JSON
+- **CAIP-2 Network IDs**: Primary network identifier using `eip155:<chainId>` format
 
 ## Base URL
 
 ```
-http://localhost:8080
+https://api.netpay.id
 ```
 
 ---
 
 ## Table of Contents
 
+- [x402 v2 Headers](#x402-v2-headers)
+- [CAIP-2 Network Format](#caip-2-network-format)
 - [Public Endpoints](#public-endpoints)
   - [GET /](#get---service-info)
   - [GET /health](#get-health)
   - [GET /networks](#get-networks)
   - [GET /metrics](#get-metrics)
+  - [GET /help](#get-help)
+  - [GET /account](#get-account)
+  - [POST /account](#post-account)
   - [POST /verify](#post-verify)
   - [POST /settle](#post-settle)
-- [Merchant Endpoints](#merchant-endpoints)
-  - [GET /merchant/siwe/nonce](#get-merchantsiwenonce)
-  - [POST /merchant/siwe/verify](#post-merchantsiweverify)
-  - [POST /merchant/session](#post-merchantsession)
-  - [POST /merchant/logout](#post-merchantlogout)
-  - [GET /merchant/:merchant_id/dashboard/stats](#get-merchantmerchant_iddashboardstats)
-  - [GET /merchant/:merchant_id/transactions](#get-merchantmerchant_idtransactions)
-  - [GET /merchant/:merchant_id/credits](#get-merchantmerchant_idcredits)
-  - [GET /merchant/:merchant_id/credits/packages](#get-merchantmerchant_idcreditspackages)
-  - [POST /merchant/:merchant_id/credits/topup](#post-merchantmerchant_idcreditstopup)
-  - [GET /merchant/:merchant_id/credits/topup/:order_id](#get-merchantmerchant_idcreditstopuporder_id)
-  - [GET /merchant/:merchant_id/analytics](#get-merchantmerchant_idanalytics)
-  - [GET /merchant/:merchant_id/settings](#get-merchantmerchant_idsettings)
-  - [PUT /merchant/:merchant_id/settings](#put-merchantmerchant_idsettings)
-- [Admin Endpoints](#admin-endpoints)
 - [Data Types](#data-types)
 - [Error Handling](#error-handling)
+
+---
+
+## x402 v2 Headers
+
+The x402 v2 protocol defines these standardized headers:
+
+| Header | Direction | Encoding | Description |
+|--------|-----------|----------|-------------|
+| `PAYMENT-REQUIRED` | Response | Base64 | 402 response with payment requirements |
+| `PAYMENT-SIGNATURE` | Request | Base64 | Payment authorization and signature |
+| `PAYMENT-RESPONSE` | Response | Base64 | Settlement result |
+| `PAYMENT-VERSION` | Both | Plain text | Protocol version (always `2`) |
+
+### Encoding Example
+
+**PAYMENT-SIGNATURE Header:**
+```
+Base64 encoded JSON:
+{
+  "authorization": { ... },
+  "signature": "0x..."
+}
+```
+
+**Decoded from request header:**
+```javascript
+const decoded = JSON.parse(atob(request.headers['PAYMENT-SIGNATURE']));
+```
+
+---
+
+## CAIP-2 Network Format
+
+CAIP-2 is the **primary network identifier** in x402 v2:
+
+| Network | CAIP-2 | Chain ID | Type |
+|---------|--------|----------|------|
+| Base | `eip155:8453` | 8453 | Mainnet |
+| OP Mainnet | `eip155:10` | 10 | Mainnet |
+| HyperEVM | `eip155:999` | 999 | Mainnet |
+| Base Sepolia | `eip155:84532` | 84532 | Testnet |
+| OP Sepolia | `eip155:11155420` | 11155420 | Testnet |
+| HyperEVM Testnet | `eip155:998` | 998 | Testnet |
+
+All endpoints accept multiple network formats for compatibility:
+- CAIP-2: `eip155:8453`
+- Chain ID: `8453`
+- Name variants: `base`, `BASE`, `Base`
 
 ---
 
@@ -50,15 +97,18 @@ Returns service information and available endpoints.
 ```json
 {
   "name": "x402 Facilitator",
-  "description": "Payment facilitator service for x402 protocol",
+  "description": "Secure x402 payment facilitator",
+  "version": "2.0.0",
   "endpoints": {
     "health": "GET /health",
     "networks": "GET /networks",
-    "verify": "POST /verify",
-    "settle": "POST /settle"
+    "help": "GET /help",
+    "account": "GET /account (info) | POST /account (purchase credits)",
+    "verify": "POST /verify (requires API key)",
+    "settle": "POST /settle (requires API key)"
   },
-  "mainnetNetworks": ["base", "ethereum", "optimism"],
-  "testnetNetworks": ["base-sepolia", "sepolia"]
+  "mainnetNetworks": ["Base", "OP Mainnet", "HyperEVM"],
+  "testnetNetworks": ["Base Sepolia", "OP Sepolia", "HyperEVM Testnet"]
 }
 ```
 
@@ -94,6 +144,12 @@ Health check endpoint for load balancers and monitoring.
 
 Returns list of supported networks and their token configurations.
 
+#### Response Headers
+
+| Header | Value |
+|--------|-------|
+| `PAYMENT-VERSION` | `2` |
+
 #### Response (200 OK)
 
 ```json
@@ -101,7 +157,8 @@ Returns list of supported networks and their token configurations.
   "success": true,
   "mainnet": [
     {
-      "network": "base",
+      "network": "Base",
+      "caip2": "eip155:8453",
       "chainId": 8453,
       "tokens": [
         {
@@ -120,7 +177,8 @@ Returns list of supported networks and their token configurations.
   ],
   "testnet": [
     {
-      "network": "base-sepolia",
+      "network": "Base Sepolia",
+      "caip2": "eip155:84532",
       "chainId": 84532,
       "tokens": [
         {
@@ -129,7 +187,7 @@ Returns list of supported networks and their token configurations.
           "address": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
           "decimals": 6,
           "eip712": {
-            "name": "USD Coin",
+            "name": "USDC",
             "version": "2",
             "verifyingContract": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
           }
@@ -152,7 +210,8 @@ Returns list of supported networks and their token configurations.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `network` | string | Network identifier used in API requests |
+| `network` | string | Network name used in API requests |
+| `caip2` | string | CAIP-2 identifier (e.g., `eip155:8453`) |
 | `chainId` | integer | EVM chain ID |
 | `tokens` | array | List of supported tokens on this network |
 
@@ -196,24 +255,299 @@ x402_settlement_duration_seconds_bucket{network="base",le="1.0"} 800
 
 ---
 
+### GET /help
+
+Returns x402 v2 protocol documentation in plain text format.
+
+#### Response Headers
+
+| Header | Value |
+|--------|-------|
+| `PAYMENT-VERSION` | `2` |
+| `Content-Type` | `text/plain; charset=utf-8` |
+
+#### Response (200 OK)
+
+Returns plain text documentation including:
+- Protocol overview
+- Vault address for credit purchases
+- Supported networks and USDC addresses
+- Endpoint documentation
+- Header specifications
+- Request/response examples
+- Error codes
+
+---
+
+### GET /account
+
+Returns plain text instructions for credit purchases and account management.
+
+#### Response Headers
+
+| Header | Value |
+|--------|-------|
+| `Content-Type` | `text/plain; charset=utf-8` |
+
+#### Response (200 OK)
+
+Returns plain text documentation including:
+- How to purchase credits
+- Vault address
+- Supported networks and USDC addresses
+- Request format for purchases
+- PAYMENT-SIGNATURE structure
+- Response examples
+
+---
+
+### POST /account
+
+Unified account endpoint for credit purchases and account queries.
+
+#### Two Modes of Operation
+
+**Mode A: Credit Purchase** (with `PAYMENT-SIGNATURE` header)
+- Creates new API key or tops up existing account
+- Requires signed USDC payment to vault address
+
+**Mode B: Account Query** (with `Authorization` header)
+- Check balance or get usage metrics
+- Requires valid API key
+
+---
+
+#### Mode A: Credit Purchase
+
+##### Request Headers
+
+| Header | Type | Required | Description |
+|--------|------|----------|-------------|
+| `PAYMENT-SIGNATURE` | string | Yes | Base64 encoded payment signature |
+| `API-KEY` | string | No | Existing API key (for top-up) |
+
+##### PAYMENT-SIGNATURE Content (decoded)
+
+```json
+{
+  "authorization": {
+    "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+    "to": "0x...",
+    "value": "1000000",
+    "validAfter": "0",
+    "validBefore": "1735776000",
+    "nonce": "0x0000000000000000000000000000000000000000000000000000000000000001"
+  },
+  "signature": "0x...",
+  "network": "Base Sepolia",
+  "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `authorization` | object | Yes | EIP-3009 authorization data |
+| `signature` | string | Yes | EIP-712 signature |
+| `network` | string | Yes | Network name or CAIP-2 |
+| `asset` | string | Yes | Token contract address |
+
+##### Success Response - New Account (200 OK)
+
+```json
+{
+  "success": true,
+  "action": "create",
+  "apiKey": "x402_pk_test_abc123...",
+  "balanceType": "testnet",
+  "usdc": "10.000000",
+  "transaction": "0x...",
+  "message": "API key created. SAVE THIS KEY - it will not be shown again!"
+}
+```
+
+##### Success Response - Top-up (200 OK)
+
+```json
+{
+  "success": true,
+  "action": "topup",
+  "balanceType": "testnet",
+  "usdc": "5.000000",
+  "newBalance": "15.000000",
+  "transaction": "0x..."
+}
+```
+
+---
+
+#### Mode B: Account Query
+
+##### Request Headers
+
+| Header | Type | Required | Description |
+|--------|------|----------|-------------|
+| `Authorization` | string | Yes | `Bearer <api_key>` |
+| `Content-Type` | string | Yes | `application/json` |
+
+##### Request Body
+
+```json
+{
+  "action": "balance"
+}
+```
+
+| Field | Type | Required | Values | Description |
+|-------|------|----------|--------|-------------|
+| `action` | string | Yes | `"balance"`, `"metrics"` | Query type |
+
+##### Balance Response (200 OK)
+
+```json
+{
+  "success": true,
+  "totalBalance": "9.956061",
+  "mainnetBalance": "0.000000",
+  "testnetBalance": "9.956061",
+  "estimatedMainnetSettlements": 0,
+  "estimatedTestnetSettlements": 9956,
+  "isActive": true,
+  "expiresAt": null
+}
+```
+
+##### Metrics Response (200 OK)
+
+```json
+{
+  "success": true,
+  "usdc": "9.956061",
+  "stats": {
+    "totalTransactions": 34,
+    "successfulTransactions": 34,
+    "failedTransactions": 0,
+    "successRate": "100.0%",
+    "totalSpent": "0.043938 USDC",
+    "totalGasCost": "0.009938 USDC",
+    "totalServiceFees": "0.034000 USDC"
+  },
+  "createdAt": "2026-01-03 17:38:26 UTC",
+  "lastUsed": "2026-01-03 18:55:53 UTC"
+}
+```
+
+##### Error Response - Missing Parameters (400)
+
+```json
+{
+  "error": "MISSING_PARAMETERS",
+  "message": "POST /account requires either PAYMENT-SIGNATURE header (for purchase) or Authorization header with action body (for queries)",
+  "usage": {
+    "purchase": {
+      "headers": {"PAYMENT-SIGNATURE": "<base64>", "PAYMENT-VERSION": "2"},
+      "note": "Send payment to vault address"
+    },
+    "query": {
+      "headers": {"Authorization": "Bearer <api_key>"},
+      "body": {"action": "balance or metrics"}
+    }
+  }
+}
+```
+
+---
+
 ### POST /verify
 
 Verify a payment authorization without executing it. Validates the signature, checks balances, and ensures the authorization is valid.
+
+**Accepts both header-based (x402 v2) and JSON body requests. Headers take priority if both are provided.**
 
 #### Request Headers
 
 | Header | Type | Required | Description |
 |--------|------|----------|-------------|
-| `Content-Type` | string | Yes | Must be `application/json` |
-| `Authorization` | string | Yes | Merchant API key: `Bearer <api_key>` |
+| `Authorization` | string | Yes | API key: `Bearer <api_key>` |
+| `PAYMENT-SIGNATURE` | string | No* | Base64 encoded payment signature |
+| `PAYMENT-REQUIRED` | string | No* | Base64 encoded payment requirements |
+| `PAYMENT-VERSION` | string | No | Protocol version (default: `2`) |
+| `Content-Type` | string | No* | `application/json` if using body |
 
-#### Request Body
+*Either both `PAYMENT-SIGNATURE` + `PAYMENT-REQUIRED` headers OR JSON body is required.
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `x402Version` | integer | Yes | Protocol version. Must be `1` |
-| `paymentPayload` | object | Yes | Payment payload containing authorization and signature |
-| `paymentRequirements` | object | Yes | Payment requirements from merchant |
+#### Option 1: Header-based Request (x402 v2)
+
+```http
+POST /verify HTTP/1.1
+Authorization: Bearer x402_pk_live_abc123
+PAYMENT-VERSION: 2
+PAYMENT-SIGNATURE: <base64>
+PAYMENT-REQUIRED: <base64>
+```
+
+##### PAYMENT-SIGNATURE Content (decoded)
+
+```json
+{
+  "authorization": {
+    "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+    "to": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+    "value": "1000000",
+    "validAfter": "0",
+    "validBefore": "1735776000",
+    "nonce": "0x0000000000000000000000000000000000000000000000000000000000000001"
+  },
+  "signature": "0x...",
+  "network": "Base Sepolia",
+  "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+}
+```
+
+##### PAYMENT-REQUIRED Content (decoded)
+
+```json
+{
+  "scheme": "exact",
+  "network": "eip155:84532",
+  "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  "payTo": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+  "maxAmountRequired": "1000000",
+  "resource": "https://api.example.com/premium/data",
+  "description": "Premium API access",
+  "mimeType": "application/json",
+  "maxTimeoutSeconds": 60
+}
+```
+
+#### Option 2: JSON Body Request
+
+```json
+{
+  "x402Version": 1,
+  "paymentPayload": {
+    "authorization": {
+      "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
+      "to": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+      "value": "1000000",
+      "validAfter": "0",
+      "validBefore": "1735776000",
+      "nonce": "0x0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    "signature": "0x..."
+  },
+  "paymentRequirements": {
+    "scheme": "exact",
+    "network": "eip155:84532",
+    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    "payTo": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
+    "maxAmountRequired": "1000000",
+    "resource": "https://api.example.com/premium/data",
+    "description": "Premium API access",
+    "mimeType": "application/json",
+    "maxTimeoutSeconds": 60
+  }
+}
+```
 
 ##### PaymentPayload Object
 
@@ -239,48 +573,24 @@ Verify a payment authorization without executing it. Validates the signature, ch
 | Field | Type | Required | Validation | Description |
 |-------|------|----------|------------|-------------|
 | `scheme` | string | Yes | Must be `"exact"` | Payment scheme (only "exact" supported) |
-| `network` | string | Yes | Non-empty | Network identifier (e.g., `"base"`, `"base-sepolia"`) |
+| `network` | string | Yes | Non-empty | Network (CAIP-2 preferred: `eip155:8453`) |
 | `asset` | string | Yes | Must match `^0x[a-fA-F0-9]{40}$` | Token contract address |
-| `payTo` | string | Yes | Must match `^0x[a-fA-F0-9]{40}$` | Merchant address to receive payment |
+| `payTo` | string | Yes | Must match `^0x[a-fA-F0-9]{40}$` | Recipient address to receive payment |
 | `maxAmountRequired` | string | Yes | Must be numeric string | Maximum amount required in smallest token units |
-| `resource` | string | Yes | - | Resource identifier being paid for |
-| `description` | string | Yes | - | Human-readable description |
-| `mimeType` | string | Yes | - | MIME type of the resource |
-| `maxTimeoutSeconds` | integer | Yes | Must be ≥ 1 | Maximum timeout in seconds |
+| `resource` | string | No | - | Resource identifier being paid for |
+| `description` | string | No | - | Human-readable description |
+| `mimeType` | string | No | - | MIME type of the resource |
+| `maxTimeoutSeconds` | integer | No | Must be ≥ 1 | Maximum timeout in seconds |
 | `outputSchema` | object | No | - | Optional output schema |
 | `extra` | object | No | - | Optional extra data |
 
-#### Example Request
-
-```json
-{
-  "x402Version": 1,
-  "paymentPayload": {
-    "authorization": {
-      "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
-      "to": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
-      "value": "1000000",
-      "validAfter": "0",
-      "validBefore": "1735776000",
-      "nonce": "0x0000000000000000000000000000000000000000000000000000000000000001"
-    },
-    "signature": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1b"
-  },
-  "paymentRequirements": {
-    "scheme": "exact",
-    "network": "base",
-    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    "payTo": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
-    "maxAmountRequired": "1000000",
-    "resource": "https://api.example.com/premium/data",
-    "description": "Premium API access",
-    "mimeType": "application/json",
-    "maxTimeoutSeconds": 60
-  }
-}
-```
-
 #### Response
+
+##### Response Headers (x402 v2)
+
+| Header | Value |
+|--------|-------|
+| `PAYMENT-VERSION` | `2` |
 
 ##### Success Response (200 OK)
 
@@ -326,24 +636,31 @@ Verify a payment authorization without executing it. Validates the signature, ch
 
 Execute a payment settlement on the blockchain. Submits the signed authorization and transfers tokens from payer to recipient.
 
+**Accepts both header-based (x402 v2) and JSON body requests. Headers take priority if both are provided.**
+
 #### Request Headers
 
 | Header | Type | Required | Description |
 |--------|------|----------|-------------|
-| `Content-Type` | string | Yes | Must be `application/json` |
-| `Authorization` | string | Yes | Merchant API key: `Bearer <api_key>` |
+| `Authorization` | string | Yes | API key: `Bearer <api_key>` |
+| `PAYMENT-SIGNATURE` | string | No* | Base64 encoded payment signature |
+| `PAYMENT-REQUIRED` | string | No* | Base64 encoded payment requirements |
+| `PAYMENT-VERSION` | string | No | Protocol version (default: `2`) |
+| `Content-Type` | string | No* | `application/json` if using body |
 
-#### Request Body
+*Either both `PAYMENT-SIGNATURE` + `PAYMENT-REQUIRED` headers OR JSON body is required.
 
-Same structure as `/verify`:
+#### Option 1: Header-based Request (x402 v2)
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `x402Version` | integer | Yes | Protocol version. Must be `1` |
-| `paymentPayload` | object | Yes | Payment payload containing authorization and signature |
-| `paymentRequirements` | object | Yes | Payment requirements from merchant |
+```http
+POST /settle HTTP/1.1
+Authorization: Bearer x402_pk_live_abc123
+PAYMENT-VERSION: 2
+PAYMENT-SIGNATURE: <base64>
+PAYMENT-REQUIRED: <base64>
+```
 
-#### Example Request
+#### Option 2: JSON Body Request
 
 ```json
 {
@@ -357,12 +674,12 @@ Same structure as `/verify`:
       "validBefore": "1735776000",
       "nonce": "0x0000000000000000000000000000000000000000000000000000000000000001"
     },
-    "signature": "0x1234567890abcdef..."
+    "signature": "0x..."
   },
   "paymentRequirements": {
     "scheme": "exact",
-    "network": "base",
-    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "network": "eip155:84532",
+    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     "payTo": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
     "maxAmountRequired": "1000000",
     "resource": "https://api.example.com/premium/data",
@@ -375,13 +692,20 @@ Same structure as `/verify`:
 
 #### Response
 
+##### Response Headers (x402 v2)
+
+| Header | Value | Description |
+|--------|-------|-------------|
+| `PAYMENT-VERSION` | `2` | Protocol version |
+| `PAYMENT-RESPONSE` | Base64 | Base64 encoded settlement result |
+
 ##### Success Response (200 OK)
 
 ```json
 {
   "success": true,
   "transaction": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-  "network": "base",
+  "network": "eip155:8453",
   "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
   "status": "completed"
 }
@@ -393,7 +717,7 @@ Same structure as `/verify`:
 {
   "success": true,
   "transaction": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-  "network": "base",
+  "network": "eip155:8453",
   "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
   "status": "preconfirmed",
   "message": "Transaction preconfirmed via flashblock"
@@ -449,515 +773,18 @@ Same structure as `/verify`:
 
 ---
 
-## Merchant Endpoints
-
-Authentication for merchant endpoints uses either:
-- `X-Session-Token` header with a valid session token from SIWE authentication
-- `X-Internal-Secret` header for internal service calls
-
-### GET /merchant/siwe/nonce
-
-Generate a SIWE (Sign-In with Ethereum) nonce for authentication.
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "nonce": "a1b2c3d4e5f6789012345678901234567890123456789012345678901234"
-  }
-}
-```
-
----
-
-### POST /merchant/siwe/verify
-
-Verify SIWE message and authenticate merchant.
-
-#### Request Body
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `message` | string | Yes | SIWE message that was signed |
-| `signature` | string | Yes | EIP-191 signature of the message |
-
-#### Example Request
-
-```json
-{
-  "message": "example.com wants you to sign in with your Ethereum account:\n0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21\n\nSign in to x402 Facilitator\n\nURI: https://example.com\nVersion: 1\nChain ID: 1\nNonce: a1b2c3d4e5f6...\nIssued At: 2026-01-02T12:00:00.000Z",
-  "signature": "0x..."
-}
-```
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "merchant": {
-      "id": 1,
-      "authAddress": "0x742d35cc6634c0532925a3b844bc9e7595f1de21",
-      "businessName": "Merchant 0x742d35",
-      "apiKey": "pk_live_abc123...",
-      "creditBalance": 100,
-      "mainnetCreditBalance": 100,
-      "testnetCreditsRemaining": 1000,
-      "testnetCreditsUsed": 0,
-      "status": "active",
-      "createdAt": "2026-01-02T12:00:00Z"
-    },
-    "sessionToken": "uuid-session-token-here",
-    "isNewUser": false,
-    "isAdmin": true,
-    "adminRole": "superadmin"
-  }
-}
-```
-
----
-
-### POST /merchant/session
-
-Validate an existing session token.
-
-#### Request Body
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `sessionToken` | string | Yes | Session token to validate |
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "merchant": {
-      "id": 1,
-      "authAddress": "0x742d35cc6634c0532925a3b844bc9e7595f1de21",
-      "businessName": "My Business",
-      "apiKey": "pk_live_abc123...",
-      "creditBalance": 100,
-      "mainnetCreditBalance": 100,
-      "testnetCreditsRemaining": 1000,
-      "testnetCreditsUsed": 0,
-      "status": "active",
-      "createdAt": "2026-01-02T12:00:00Z"
-    }
-  }
-}
-```
-
----
-
-### POST /merchant/logout
-
-Logout and invalidate session.
-
-#### Request Body
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `sessionToken` | string | Yes | Session token to invalidate |
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "success": true
-  }
-}
-```
-
----
-
-### GET /merchant/:merchant_id/dashboard/stats
-
-Get merchant dashboard statistics.
-
-#### Request Headers
-
-| Header | Type | Required | Description |
-|--------|------|----------|-------------|
-| `X-Session-Token` | string | Yes* | Valid session token |
-| `X-Internal-Secret` | string | Yes* | Internal API secret (alternative) |
-
-*One of these headers is required.
-
-#### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `merchant_id` | integer | Merchant ID |
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "creditBalance": 100,
-    "mainnetCreditBalance": 100,
-    "testnetCreditsRemaining": 1000,
-    "testnetCreditsUsed": 50,
-    "testnetCreditsAllocated": 1000,
-    "currentPeriod": "2026-01",
-    "totalTransactions": 150,
-    "totalVolume": 5000.50,
-    "successRate": 98.5,
-    "recentTransactions": [
-      {
-        "id": 123,
-        "payerAddress": "0x...",
-        "recipientAddress": "0x...",
-        "amount": 10.5,
-        "asset": "USDC",
-        "network": "base",
-        "status": "completed",
-        "txHash": "0x...",
-        "resource": "https://api.example.com/data",
-        "creditCost": 1,
-        "errorMessage": null,
-        "createdAt": "2026-01-02T12:00:00Z",
-        "updatedAt": "2026-01-02T12:00:05Z"
-      }
-    ],
-    "volumeByDay": [
-      {"date": "2026-01-01", "volume": 1000.0},
-      {"date": "2026-01-02", "volume": 1500.0}
-    ]
-  }
-}
-```
-
----
-
-### GET /merchant/:merchant_id/transactions
-
-Get merchant transactions with pagination and filtering.
-
-#### Query Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `page` | integer | No | 1 | Page number (min: 1) |
-| `limit` | integer | No | 20 | Items per page (max: 100) |
-| `status` | string | No | - | Filter by status: `pending`, `completed`, `failed` |
-| `network` | string | No | - | Filter by network |
-| `search` | string | No | - | Search by payer address or tx hash |
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "transactions": [
-      {
-        "id": 123,
-        "payerAddress": "0x...",
-        "recipientAddress": "0x...",
-        "amount": 10.5,
-        "asset": "USDC",
-        "network": "base",
-        "status": "completed",
-        "txHash": "0x...",
-        "resource": "https://api.example.com/data",
-        "creditCost": 1,
-        "errorMessage": null,
-        "createdAt": "2026-01-02T12:00:00Z",
-        "updatedAt": "2026-01-02T12:00:05Z"
-      }
-    ],
-    "pagination": {
-      "page": 1,
-      "limit": 20,
-      "total": 150,
-      "totalPages": 8
-    }
-  }
-}
-```
-
----
-
-### GET /merchant/:merchant_id/credits
-
-Get merchant credit balance and history.
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "balance": 100,
-    "mainnetBalance": 100,
-    "testnetRemaining": 1000,
-    "testnetUsed": 50,
-    "testnetAllocated": 1000,
-    "currentPeriod": "2026-01",
-    "lifetimePurchased": 500,
-    "lifetimeUsed": 400,
-    "usedLast30Days": 50,
-    "transactions": [
-      {
-        "id": 1,
-        "type": "debit",
-        "amount": 1.0,
-        "balanceBefore": 101.0,
-        "balanceAfter": 100.0,
-        "description": "Settlement on base",
-        "createdAt": "2026-01-02T12:00:00Z"
-      }
-    ],
-    "purchases": [
-      {
-        "id": 1,
-        "network": "base",
-        "txHash": "0x...",
-        "tokenAmount": 100.0,
-        "creditAmount": 100,
-        "status": "completed",
-        "createdAt": "2026-01-01T10:00:00Z"
-      }
-    ]
-  }
-}
-```
-
----
-
-### GET /merchant/:merchant_id/credits/packages
-
-Get available credit top-up packages.
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": 1,
-      "name": "Starter",
-      "description": "Get started with x402",
-      "creditAmount": 100,
-      "priceUsdc": 10.0,
-      "bonusCredits": 0,
-      "totalCredits": 100,
-      "isPopular": false
-    },
-    {
-      "id": 2,
-      "name": "Growth",
-      "description": "Best for growing businesses",
-      "creditAmount": 500,
-      "priceUsdc": 45.0,
-      "bonusCredits": 50,
-      "totalCredits": 550,
-      "isPopular": true
-    }
-  ]
-}
-```
-
----
-
-### POST /merchant/:merchant_id/credits/topup
-
-Create a credit top-up order.
-
-#### Request Body
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `packageId` | integer | No* | Package ID to purchase |
-| `creditAmount` | integer | No* | Custom credit amount |
-| `network` | string | Yes | Network for payment: `"base"`, `"ethereum"` |
-
-*Either `packageId` or `creditAmount` is required.
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "orderId": "uuid-order-id",
-    "merchantId": 1,
-    "creditAmount": 100,
-    "bonusCredits": 0,
-    "totalCredits": 100,
-    "priceUsdc": 10.0,
-    "network": "base",
-    "status": "pending",
-    "paymentAddress": "0x...",
-    "expiresAt": "2026-01-02T13:00:00Z",
-    "createdAt": "2026-01-02T12:00:00Z"
-  }
-}
-```
-
----
-
-### GET /merchant/:merchant_id/analytics
-
-Get merchant analytics data.
-
-#### Query Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `period` | string | No | `"30d"` | Time period: `"7d"`, `"30d"`, `"90d"`, `"all"` |
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "totalVolume": 50000.0,
-    "totalCount": 1500,
-    "avgTransaction": 33.33,
-    "successRate": 98.5,
-    "volumeByNetwork": [
-      {"name": "base", "value": 40000.0, "percentage": 80.0},
-      {"name": "ethereum", "value": 10000.0, "percentage": 20.0}
-    ],
-    "volumeByAsset": [
-      {"name": "USDC", "value": 50000.0, "percentage": 100.0}
-    ],
-    "dailyVolume": [
-      {"date": "2026-01-01", "volume": 1000.0, "count": 50, "successRate": 98.0},
-      {"date": "2026-01-02", "volume": 1500.0, "count": 75, "successRate": 99.0}
-    ],
-    "hourlyDistribution": [
-      {"hour": 0, "count": 10},
-      {"hour": 1, "count": 5}
-    ]
-  }
-}
-```
-
----
-
-### GET /merchant/:merchant_id/settings
-
-Get merchant settings.
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "merchant": {
-      "id": 1,
-      "businessName": "My Business",
-      "businessEmail": "contact@mybusiness.com",
-      "website": "https://mybusiness.com",
-      "walletAddress": "0x...",
-      "supportEmail": "support@mybusiness.com",
-      "description": "We provide premium APIs",
-      "apiKey": "pk_live_abc123...",
-      "createdAt": "2026-01-01T00:00:00Z"
-    },
-    "notifications": {
-      "emailSettlements": true,
-      "emailFailures": true,
-      "emailCredits": true,
-      "emailWeekly": false,
-      "emailMarketing": false
-    }
-  }
-}
-```
-
----
-
-### PUT /merchant/:merchant_id/settings
-
-Update merchant settings.
-
-#### Request Body
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `merchant` | object | No | Merchant info to update |
-| `merchant.businessName` | string | No | Business name |
-| `merchant.businessEmail` | string | No | Business email |
-| `merchant.website` | string | No | Website URL |
-| `merchant.supportEmail` | string | No | Support email |
-| `merchant.description` | string | No | Business description |
-| `notifications` | object | No | Notification preferences |
-| `notifications.emailSettlements` | boolean | No | Email on settlements |
-| `notifications.emailFailures` | boolean | No | Email on failures |
-| `notifications.emailCredits` | boolean | No | Email on low credits |
-| `notifications.emailWeekly` | boolean | No | Weekly summary email |
-| `notifications.emailMarketing` | boolean | No | Marketing emails |
-
-#### Response (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "message": "Settings updated successfully"
-  }
-}
-```
-
----
-
-## Admin Endpoints
-
-Admin endpoints require authentication via:
-- `X-Admin-Session` header with valid admin session token
-- `X-Internal-Secret` header for internal service calls
-
-### Admin Routes
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/admin/auth/login` | Admin login |
-| POST | `/admin/auth/session` | Validate admin session |
-| POST | `/admin/auth/logout` | Admin logout |
-| GET | `/admin/dashboard` | Admin dashboard stats |
-| GET | `/admin/merchants` | List all merchants |
-| GET | `/admin/merchants/:merchant_id` | Get merchant details |
-| PUT | `/admin/merchants/:merchant_id` | Update merchant |
-| POST | `/admin/merchants/:merchant_id/ban` | Ban merchant |
-| POST | `/admin/merchants/:merchant_id/unban` | Unban merchant |
-| POST | `/admin/merchants/:merchant_id/credits` | Adjust merchant credits |
-| GET | `/admin/transactions` | List all transactions |
-| GET | `/admin/transactions/:tx_id` | Get transaction details |
-| GET | `/admin/settings` | Get system settings |
-| PUT | `/admin/settings` | Update system settings |
-| GET | `/admin/metrics` | Get system metrics |
-| GET | `/admin/audit` | Get audit log |
-| GET | `/admin/topup/orders` | List top-up orders |
-| POST | `/admin/topup/orders/:order_id/complete` | Complete top-up order |
-
----
-
 ## Data Types
 
 ### Network Identifiers
 
-| Network | Identifier | Chain ID | Type |
-|---------|------------|----------|------|
-| Base | `base` | 8453 | Mainnet |
-| Ethereum | `ethereum` | 1 | Mainnet |
-| Optimism | `optimism` | 10 | Mainnet |
-| Base Sepolia | `base-sepolia` | 84532 | Testnet |
-| Sepolia | `sepolia` | 11155111 | Testnet |
+| Network | Identifier | CAIP-2 | Chain ID | Type |
+|---------|------------|--------|----------|------|
+| Base | `Base` | `eip155:8453` | 8453 | Mainnet |
+| OP Mainnet | `OP Mainnet` | `eip155:10` | 10 | Mainnet |
+| HyperEVM | `HyperEVM` | `eip155:999` | 999 | Mainnet |
+| Base Sepolia | `Base Sepolia` | `eip155:84532` | 84532 | Testnet |
+| OP Sepolia | `OP Sepolia` | `eip155:11155420` | 11155420 | Testnet |
+| HyperEVM Testnet | `HyperEVM Testnet` | `eip155:998` | 998 | Testnet |
 
 ### Token Amounts
 
@@ -1055,66 +882,52 @@ X-RateLimit-Reset: 1735776060
 
 ### cURL Examples
 
-#### Verify Payment
-
-```bash
-curl -X POST http://localhost:8080/verify \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer pk_live_abc123..." \
-  -d '{
-    "x402Version": 1,
-    "paymentPayload": {
-      "authorization": {
-        "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
-        "to": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
-        "value": "1000000",
-        "validAfter": "0",
-        "validBefore": "1735776000",
-        "nonce": "0x0000000000000000000000000000000000000000000000000000000000000001"
-      },
-      "signature": "0x..."
-    },
-    "paymentRequirements": {
-      "scheme": "exact",
-      "network": "base",
-      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-      "payTo": "0x8ba1f109551bD432803012645Ac136ddd64DBa72",
-      "maxAmountRequired": "1000000",
-      "resource": "https://api.example.com/data",
-      "description": "API access",
-      "mimeType": "application/json",
-      "maxTimeoutSeconds": 60
-    }
-  }'
-```
-
 #### Health Check
 
 ```bash
-curl http://localhost:8080/health
+curl https://api.netpay.id/health
 ```
 
 #### Get Networks
 
 ```bash
-curl http://localhost:8080/networks
+curl https://api.netpay.id/networks
 ```
 
-#### SIWE Authentication Flow
+#### Verify Payment (Header-Based x402 v2)
 
 ```bash
-# 1. Get nonce
-curl http://localhost:8080/merchant/siwe/nonce
-
-# 2. Sign message with wallet and verify
-curl -X POST http://localhost:8080/merchant/siwe/verify \
+curl -X POST https://api.netpay.id/verify \
   -H "Content-Type: application/json" \
-  -d '{
-    "message": "...",
-    "signature": "0x..."
-  }'
+  -H "Authorization: Bearer pk_live_abc123..." \
+  -H 'PAYMENT-SIGNATURE: {"authorization":{"from":"0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21","to":"0x8ba1f109551bD432803012645Ac136ddd64DBa72","value":"1000000","validAfter":"0","validBefore":"1735776000","nonce":"0x0000000000000000000000000000000000000000000000000000000000000001"},"signature":"0x...","network":"Base","asset":"USDC"}' \
+  -H 'PAYMENT-REQUIRED: {"x402Version":2,"scheme":"exact","network":"Base","asset":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913","payTo":"0x8ba1f109551bD432803012645Ac136ddd64DBa72","maxAmountRequired":"1000000","resource":"https://api.example.com/data","description":"API access"}'
+```
 
-# 3. Use session token for authenticated requests
-curl http://localhost:8080/merchant/1/dashboard/stats \
-  -H "X-Session-Token: uuid-session-token"
+#### Settle Payment (Header-Based x402 v2)
+
+```bash
+curl -X POST https://api.netpay.id/settle \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer pk_live_abc123..." \
+  -H 'PAYMENT-SIGNATURE: {"authorization":{"from":"0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21","to":"0x8ba1f109551bD432803012645Ac136ddd64DBa72","value":"1000000","validAfter":"0","validBefore":"1735776000","nonce":"0x0000000000000000000000000000000000000000000000000000000000000001"},"signature":"0x...","network":"Base","asset":"USDC"}' \
+  -H 'PAYMENT-REQUIRED: {"x402Version":2,"scheme":"exact","network":"Base","asset":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913","payTo":"0x8ba1f109551bD432803012645Ac136ddd64DBa72","maxAmountRequired":"1000000","resource":"https://api.example.com/data","description":"API access"}'
+```
+
+#### Get Account Balance
+
+```bash
+curl -X POST https://api.netpay.id/account \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer pk_live_abc123..." \
+  -d '{"action": "balance"}'
+```
+
+#### Get Account Metrics
+
+```bash
+curl -X POST https://api.netpay.id/account \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer pk_live_abc123..." \
+  -d '{"action": "metrics"}'
 ```

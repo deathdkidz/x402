@@ -117,6 +117,9 @@ pub struct NetworkConfigExternal {
     pub native_cmc_slug: Option<String>,
     #[serde(default)]
     pub tokens: Vec<TokenConfigExternal>,
+    /// Whether this network is enabled (default: true)
+    #[serde(default = "default_true")]
+    pub enabled: bool,
 }
 
 fn default_credit_cost() -> i32 {
@@ -358,7 +361,55 @@ impl ExternalConfig {
         // Validate configuration
         config.validate()?;
         
+        // Initialize the network resolver with our loaded config
+        config.init_network_resolver();
+        
         Ok(config)
+    }
+    
+    /// Initialize the network resolver with data from this config
+    fn init_network_resolver(&self) {
+        use super::network_resolver::{NetworkInfo, init_from_external_config};
+        use std::collections::HashMap;
+        
+        // Build NetworkInfo list from our networks
+        let networks: Vec<NetworkInfo> = self.networks.networks.iter()
+            .filter(|n| n.enabled)
+            .map(|n| NetworkInfo::new(
+                &n.name,
+                n.chain_id,
+                n.environment == NetworkEnvironment::Testnet,
+                &n.native_symbol,
+            ))
+            .collect();
+        
+        // Build aliases from network names
+        let mut aliases: HashMap<String, String> = HashMap::new();
+        for net in &self.networks.networks {
+            if !net.enabled {
+                continue;
+            }
+            
+            let canonical = net.name.clone();
+            let lower = canonical.to_lowercase();
+            
+            // Add standard variations
+            aliases.insert(lower.clone(), canonical.clone());
+            aliases.insert(lower.replace(' ', "-"), canonical.clone());
+            aliases.insert(lower.replace(' ', "_"), canonical.clone());
+            aliases.insert(lower.replace(' ', ""), canonical.clone());
+            
+            // Add chain ID as string alias
+            aliases.insert(net.chain_id.to_string(), canonical.clone());
+            
+            // Add CAIP-2 alias (lowercased for matching)
+            aliases.insert(format!("eip155:{}", net.chain_id), canonical.clone());
+        }
+        
+        if !networks.is_empty() {
+            init_from_external_config(networks, aliases);
+            info!("Initialized network resolver with {} networks from config", self.networks.networks.len());
+        }
     }
     
     /// Get configuration directory
@@ -496,8 +547,14 @@ impl ExternalConfig {
             })
     }
     
-    /// Get network by name
+    /// Get network by name (only if enabled)
     pub fn get_network(&self, name: &str) -> Option<&NetworkConfigExternal> {
+        self.networks.networks.iter()
+            .find(|n| n.enabled && n.name.to_lowercase() == name.to_lowercase())
+    }
+    
+    /// Get network by name (including disabled networks)
+    pub fn get_network_any(&self, name: &str) -> Option<&NetworkConfigExternal> {
         self.networks.networks.iter()
             .find(|n| n.name.to_lowercase() == name.to_lowercase())
     }
@@ -514,7 +571,7 @@ impl ExternalConfig {
     /// Get all enabled mainnet network names
     pub fn mainnet_networks(&self) -> Vec<String> {
         self.networks.networks.iter()
-            .filter(|n| matches!(n.environment, NetworkEnvironment::Mainnet))
+            .filter(|n| n.enabled && matches!(n.environment, NetworkEnvironment::Mainnet))
             .map(|n| n.name.clone())
             .collect()
     }
@@ -522,14 +579,15 @@ impl ExternalConfig {
     /// Get all enabled testnet network names
     pub fn testnet_networks(&self) -> Vec<String> {
         self.networks.networks.iter()
-            .filter(|n| matches!(n.environment, NetworkEnvironment::Testnet))
+            .filter(|n| n.enabled && matches!(n.environment, NetworkEnvironment::Testnet))
             .map(|n| n.name.clone())
             .collect()
     }
     
-    /// Get all network names
+    /// Get all enabled network names
     pub fn all_networks(&self) -> Vec<String> {
         self.networks.networks.iter()
+            .filter(|n| n.enabled)
             .map(|n| n.name.clone())
             .collect()
     }
@@ -555,7 +613,7 @@ impl ExternalConfig {
     pub fn to_legacy_config(&self) -> HashMap<String, LegacyNetworkConfig> {
         let mut networks = HashMap::new();
         
-        for network in &self.networks.networks {
+        for network in self.networks.networks.iter().filter(|n| n.enabled) {
             let tokens: Vec<LegacyTokenConfig> = network.tokens.iter()
                 .filter(|t| t.enabled)
                 .map(|t| LegacyTokenConfig {

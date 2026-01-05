@@ -9,6 +9,7 @@
 //! - config/fees.toml: Credit system and fee settings
 
 pub mod external;
+pub mod network_resolver;
 
 use std::collections::HashMap;
 use std::env;
@@ -89,6 +90,10 @@ pub struct Config {
     // Paymaster
     pub paymaster_private_keys: Vec<String>,
     
+    // Vault for credit purchases
+    pub vault_address: Option<String>,
+    pub vault_private_key: Option<String>,
+    
     // Networks (from external config or hardcoded fallback)
     pub mainnet_networks: Vec<String>,
     pub testnet_networks: Vec<String>,
@@ -163,6 +168,14 @@ impl Config {
             return Err(ConfigError::InvalidConfig("PAYMASTER_PRIVATE_KEYS contains no valid keys".to_string()));
         }
 
+        // Load vault configuration (for credit purchases)
+        let vault_address = env::var("VAULT_ADDRESS").ok();
+        let vault_private_key = env::var("VAULT_PRIVATE_KEY").ok();
+        
+        if vault_address.is_some() {
+            info!("✓ Vault address configured for credit purchases");
+        }
+
         // Build networks - prefer external config, fallback to hardcoded
         let (mainnet_networks, testnet_networks, networks) = if let Some(ref ext) = external_config {
             let mainnet = ext.mainnet_networks();
@@ -197,6 +210,8 @@ impl Config {
             use_https: env::var("USE_HTTPS").unwrap_or_else(|_| "false".to_string()).parse().unwrap_or(false),
             node_env: env::var("NODE_ENV").unwrap_or_else(|_| "production".to_string()),
             paymaster_private_keys,
+            vault_address,
+            vault_private_key,
             mainnet_networks,
             testnet_networks,
             networks,
@@ -237,7 +252,8 @@ impl Config {
     fn build_networks_from_external(ext: &Arc<ExternalConfig>) -> HashMap<String, NetworkConfig> {
         let mut networks = HashMap::new();
         
-        for net in &ext.networks.networks {
+        // Only include enabled networks
+        for net in ext.networks.networks.iter().filter(|n| n.enabled) {
             let rpc_url = ext.get_rpc_url(&net.name)
                 .unwrap_or_else(|| net.rpc_url_default.clone().unwrap_or_default());
             
@@ -487,21 +503,42 @@ impl Config {
             .unwrap_or(false)
     }
 
-    /// Normalize network name (handle case variations)
+    /// Normalize network name - supports CAIP-2, chain IDs, and name variations.
+    /// 
+    /// Supported formats:
+    /// - Chain ID: "8453", "84532"
+    /// - CAIP-2: "eip155:8453", "eip155:84532"
+    /// - Names: "Base Sepolia", "base sepolia", "base-sepolia", "BASE_SEPOLIA"
+    /// 
+    /// Returns the canonical network name that matches config keys.
     pub fn normalize_network_name(&self, network: &str) -> String {
-        // Try exact match first
+        // Try exact match first (most common case)
         if self.networks.contains_key(network) {
             return network.to_string();
         }
 
-        // Case-insensitive search
+        // Use the CAIP-2 aware resolver
+        if let Some(canonical) = network_resolver::resolve_network(network) {
+            // Check if the resolved name exists in our config
+            if self.networks.contains_key(&canonical) {
+                return canonical;
+            }
+            // Try case-insensitive match against config keys
+            for key in self.networks.keys() {
+                if key.to_lowercase() == canonical.to_lowercase() {
+                    return key.clone();
+                }
+            }
+        }
+
+        // Legacy: Case-insensitive search against config keys
         for key in self.networks.keys() {
             if key.to_lowercase() == network.to_lowercase() {
                 return key.clone();
             }
         }
 
-        // Title case conversion as fallback
+        // Title case conversion as last resort fallback
         network
             .split(|c: char| c == '-' || c == '_' || c == ' ')
             .map(|word| {
@@ -563,6 +600,8 @@ impl Default for Config {
             use_https: false,
             node_env: "development".to_string(),
             paymaster_private_keys: vec![],
+            vault_address: None,
+            vault_private_key: None,
             mainnet_networks: vec![],
             testnet_networks: vec![],
             networks: HashMap::new(),
@@ -604,9 +643,8 @@ impl Default for Config {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_normalize_network_name() {
-        let config = Config {
+    fn create_test_config() -> Config {
+        Config {
             networks: HashMap::from([
                 ("Base".to_string(), NetworkConfig {
                     chain_id: 8453,
@@ -624,11 +662,70 @@ mod tests {
                     },
                     tokens: vec![],
                 }),
+                ("Base Sepolia".to_string(), NetworkConfig {
+                    chain_id: 84532,
+                    network_type: NetworkType::Evm,
+                    rpc_url: "https://example.com".to_string(),
+                    flashblock_enabled: false,
+                    credit_cost: 0,
+                    gas_limit: 200000,
+                    gas_buffer_percent: 20,
+                    native_token: NativeTokenConfig {
+                        symbol: "ETH".to_string(),
+                        name: "Ethereum".to_string(),
+                        decimals: 18,
+                        cmc_slug: "ethereum".to_string(),
+                    },
+                    tokens: vec![],
+                }),
             ]),
             ..Default::default()
-        };
+        }
+    }
 
+    #[test]
+    fn test_normalize_network_name() {
+        let config = create_test_config();
+
+        // Exact match
+        assert_eq!(config.normalize_network_name("Base"), "Base");
+        assert_eq!(config.normalize_network_name("Base Sepolia"), "Base Sepolia");
+        
+        // Case variations
         assert_eq!(config.normalize_network_name("base"), "Base");
         assert_eq!(config.normalize_network_name("BASE"), "Base");
+        assert_eq!(config.normalize_network_name("base sepolia"), "Base Sepolia");
+        assert_eq!(config.normalize_network_name("BASE SEPOLIA"), "Base Sepolia");
+    }
+
+    #[test]
+    fn test_normalize_with_chain_id() {
+        let config = create_test_config();
+
+        // Chain IDs
+        assert_eq!(config.normalize_network_name("8453"), "Base");
+        assert_eq!(config.normalize_network_name("84532"), "Base Sepolia");
+    }
+
+    #[test]
+    fn test_normalize_with_caip2() {
+        let config = create_test_config();
+
+        // CAIP-2 format
+        assert_eq!(config.normalize_network_name("eip155:8453"), "Base");
+        assert_eq!(config.normalize_network_name("eip155:84532"), "Base Sepolia");
+        assert_eq!(config.normalize_network_name("EIP155:8453"), "Base"); // Case insensitive
+    }
+
+    #[test]
+    fn test_normalize_with_name_variations() {
+        let config = create_test_config();
+
+        // Dash/underscore variations
+        assert_eq!(config.normalize_network_name("base-sepolia"), "Base Sepolia");
+        assert_eq!(config.normalize_network_name("base_sepolia"), "Base Sepolia");
+        assert_eq!(config.normalize_network_name("BASE-SEPOLIA"), "Base Sepolia");
+        assert_eq!(config.normalize_network_name("BASE_SEPOLIA"), "Base Sepolia");
     }
 }
+

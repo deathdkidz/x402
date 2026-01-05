@@ -1,8 +1,7 @@
-//! Authentication Middleware
+//! API Key Authentication Middleware
 //! 
-//! API key authentication using database-backed merchant lookup with Redis caching
-
-#![allow(dead_code)]
+//! Simple API key authentication using the new API key model.
+//! No wallet signatures, no sessions - just API keys.
 
 use std::sync::Arc;
 use axum::{
@@ -14,8 +13,8 @@ use axum::{
 };
 use tracing::{info, warn, debug};
 
-use crate::types::{Merchant, ErrorResponse};
-use crate::services::{Database, Redis};
+use crate::types::{ApiKey, ErrorResponse};
+use crate::services::{Database, Redis, ApiKeyDb};
 
 /// Application state for auth middleware
 #[derive(Clone)]
@@ -24,39 +23,40 @@ pub struct AuthState {
     pub redis: Arc<Redis>,
 }
 
-/// Extension to store authenticated merchant in request
-#[derive(Clone)]
-pub struct AuthenticatedMerchant(pub Merchant);
-
 /// Public paths that don't require API key authentication
-/// These paths handle their own authentication (e.g., wallet signature, session tokens)
 const PUBLIC_PATHS: &[&str] = &[
     "/", 
     "/health", 
     "/networks", 
     "/metrics",
-    // Merchant auth routes (use SIWE wallet signature auth)
-    "/merchant/siwe/nonce",
-    "/merchant/siwe/verify",
-    "/merchant/session",
-    "/merchant/logout",
-    // Topup routes
-    "/topup/packages",
-    "/topup/order",
 ];
 
-/// Admin routes use session token authentication, not API keys
-fn is_admin_path(path: &str) -> bool {
-    path.starts_with("/admin/")
-}
-
-/// Merchant dashboard routes use session tokens
-fn is_merchant_dashboard_path(path: &str) -> bool {
-    path.starts_with("/merchant/") && !PUBLIC_PATHS.contains(&path)
+/// Check if a path is public (doesn't require auth)
+fn is_public_path(path: &str) -> bool {
+    // Exact match for static paths
+    if PUBLIC_PATHS.contains(&path) {
+        return true;
+    }
+    
+    // Help endpoints are public (documentation)
+    if path.starts_with("/help") {
+        return true;
+    }
+    
+    // Account endpoints are public (GET returns info, POST handles its own auth)
+    if path.starts_with("/account") {
+        return true;
+    }
+    
+    // Credits creation endpoint is public (they validate the key in the body) - legacy
+    if path == "/credits" {
+        return true;
+    }
+    
+    false
 }
 
 /// API key authentication middleware
-/// Note: /metrics access control is handled in security.rs (checks real client IP from proxy headers)
 pub async fn api_key_auth(
     State(state): State<Arc<AuthState>>,
     mut request: Request,
@@ -64,18 +64,8 @@ pub async fn api_key_auth(
 ) -> Response {
     let path = request.uri().path();
     
-    // Skip API key auth for public endpoints
-    if PUBLIC_PATHS.contains(&path) {
-        return next.run(request).await;
-    }
-    
-    // Skip API key auth for admin routes (they use session tokens)
-    if is_admin_path(path) {
-        return next.run(request).await;
-    }
-    
-    // Skip API key auth for merchant dashboard routes (they use session tokens)
-    if is_merchant_dashboard_path(path) {
+    // Skip auth for public endpoints
+    if is_public_path(path) {
         return next.run(request).await;
     }
 
@@ -84,7 +74,7 @@ pub async fn api_key_auth(
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
 
-    let api_key = match auth_header {
+    let api_key_str = match auth_header {
         Some(header) => {
             // Support both "Bearer TOKEN" and direct token
             if header.starts_with("Bearer ") {
@@ -94,80 +84,120 @@ pub async fn api_key_auth(
             }
         }
         None => {
-            warn!("Authentication failed: No Authorization header");
+            warn!("Authentication failed: No Authorization header for {}", path);
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(ErrorResponse::new("Unauthorized", "Missing Authorization header")),
+                Json(ErrorResponse::new(
+                    "UNAUTHORIZED",
+                    "Missing Authorization header. Use: Authorization: Bearer {api_key}"
+                )),
             ).into_response();
         }
     };
 
-    // Try Redis cache first
-    let merchant = match state.redis.get_cached_merchant(api_key).await {
-        Ok(Some(json)) => {
-            // Cache hit
-            match serde_json::from_str::<Merchant>(&json) {
-                Ok(m) => {
-                    debug!("Auth cache hit for merchant: {}", m.auth_address);
-                    Some(m)
-                }
-                Err(e) => {
-                    warn!("Failed to deserialize cached merchant: {}", e);
-                    None
-                }
-            }
-        }
-        Ok(None) => None,
-        Err(e) => {
-            debug!("Redis cache check failed: {}", e);
-            None
-        }
+    // Validate API key format
+    // Supports both legacy 64-char hex and new prefixed format: x402_pk_live_xxx or x402_pk_test_xxx
+    let is_valid_format = if api_key_str.starts_with("x402_pk_") {
+        // New format: x402_pk_live_XXX or x402_pk_test_XXX (prefix + 32 chars)
+        api_key_str.len() >= 20 && (
+            api_key_str.starts_with("x402_pk_live_") || 
+            api_key_str.starts_with("x402_pk_test_")
+        )
+    } else {
+        // Legacy format: 64-char hex string
+        api_key_str.len() == 64 && api_key_str.chars().all(|c| c.is_ascii_hexdigit())
     };
 
-    // If not in cache, query database
-    let merchant = match merchant {
-        Some(m) => m,
+    if !is_valid_format {
+        warn!("Authentication failed: Invalid API key format: {}", &api_key_str[..std::cmp::min(10, api_key_str.len())]);
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse::new(
+                "UNAUTHORIZED",
+                "Invalid API key format. Use x402_pk_live_xxx or x402_pk_test_xxx format."
+            )),
+        ).into_response();
+    }
+
+    // Try Redis cache first
+    let api_key = match get_cached_api_key(&state.redis, api_key_str).await {
+        Some(key) => key,
         None => {
-            match state.database.get_merchant_by_api_key(api_key).await {
-                Ok(Some(m)) => {
-                    // Cache for 1 hour
-                    if let Ok(json) = serde_json::to_string(&m) {
-                        if let Err(e) = state.redis.cache_merchant(api_key, &json, 3600).await {
-                            debug!("Failed to cache merchant: {}", e);
-                        }
-                    }
-                    debug!("Authenticated merchant from DB: {}", m.auth_address);
-                    m
+            // Query database
+            match ApiKeyDb::validate_api_key(state.database.pool(), api_key_str).await {
+                Ok(key) => {
+                    // Cache for 5 minutes
+                    cache_api_key(&state.redis, &key).await;
+                    debug!("Authenticated API key from DB: {}...{}", 
+                           &key.api_key[..8], &key.api_key[key.api_key.len()-4..]);
+                    key
                 }
-                Ok(None) => {
-                    warn!("Authentication failed: Invalid API key");
+                Err(e) => {
+                    warn!("Authentication failed: {}", e);
+                    let message = match e {
+                        crate::services::ApiKeyDbError::NotFound => 
+                            "Invalid API key. Create one via POST /credits",
+                        crate::services::ApiKeyDbError::Expired => 
+                            "API key has expired. Add credits to extend: POST /credits",
+                        crate::services::ApiKeyDbError::Inactive => 
+                            "API key is inactive",
+                        _ => "Authentication failed",
+                    };
                     return (
                         StatusCode::UNAUTHORIZED,
-                        Json(ErrorResponse::new("Unauthorized", "Invalid API key")),
-                    ).into_response();
-                }
-                Err(e) => {
-                    warn!("Database error during authentication: {}", e);
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse::new("Internal Server Error", "Authentication service unavailable")),
+                        Json(ErrorResponse::new("UNAUTHORIZED", message)),
                     ).into_response();
                 }
             }
         }
     };
 
-    info!("Authenticated merchant: {}", merchant.auth_address);
+    info!("✓ Authenticated: {}...{} (${:.4})", 
+          &api_key.api_key[..8], &api_key.api_key[api_key.api_key.len()-4..],
+          api_key.total_balance());
 
-    // Store merchant in request extensions
-    request.extensions_mut().insert(AuthenticatedMerchant(merchant));
+    // Store API key in request extensions
+    request.extensions_mut().insert(api_key);
 
     next.run(request).await
 }
 
-/// Extract authenticated merchant from request
-pub fn get_merchant(request: &Request) -> Option<&Merchant> {
-    request.extensions()
-        .get::<AuthenticatedMerchant>()
-        .map(|am| &am.0)
+/// Try to get API key from Redis cache
+async fn get_cached_api_key(redis: &Redis, api_key_str: &str) -> Option<ApiKey> {
+    let cache_key = format!("apikey:{}", api_key_str);
+    
+    match redis.get(&cache_key).await {
+        Ok(Some(json)) => {
+            match serde_json::from_str::<ApiKey>(&json) {
+                Ok(key) => {
+                    // Verify the cached key is still valid
+                    if key.is_valid() {
+                        debug!("Auth cache hit for API key: {}...{}", 
+                               &key.api_key[..8], &key.api_key[key.api_key.len()-4..]);
+                        return Some(key);
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to deserialize cached API key: {}", e);
+                }
+            }
+        }
+        Ok(None) => {}
+        Err(e) => {
+            debug!("Redis cache check failed: {}", e);
+        }
+    }
+    
+    None
+}
+
+/// Cache API key in Redis
+async fn cache_api_key(redis: &Redis, key: &ApiKey) {
+    let cache_key = format!("apikey:{}", key.api_key);
+    
+    if let Ok(json) = serde_json::to_string(key) {
+        if let Err(e) = redis.set_ex(&cache_key, &json, 300).await { // 5 minutes
+            debug!("Failed to cache API key: {}", e);
+        }
+    }
 }

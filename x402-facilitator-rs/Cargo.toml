@@ -77,6 +77,10 @@ futures = "0.3"
 async-trait = "0.1"
 regex = "1"
 
+# Precise decimal math (for USD calculations)
+rust_decimal = { version = "1.36", features = ["serde", "serde-float"] }
+rust_decimal_macros = "1.36"
+
 # Metrics (Prometheus)
 metrics = "0.23"
 metrics-exporter-prometheus = "0.15"
@@ -84,6 +88,7 @@ metrics-exporter-prometheus = "0.15"
 # WebSocket support for alloy providers
 alloy-transport-ws = "0.5"
 tokio-tungstenite = { version = "0.23", features = ["rustls-tls-native-roots"] }
+base64 = "0.22.1"
 
 [profile.release]
 opt-level = 3

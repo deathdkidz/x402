@@ -43,7 +43,10 @@ static ALLOWED_PATHS: Lazy<Vec<Regex>> = Lazy::new(|| {
         Regex::new(r"^/metrics$").unwrap(),             // Prometheus metrics (localhost only)
         Regex::new(r"^/verify$").unwrap(),              // Verify payment
         Regex::new(r"^/settle$").unwrap(),              // Settle payment
-        Regex::new(r"^/merchant/").unwrap(),            // Merchant dashboard API (includes credits/topup)
+        Regex::new(r"^/help").unwrap(),                 // Help documentation
+        Regex::new(r"^/account").unwrap(),              // Account API (purchase credits, balance, metrics)
+        Regex::new(r"^/credits").unwrap(),              // Credits API (legacy)
+        Regex::new(r"^/api/").unwrap(),                 // API endpoints (credits, transactions)
         Regex::new(r"^/admin/").unwrap(),               // Admin dashboard API
     ]
 });

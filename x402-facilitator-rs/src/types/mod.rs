@@ -1,13 +1,31 @@
 //! x402 Protocol Types
 //! 
 //! Core data structures for payment verification and settlement
+//! 
+//! v2.0 supports:
+//! - API Key authentication model
+//! - x402 v2 headers (PAYMENT-REQUIRED, PAYMENT-SIGNATURE, PAYMENT-RESPONSE, PAYMENT-VERSION)
+//! - CAIP-2 network identifiers (eip155:chainId)
+//! - Both JSON body and header-based requests
 
 #![allow(dead_code)]
+
+pub mod api_key;
+pub mod x402_v2;
 
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 use once_cell::sync::Lazy;
 use regex::Regex;
+
+// Re-export API key types
+pub use api_key::*;
+
+// Re-export x402 v2 types (used by routes)
+pub use x402_v2::{
+    X402_VERSION, headers,
+    PaymentRequirementsV2, PaymentSignatureV2, PaymentResponseV2,
+};
 
 // Regex patterns for validation
 pub static ETH_ADDRESS_REGEX: Lazy<Regex> = Lazy::new(|| {
@@ -328,12 +346,17 @@ pub struct HealthResponse {
     pub uptime: f64,
 }
 
-/// Network info for /networks endpoint
+/// Network info for /networks endpoint (x402 v2)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkInfo {
+    /// Human-readable network name
     pub network: String,
+    /// CAIP-2 identifier (e.g., "eip155:8453")
+    pub caip2: String,
+    /// Chain ID
     pub chain_id: u64,
+    /// Supported tokens
     pub tokens: Vec<TokenInfo>,
 }
 
@@ -382,77 +405,15 @@ pub struct EndpointInfo {
     pub networks: String,
     pub verify: String,
     pub settle: String,
+    pub credits: String,
+    pub help: String,
 }
 
-/// Merchant account status
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum MerchantStatus {
-    Pending,
-    Active,
-    Suspended,
-    Banned,
-}
-
-impl Default for MerchantStatus {
-    fn default() -> Self {
-        MerchantStatus::Active
-    }
-}
-
-impl std::fmt::Display for MerchantStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MerchantStatus::Pending => write!(f, "pending"),
-            MerchantStatus::Active => write!(f, "active"),
-            MerchantStatus::Suspended => write!(f, "suspended"),
-            MerchantStatus::Banned => write!(f, "banned"),
-        }
-    }
-}
-
-/// Merchant data from database
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Merchant {
-    pub id: i64,
-    pub auth_address: String,
-    pub business_name: Option<String>,
-    #[serde(skip_serializing, default)]
-    pub api_key: String,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-    pub is_active: bool,
-    pub webhook_url: Option<String>,
-    #[serde(skip_serializing, default)]
-    pub webhook_secret: Option<String>,
-    pub webhook_events: String,
-    pub email: Option<String>,
-    pub profile_image_url: Option<String>,
-    // Credit system fields
-    pub credit_balance: i32,
-    pub lifetime_credits_purchased: i32,
-    pub lifetime_credits_used: i32,
-    pub status: String,
-    pub last_active_at: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-impl Merchant {
-    /// Check if merchant has sufficient credits for a settlement
-    pub fn has_credits(&self, amount: i32) -> bool {
-        self.credit_balance >= amount
-    }
-    
-    /// Check if merchant account is active
-    pub fn is_account_active(&self) -> bool {
-        self.is_active && self.status == "active"
-    }
-}
-
-/// Transaction record from database
+/// Transaction record from database (API key model)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     pub id: i64,
-    pub merchant_id: Option<i64>,
+    pub api_key: Option<String>,
     pub payer_address: String,
     pub recipient_address: String,
     pub network: String,
@@ -465,7 +426,6 @@ pub struct Transaction {
     pub valid_before: Option<String>,
     pub resource: Option<String>,
     pub description: Option<String>,
-    pub credit_cost: i32,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub timeout_at: Option<chrono::DateTime<chrono::Utc>>,
