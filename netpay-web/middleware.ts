@@ -18,7 +18,7 @@ export function middleware(request: NextRequest) {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     "font-src 'self' data:",
-    "connect-src 'self' https://rpc.walletconnect.com https://relay.walletconnect.org wss://relay.walletconnect.org https://*.infura.io https://*.alchemy.com",
+    "connect-src 'self' https://rpc.walletconnect.com https://relay.walletconnect.org wss://relay.walletconnect.org https://*.infura.io https://*.alchemy.com https://api.netpay.id https://rpc.hyperliquid.xyz wss://rpc.hyperliquid.xyz",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -32,34 +32,6 @@ export function middleware(request: NextRequest) {
       'Strict-Transport-Security',
       'max-age=31536000; includeSubDomains; preload'
     );
-  }
-
-  // Protect dashboard routes
-  if (request.nextUrl.pathname.startsWith('/dashboard')) {
-    const sessionToken = request.cookies.get('netpay_session');
-    
-    if (!sessionToken) {
-      const loginUrl = new URL('/', request.url);
-      loginUrl.searchParams.set('redirect', request.nextUrl.pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-  }
-
-  // Prevent access to internal API routes from external origins in production
-  if (
-    process.env.NODE_ENV === 'production' &&
-    request.nextUrl.pathname.startsWith('/api/')
-  ) {
-    const origin = request.headers.get('origin');
-    const host = request.headers.get('host');
-    
-    // Allow same-origin requests and requests without origin (server-side)
-    if (origin && host && !origin.includes(host.split(':')[0])) {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
   }
 
   return response;

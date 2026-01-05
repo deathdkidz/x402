@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { AuthProvider } from "@/lib/auth-context";
 import { Web3Provider } from "@/app/components/Web3Provider";
 
 const geistSans = Geist({
@@ -15,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NetPay - X-402 Payment Protocol",
-  description: "Lightning-fast blockchain payments for the decentralized web",
+  title: "NetPay - x402 Payment Protocol",
+  description: "Purchase API credits for gasless USDC payment settlements",
 };
 
 export default function RootLayout({
@@ -30,9 +29,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Web3Provider>
-          <AuthProvider>
-            {children}
-          </AuthProvider>
+          {children}
         </Web3Provider>
       </body>
     </html>

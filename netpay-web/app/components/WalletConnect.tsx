@@ -4,6 +4,17 @@ import { useState, useCallback, useEffect } from 'react';
 import { useConnect, useAccount, useDisconnect, Connector } from 'wagmi';
 import { supportedChains } from './Web3Provider';
 
+// Extend window type for ethereum
+declare global {
+  interface Window {
+    ethereum?: {
+      isMetaMask?: boolean;
+      isBraveWallet?: boolean;
+      isRabby?: boolean;
+    };
+  }
+}
+
 interface WalletOption {
   id: string;
   name: string;
@@ -59,10 +70,10 @@ export function WalletConnect({
   const formatConnectorName = (connector: Connector): string => {
     if (connector.name === 'Injected') {
       // Try to detect the actual wallet
-      if (typeof window !== 'undefined') {
-        if (window.ethereum?.isMetaMask) return 'MetaMask';
-        if ((window.ethereum as any)?.isBraveWallet) return 'Brave Wallet';
-        if ((window.ethereum as any)?.isRabby) return 'Rabby';
+      if (typeof window !== 'undefined' && window.ethereum) {
+        if (window.ethereum.isMetaMask) return 'MetaMask';
+        if (window.ethereum.isBraveWallet) return 'Brave Wallet';
+        if (window.ethereum.isRabby) return 'Rabby';
       }
       return 'Browser Wallet';
     }

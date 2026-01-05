@@ -21,7 +21,7 @@ import ethers from 'ethers';
 
 // Configuration
 // Hardcoded test credentials from netpay-web
-const TEST_API_KEY = 'pk_demo_netpay_public_demo_key_2025';
+const TEST_API_KEY = 'df120001616ba25dbd53c2016fbbdcab272dc31f377dc644cb7c0dd36ee54958';
 const TEST_PRIVATE_KEY = '0x2259e98a73602c87ef0b2c27366f8713988d0b67995f3c8d0dd3aa0990571280';
 const TEST_MERCHANT = '0x706044A25A845e7dC2286835Fcf5cf59D8B2A84b';
 

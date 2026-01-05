@@ -1,348 +1,471 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useAccount, useConnect, useDisconnect, useSignTypedData, useChainId, useSwitchChain } from 'wagmi';
-import { injected } from 'wagmi/connectors';
+import { useState, useEffect, useCallback } from 'react';
+import { useAccount, useSignTypedData, useChainId, useSwitchChain } from 'wagmi';
 import Link from 'next/link';
 
-// Helper function to get block explorer URL
-const getExplorerUrl = (network: string, txHash: string): string => {
-  if (!txHash || !network) return '';
-  const normalizedNetwork = network.toLowerCase().replace(/\s+/g, '-');
-  const explorers: Record<string, string> = {
-    'ethereum': 'https://etherscan.io/tx/',
-    'ethereum-sepolia': 'https://sepolia.etherscan.io/tx/',
-    'base': 'https://basescan.org/tx/',
-    'base-sepolia': 'https://sepolia.basescan.org/tx/',
-    'optimism': 'https://optimistic.etherscan.io/tx/',
-    'op-sepolia': 'https://sepolia-optimism.etherscan.io/tx/',
-  };
-  return (explorers[normalizedNetwork] || '') + txHash;
-};
+interface Token {
+  address: string;
+  symbol: string;
+  decimals: number;
+}
 
-interface NetworkConfig {
+interface NetworkInfo {
   network: string;
   chainId: number;
-  tokens: {
-    symbol: string;
-    address: string;
-    decimals: number;
-    eip712: {
-      name: string;
-      version: string;
-      verifyingContract: string;
-    };
-  }[];
+  tokens: Token[];
+}
+
+// Get block explorer URL for transaction
+function getExplorerUrl(chainId: number | null, txHash: string): string {
+  const explorers: Record<number, string> = {
+    8453: 'https://basescan.org/tx/',
+    84532: 'https://sepolia.basescan.org/tx/',
+    10: 'https://optimistic.etherscan.io/tx/',
+    11155420: 'https://sepolia-optimism.etherscan.io/tx/',
+    999: 'https://explorer.hyperliquid.xyz/tx/',
+  };
+  const base = chainId ? explorers[chainId] : 'https://basescan.org/tx/';
+  return `${base || 'https://basescan.org/tx/'}${txHash}`;
 }
 
 export default function DemoContent() {
-  // UI State
-  const [step, setStep] = useState<'config' | 'payment' | 'success'>('config');
-  
-  // Configuration
-  const [networks, setNetworks] = useState<NetworkConfig[]>([]);
-  const [selectedNetwork, setSelectedNetwork] = useState<string>('');
-  const [selectedToken, setSelectedToken] = useState<string>('');
-  const [recipientAddress, setRecipientAddress] = useState<string>('');
-  const [paymentAmount, setPaymentAmount] = useState<string>('0.01');
-  
-  // Rate limiting
-  const [settleCount, setSettleCount] = useState<number>(0);
-  const [rateError, setRateError] = useState<string>('');
-  
-  // Loading states
-  const [processing, setProcessing] = useState(false);
-  const [error, setError] = useState('');
-  const [transactionHash, setTransactionHash] = useState('');
-  const [paymentNetwork, setPaymentNetwork] = useState('');
-
-  const facilitatorUrl = process.env.NEXT_PUBLIC_FACILITATOR_URL || 'https://api.netpay.id';
-  const DAILY_LIMIT = 5; // 5 settlements per address per day
-
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, connector } = useAccount();
   const chainId = useChainId();
-  const { connect } = useConnect();
-  const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
   const { signTypedDataAsync } = useSignTypedData();
 
-  // Fetch networks on mount
+  // API Key state
+  const [apiKey, setApiKey] = useState('');
+  const [apiKeyValidated, setApiKeyValidated] = useState(false);
+  const [validatingKey, setValidatingKey] = useState(false);
+  const [keyBalance, setKeyBalance] = useState<string | null>(null);
+
+  // Demo state
+  const [step, setStep] = useState<'apikey' | 'config' | 'payment' | 'success'>('apikey');
+  const [networks, setNetworks] = useState<NetworkInfo[]>([]);
+  const [selectedNetwork, setSelectedNetwork] = useState<NetworkInfo | null>(null);
+  const [networkType, setNetworkType] = useState<'testnet' | 'mainnet'>('testnet');
+  const [recipientAddress, setRecipientAddress] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('0.01');
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState('');
+  const [transactionHash, setTransactionHash] = useState('');
+  const [paymentChainId, setPaymentChainId] = useState<number | null>(null);
+
+  const FACILITATOR_URL = 'https://api.netpay.id';
+
+  // Get available networks based on type
+  const availableNetworks = networks.filter(n => {
+    const testnetChains = [84532, 11155420]; // Base Sepolia, OP Sepolia
+    const mainnetChains = [8453, 10, 999]; // Base, OP Mainnet, HyperEVM
+    return networkType === 'testnet' 
+      ? testnetChains.includes(n.chainId)
+      : mainnetChains.includes(n.chainId);
+  });
+
+  // Get USDC token for selected network
+  const usdcToken = selectedNetwork?.tokens?.find(t => t.symbol === 'USDC');
+
+  // Check if chain switch is needed
+  const needsChainSwitch = isConnected && selectedNetwork && chainId !== selectedNetwork.chainId;
+
+  // Fetch networks
   useEffect(() => {
-    const fetchNetworks = async () => {
+    async function fetchNetworks() {
       try {
-        const networksRes = await fetch(`${facilitatorUrl}/networks`);
-        if (networksRes.ok) {
-          const data = await networksRes.json();
-          const allNetworks = [...(data.mainnet || []), ...(data.testnet || [])];
-          setNetworks(allNetworks);
-          if (allNetworks.length > 0) {
-            // Default to Base Sepolia for demo
-            const defaultNet = allNetworks.find(n => n.network.toLowerCase().includes('sepolia')) || allNetworks[0];
-            setSelectedNetwork(defaultNet.network);
-            if (defaultNet.tokens.length > 0) {
-              setSelectedToken(defaultNet.tokens[0].address);
-            }
-          }
+        const response = await fetch(`${FACILITATOR_URL}/networks`);
+        if (response.ok) {
+          const data = await response.json();
+          // Filter networks with USDC
+          const networksWithUSDC = data.filter((n: NetworkInfo) => 
+            n.tokens?.some((t: Token) => t.symbol === 'USDC')
+          );
+          setNetworks(networksWithUSDC);
+          // Set default network
+          const defaultNet = networksWithUSDC.find((n: NetworkInfo) => n.chainId === 84532);
+          if (defaultNet) setSelectedNetwork(defaultNet);
         }
-      } catch (error) {
-        console.error('Failed to fetch networks:', error);
-        setError('Failed to load payment networks');
+      } catch (err) {
+        console.error('Failed to fetch networks:', err);
       }
-    };
+    }
     fetchNetworks();
-  }, [facilitatorUrl]);
+  }, []);
 
-  // Check rate limit on address change
+  // Update selected network when type changes
   useEffect(() => {
-    if (address) {
-      checkRateLimit();
-    }
-  }, [address]);
-
-  const checkRateLimit = async () => {
-    if (!address) return;
-    try {
-      const res = await fetch(`/api/demo/rate-limit?address=${address}`);
-      const data = await res.json();
-      setSettleCount(data.count || 0);
-      if (data.count >= DAILY_LIMIT) {
-        setRateError(`Daily limit reached (${DAILY_LIMIT} settlements). Try again tomorrow.`);
-      } else {
-        setRateError('');
+    if (availableNetworks.length > 0 && selectedNetwork) {
+      const currentTypeNetworks = availableNetworks;
+      if (!currentTypeNetworks.find(n => n.chainId === selectedNetwork.chainId)) {
+        setSelectedNetwork(currentTypeNetworks[0]);
       }
-    } catch (e) {
-      console.error('Rate limit check failed:', e);
     }
-  };
+  }, [networkType, availableNetworks, selectedNetwork]);
 
-  // Handle network change
-  const handleNetworkChange = (networkName: string) => {
-    setSelectedNetwork(networkName);
-    const network = networks.find(n => n.network === networkName);
-    if (network && network.tokens.length > 0) {
-      setSelectedToken(network.tokens[0].address);
-    }
-  };
-
-  // Get current network and token configs
-  const networkConfig = networks.find(n => n.network === selectedNetwork);
-  const tokenConfig = networkConfig?.tokens.find(t => t.address === selectedToken);
-
-  // Check if wallet chain matches selected network
-  const needsChainSwitch = networkConfig && chainId !== networkConfig.chainId;
-
-  const handleConnect = () => {
-    connect({ connector: injected() });
-  };
-
-  const validateRecipient = (addr: string): boolean => {
-    return /^0x[a-fA-F0-9]{40}$/.test(addr);
-  };
-
-  const handleProceedToPayment = () => {
-    if (!validateRecipient(recipientAddress)) {
-      setError('Please enter a valid recipient address');
+  // Validate API Key
+  const validateApiKey = useCallback(async () => {
+    const keyRegex = /^[A-Za-z0-9]{64}$/;
+    if (!apiKey || !keyRegex.test(apiKey)) {
+      setError('API key must be 64 alphanumeric characters (no special characters)');
       return;
     }
-    if (settleCount >= DAILY_LIMIT) {
-      setError(rateError);
+
+    setValidatingKey(true);
+    setError('');
+    
+    try {
+      const response = await fetch(`${FACILITATOR_URL}/balance`, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setKeyBalance(data.balance);
+        setApiKeyValidated(true);
+        setStep('config');
+      } else if (response.status === 401) {
+        setError('Invalid API key. Please check and try again.');
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Failed to validate API key');
+      }
+    } catch (err) {
+      setError('Failed to connect to API. Please try again.');
+    } finally {
+      setValidatingKey(false);
+    }
+  }, [apiKey]);
+
+  // Handle connect wallet
+  const handleConnect = async () => {
+    try {
+      if (connector?.connect) {
+        await connector.connect();
+      }
+    } catch (err) {
+      console.error('Failed to connect:', err);
+    }
+  };
+
+  // Handle network type change
+  const handleNetworkTypeChange = (type: 'testnet' | 'mainnet') => {
+    setNetworkType(type);
+    setError('');
+  };
+
+  // Proceed to payment step
+  const handleProceedToPayment = () => {
+    if (!recipientAddress || !recipientAddress.startsWith('0x') || recipientAddress.length !== 42) {
+      setError('Please enter a valid recipient address');
       return;
     }
     setError('');
     setStep('payment');
   };
 
+  // Handle payment
   const handlePay = async () => {
-    if (!address || !networkConfig || !tokenConfig || !recipientAddress) {
-      setError('Missing required configuration');
+    if (!address || !selectedNetwork || !usdcToken || !recipientAddress) {
+      setError('Missing required payment details');
       return;
     }
 
-    // Check chain
+    // Check if chain switch needed
     if (needsChainSwitch) {
       try {
-        await switchChain({ chainId: networkConfig.chainId });
-        return; // Let the user click pay again after switching
-      } catch (e) {
+        switchChain({ chainId: selectedNetwork.chainId });
+      } catch {
         setError('Please switch to the correct network in your wallet');
-        return;
       }
+      return;
     }
 
     setProcessing(true);
     setError('');
 
     try {
-      // Generate nonce
-      const nonce = '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
+      const amount = BigInt(Math.floor(parseFloat(paymentAmount) * (10 ** usdcToken.decimals)));
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+      const nonce = BigInt(`0x${[...crypto.getRandomValues(new Uint8Array(32))].map(b => b.toString(16).padStart(2, '0')).join('')}`);
 
-      const amountInMicro = Math.floor(parseFloat(paymentAmount) * 1_000_000).toString();
-      const now = Math.floor(Date.now() / 1000);
-      const validAfter = now;
-      const validBefore = now + 3600;
-
-      // Create authorization message
-      const authorization = {
-        from: address,
-        to: recipientAddress as `0x${string}`,
-        value: BigInt(amountInMicro),
-        validAfter: BigInt(validAfter),
-        validBefore: BigInt(validBefore),
-        nonce: nonce as `0x${string}`
+      // EIP-712 domain for USDC
+      const domain = {
+        name: 'USD Coin',
+        version: '2',
+        chainId: BigInt(selectedNetwork.chainId),
+        verifyingContract: usdcToken.address as `0x${string}`,
       };
 
-      // Sign with EIP-712
+      // TransferWithAuthorization types
+      const types = {
+        TransferWithAuthorization: [
+          { name: 'from', type: 'address' },
+          { name: 'to', type: 'address' },
+          { name: 'value', type: 'uint256' },
+          { name: 'validAfter', type: 'uint256' },
+          { name: 'validBefore', type: 'uint256' },
+          { name: 'nonce', type: 'bytes32' },
+        ],
+      };
+
+      // Message
+      const message = {
+        from: address as `0x${string}`,
+        to: recipientAddress as `0x${string}`,
+        value: amount,
+        validAfter: BigInt(0),
+        validBefore: deadline,
+        nonce: `0x${nonce.toString(16).padStart(64, '0')}` as `0x${string}`,
+      };
+
+      // Sign the typed data
       const signature = await signTypedDataAsync({
-        domain: {
-          name: tokenConfig.eip712.name,
-          version: tokenConfig.eip712.version,
-          chainId: networkConfig.chainId,
-          verifyingContract: tokenConfig.eip712.verifyingContract as `0x${string}`
-        },
-        types: {
-          TransferWithAuthorization: [
-            { name: 'from', type: 'address' },
-            { name: 'to', type: 'address' },
-            { name: 'value', type: 'uint256' },
-            { name: 'validAfter', type: 'uint256' },
-            { name: 'validBefore', type: 'uint256' },
-            { name: 'nonce', type: 'bytes32' }
-          ]
-        },
+        domain,
+        types,
         primaryType: 'TransferWithAuthorization',
-        message: authorization
+        message,
       });
 
-      // Create X-PAYMENT payload
-      const xPaymentData = {
-        authorization: {
-          from: address,
-          to: recipientAddress,
-          value: amountInMicro,
-          validAfter: validAfter.toString(),
-          validBefore: validBefore.toString(),
-          nonce: nonce
+      // Create payment payload
+      const payload = {
+        x402Version: 2,
+        scheme: 'exact',
+        network: selectedNetwork.network,
+        payload: {
+          signature,
+          authorization: {
+            from: address,
+            to: recipientAddress,
+            value: amount.toString(),
+            validAfter: '0',
+            validBefore: deadline.toString(),
+            nonce: `0x${nonce.toString(16).padStart(64, '0')}`,
+          },
+          token: usdcToken.address,
         },
-        signature,
-        network: networkConfig.network,
-        asset: tokenConfig.address
       };
-      const xPaymentHeader = btoa(JSON.stringify(xPaymentData));
 
-      // Call demo settle endpoint (rate limited, uses demo API key)
-      const response = await fetch('/api/demo/settle', {
+      // Call facilitator directly with user's API key
+      const response = await fetch(`${FACILITATOR_URL}/settle`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          xPayment: xPaymentHeader,
-          network: networkConfig.network,
-          amount: amountInMicro,
-          recipient: recipientAddress,
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
       });
 
       const result = await response.json();
 
-      if (result.success) {
-        setTransactionHash(result.transactionHash);
-        setPaymentNetwork(networkConfig.network);
-        setSettleCount(prev => prev + 1);
+      if (response.ok && result.success) {
+        setTransactionHash(result.txHash || result.transactionHash || '');
+        setPaymentChainId(selectedNetwork.chainId);
         setStep('success');
       } else {
         setError(result.error || 'Settlement failed');
       }
     } catch (err: unknown) {
-      console.error('Payment error:', err);
-      if (err instanceof Error) {
-        if (err.message.includes('rejected')) {
-          setError('Transaction was rejected');
-        } else {
-          setError(err.message || 'Payment failed');
-        }
+      const errorMessage = err instanceof Error ? err.message : 'Payment failed';
+      if (errorMessage.includes('rejected') || errorMessage.includes('denied')) {
+        setError('Transaction was rejected');
       } else {
-        setError('Payment failed. Please try again.');
+        setError(errorMessage);
       }
     } finally {
       setProcessing(false);
     }
   };
 
+  // Reset demo
   const handleReset = () => {
-    setTransactionHash('');
-    setPaymentNetwork('');
     setStep('config');
+    setRecipientAddress('');
+    setPaymentAmount('0.01');
+    setTransactionHash('');
+    setPaymentChainId(null);
+    setError('');
+  };
+
+  // Change API key
+  const handleChangeApiKey = () => {
+    setApiKeyValidated(false);
+    setKeyBalance(null);
+    setStep('apikey');
     setError('');
   };
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
-      {/* Navigation */}
-      <nav className="border-b border-neutral-800">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-                <span className="text-black font-bold text-sm">N</span>
-              </div>
-              <span className="text-xl font-semibold text-white">NetPay</span>
-            </Link>
-            <div className="flex items-center gap-4">
-              {isConnected ? (
-                <button
-                  onClick={() => disconnect()}
-                  className="px-4 py-2 text-sm border border-neutral-700 hover:border-neutral-600 rounded-lg transition-colors"
-                >
-                  {address?.slice(0, 6)}...{address?.slice(-4)}
-                </button>
-              ) : (
-                <button
-                  onClick={handleConnect}
-                  className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-400 text-black font-medium rounded-lg transition-colors"
-                >
-                  Connect Wallet
-                </button>
-              )}
+      {/* Header */}
+      <header className="border-b border-neutral-800">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
+              <span className="text-black font-bold text-sm">N</span>
             </div>
-          </div>
+            <span className="font-semibold">NetPay</span>
+          </Link>
+          <nav className="flex items-center gap-6">
+            <Link href="/" className="text-sm text-neutral-400 hover:text-white transition-colors">
+              Purchase Credits
+            </Link>
+            <Link href="/docs" className="text-sm text-neutral-400 hover:text-white transition-colors">
+              API Docs
+            </Link>
+            <span className="text-sm text-amber-500 font-medium">Demo</span>
+          </nav>
         </div>
-      </nav>
+      </header>
 
       {/* Main Content */}
-      <main className="max-w-2xl mx-auto px-6 py-12">
+      <main className="max-w-xl mx-auto px-6 py-12">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold mb-2">Payment Demo</h1>
           <p className="text-neutral-400">
-            Try NetPay&apos;s instant USDC settlement
+            Test x402 payment settlements using your API key
           </p>
         </div>
 
-        {/* Progress Steps */}
-        <div className="flex items-center justify-center gap-2 mb-8">
-          {['Configure', 'Pay', 'Done'].map((label, i) => (
-            <div key={label} className="flex items-center gap-2">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                i === 0 && step === 'config' ? 'bg-amber-500 text-black' :
-                i === 1 && step === 'payment' ? 'bg-amber-500 text-black' :
-                i === 2 && step === 'success' ? 'bg-green-500 text-black' :
-                (step === 'payment' && i === 0) || (step === 'success' && i <= 1) ? 'bg-green-500/20 text-green-400' :
-                'bg-neutral-800 text-neutral-500'
-              }`}>
-                {(step === 'payment' && i === 0) || (step === 'success' && i <= 1) ? '✓' : i + 1}
+        {/* API Key Step */}
+        {step === 'apikey' && (
+          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 space-y-6">
+            <div className="text-center">
+              <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
+                <svg className="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
               </div>
-              <span className={`text-sm ${
-                (step === 'config' && i === 0) || (step === 'payment' && i === 1) || (step === 'success' && i === 2)
-                  ? 'text-white' : 'text-neutral-500'
-              }`}>{label}</span>
-              {i < 2 && <div className="w-12 h-px bg-neutral-800 mx-2" />}
+              <h2 className="text-lg font-semibold mb-1">Enter Your API Key</h2>
+              <p className="text-sm text-neutral-400">
+                Use your NetPay API key to test payment settlements
+              </p>
             </div>
-          ))}
-        </div>
+
+            <div>
+              <label className="block text-sm font-medium text-neutral-300 mb-2">
+                API Key
+              </label>
+              <input
+                type="text"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="x402_pk_test_abc123def456..."
+                className="w-full px-4 py-3 bg-neutral-950 border border-neutral-800 rounded-lg text-white placeholder-neutral-600 focus:outline-none focus:border-amber-500 font-mono text-sm"
+              />
+              <p className="text-xs text-neutral-500 mt-2">
+                Don&apos;t have an API key? <Link href="/" className="text-amber-500 hover:text-amber-400">Purchase credits</Link> to get one.
+              </p>
+            </div>
+
+            {/* Error Display */}
+            {error && (
+              <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                <p className="text-red-400 text-sm">{error}</p>
+              </div>
+            )}
+
+            <button
+              onClick={validateApiKey}
+              disabled={!apiKey || validatingKey}
+              className="w-full px-6 py-4 bg-amber-500 hover:bg-amber-400 text-black font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {validatingKey ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Validating...
+                </span>
+              ) : (
+                'Continue'
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Config Step */}
         {step === 'config' && (
           <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 space-y-6">
+            {/* API Key Info */}
+            <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-sm text-green-400">API key validated</span>
+                </div>
+                <button 
+                  onClick={handleChangeApiKey}
+                  className="text-xs text-neutral-400 hover:text-white"
+                >
+                  Change
+                </button>
+              </div>
+              {keyBalance && (
+                <p className="text-xs text-neutral-400 mt-1">
+                  Balance: {keyBalance} USDC credits
+                </p>
+              )}
+            </div>
+
+            {/* Network Type Toggle */}
+            <div>
+              <label className="block text-sm font-medium text-neutral-300 mb-2">
+                Network Type
+              </label>
+              <div className="flex p-1 bg-neutral-950 rounded-lg">
+                <button
+                  onClick={() => handleNetworkTypeChange('testnet')}
+                  className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors ${
+                    networkType === 'testnet'
+                      ? 'bg-amber-500 text-black'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Testnet
+                </button>
+                <button
+                  onClick={() => handleNetworkTypeChange('mainnet')}
+                  className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors ${
+                    networkType === 'mainnet'
+                      ? 'bg-amber-500 text-black'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Mainnet
+                </button>
+              </div>
+            </div>
+
+            {/* Network Selector */}
+            <div>
+              <label className="block text-sm font-medium text-neutral-300 mb-2">
+                Network
+              </label>
+              <select
+                value={selectedNetwork?.chainId || ''}
+                onChange={(e) => {
+                  const network = availableNetworks.find(n => n.chainId === parseInt(e.target.value));
+                  if (network) setSelectedNetwork(network);
+                }}
+                className="w-full px-4 py-3 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-amber-500"
+              >
+                {availableNetworks.map((net) => (
+                  <option key={net.chainId} value={net.chainId}>
+                    {net.network}
+                  </option>
+                ))}
+              </select>
+              {availableNetworks.length === 0 && (
+                <p className="text-neutral-500 text-sm mt-2">Loading networks...</p>
+              )}
+            </div>
+
             {/* Recipient Address */}
             <div>
               <label className="block text-sm font-medium text-neutral-300 mb-2">
@@ -376,40 +499,10 @@ export default function DemoContent() {
               />
             </div>
 
-            {/* Network */}
-            <div>
-              <label className="block text-sm font-medium text-neutral-300 mb-2">
-                Network
-              </label>
-              <select
-                value={selectedNetwork}
-                onChange={(e) => handleNetworkChange(e.target.value)}
-                className="w-full px-4 py-3 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-amber-500"
-              >
-                {networks.map((net) => (
-                  <option key={net.network} value={net.network}>
-                    {net.network}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Rate Limit Info */}
-            {address && (
-              <div className="p-3 bg-neutral-950 rounded-lg">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-neutral-400">Daily usage</span>
-                  <span className={settleCount >= DAILY_LIMIT ? 'text-red-400' : 'text-green-400'}>
-                    {settleCount}/{DAILY_LIMIT} settlements
-                  </span>
-                </div>
-              </div>
-            )}
-
             {/* Error Display */}
-            {(error || rateError) && (
+            {error && (
               <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <p className="text-red-400 text-sm">{error || rateError}</p>
+                <p className="text-red-400 text-sm">{error}</p>
               </div>
             )}
 
@@ -424,7 +517,7 @@ export default function DemoContent() {
             ) : (
               <button
                 onClick={handleProceedToPayment}
-                disabled={!recipientAddress || settleCount >= DAILY_LIMIT}
+                disabled={!recipientAddress}
                 className="w-full px-6 py-4 bg-amber-500 hover:bg-amber-400 text-black font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Continue to Payment
@@ -446,11 +539,11 @@ export default function DemoContent() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-neutral-400">Network</span>
-                <span className="text-white">{selectedNetwork}</span>
+                <span className="text-white">{selectedNetwork?.network}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-neutral-400">Token</span>
-                <span className="text-white">{tokenConfig?.symbol}</span>
+                <span className="text-white">{usdcToken?.symbol}</span>
               </div>
               <div className="border-t border-neutral-800 pt-3 flex justify-between">
                 <span className="text-neutral-400">Amount</span>
@@ -462,7 +555,7 @@ export default function DemoContent() {
             {needsChainSwitch && (
               <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <p className="text-yellow-400 text-sm">
-                  Please switch to {selectedNetwork} in your wallet to continue
+                  Please switch to {selectedNetwork?.network} in your wallet to continue
                 </p>
               </div>
             )}
@@ -517,7 +610,7 @@ export default function DemoContent() {
               </div>
               <h2 className="text-2xl font-bold mb-2">Payment Successful!</h2>
               <p className="text-neutral-400">
-                Your payment has been settled on {paymentNetwork}
+                Your payment has been settled on {selectedNetwork?.network}
               </p>
             </div>
 
@@ -526,7 +619,7 @@ export default function DemoContent() {
               <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
                 <p className="text-green-400 text-sm font-medium mb-2">Transaction Hash</p>
                 <a 
-                  href={getExplorerUrl(paymentNetwork, transactionHash)}
+                  href={getExplorerUrl(paymentChainId, transactionHash)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm font-mono text-amber-500 hover:text-amber-400 break-all flex items-center gap-1"
@@ -558,9 +651,9 @@ export default function DemoContent() {
             <div className="text-sm text-neutral-400">
               <p className="font-medium text-neutral-300 mb-1">How it works</p>
               <p>
-                This demo uses NetPay&apos;s facilitator to settle USDC payments instantly. 
+                This demo uses your NetPay API key to settle USDC payments instantly. 
                 Sign the ERC-3009 authorization, and we&apos;ll execute the transfer on-chain.
-                Limited to {DAILY_LIMIT} settlements per address daily.
+                Each settlement costs approximately 0.001 USDC from your credit balance.
               </p>
             </div>
           </div>
