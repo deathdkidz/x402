@@ -11,8 +11,10 @@
 //! Endpoints:
 //! - Public: /, /health, /networks, /help, /account
 //! - Authenticated: /verify, /settle
+//! - Admin: /admin/purchases
 
 mod account;
+mod admin;
 mod credits;
 mod help;
 
@@ -34,6 +36,7 @@ use crate::services::{VerificationService, SettlementService, MetricsService, Da
 use crate::services::metrics;
 
 pub use account::create_account_router;
+pub use admin::create_admin_router;
 pub use credits::create_credits_router;
 pub use help::create_help_router;
 
@@ -62,10 +65,11 @@ pub fn create_router(state: AppState) -> Router {
         // Core API (requires authentication)
         .route("/verify", post(verify_handler))
         .route("/settle", post(settle_handler))
-        // Merge account, credits (legacy) and help routes
+        // Merge account, credits (legacy), help, and admin routes
         .merge(create_account_router())
         .merge(create_credits_router())  // Keep for backward compatibility
         .merge(create_help_router())
+        .merge(create_admin_router())    // Internal admin endpoints
         .with_state(state_arc)
 }
 
@@ -76,7 +80,6 @@ async fn root_handler(
     Json(serde_json::json!({
         "name": state.config.service_name,
         "description": state.config.service_description,
-        "version": "2.0.0",
         "endpoints": {
             "health": "GET /health",
             "networks": "GET /networks",

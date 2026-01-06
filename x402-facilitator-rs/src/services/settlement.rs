@@ -62,6 +62,16 @@ sol! {
     }
 }
 
+/// Result of credit deduction containing fee breakdown
+#[derive(Debug, Clone)]
+pub struct DeductionResult {
+    pub service_fee_usd: rust_decimal::Decimal,
+    pub gas_cost_usd: rust_decimal::Decimal,
+    pub total_fees_usd: rust_decimal::Decimal,
+    pub balance_after: rust_decimal::Decimal,
+    pub balance_type: String,
+}
+
 /// Settlement service
 pub struct SettlementService {
     config: Arc<Config>,
@@ -315,16 +325,28 @@ impl SettlementService {
                     
                     // Atomic USD credit deduction (gas cost + service fee)
                     // This happens synchronously to ensure balance is deducted before response
-                    if let Some(ref receipt) = receipt {
-                        if let Err(e) = self.deduct_credits_for_settlement(
+                    let fees_info = if let Some(ref receipt) = receipt {
+                        match self.deduct_credits_for_settlement(
                             &api_key.api_key,
                             transaction_id,
                             receipt,
                             &normalized_network,
                         ).await {
-                            warn!("Failed to deduct USD credits: {} (non-fatal)", e);
+                            Ok(deduction) => Some(crate::types::SettlementFees {
+                                service_fee: format!("{:.6}", deduction.service_fee_usd),
+                                gas_cost: format!("{:.6}", deduction.gas_cost_usd),
+                                total_fees: format!("{:.6}", deduction.total_fees_usd),
+                                balance_after: format!("{:.6}", deduction.balance_after),
+                                balance_type: deduction.balance_type,
+                            }),
+                            Err(e) => {
+                                warn!("Failed to deduct USD credits: {} (non-fatal)", e);
+                                None
+                            }
                         }
-                    }
+                    } else {
+                        None
+                    };
 
                     // Update database with completed status
                     if let Err(e) = self.database.update_transaction(transaction_id, "completed").await {
@@ -336,12 +358,23 @@ impl SettlementService {
                         error!("Failed to cache nonce: {}", e);
                     }
 
-                    SettleResponse::success(
-                        normalized_network,
-                        payer.clone(),
-                        tx_hash,
-                        SettlementStatus::Completed,
-                    )
+                    // Return response with fee breakdown if available
+                    if let Some(fees) = fees_info {
+                        SettleResponse::success_with_fees(
+                            normalized_network,
+                            payer.clone(),
+                            tx_hash,
+                            SettlementStatus::Completed,
+                            fees,
+                        )
+                    } else {
+                        SettleResponse::success(
+                            normalized_network,
+                            payer.clone(),
+                            tx_hash,
+                            SettlementStatus::Completed,
+                        )
+                    }
                 } else if confirmed && final_status == "failed" {
                     error!("❌ Transaction reverted: {}", tx_hash);
                     
@@ -704,7 +737,7 @@ impl SettlementService {
         transaction_id: i64,
         receipt: &alloy::rpc::types::TransactionReceipt,
         network: &str,
-    ) -> Result<rust_decimal::Decimal, String> {
+    ) -> Result<DeductionResult, String> {
         use crate::services::{ApiKeyDb, PriceFeedService, price_feed::SERVICE_FEE_USD};
         use crate::services::api_key_db::GasDeductionData;
         use crate::types::api_key::BalanceType;
@@ -751,15 +784,23 @@ impl SettlementService {
         };
         
         // Atomic deduction from appropriate balance
-        ApiKeyDb::deduct_settlement_costs(
+        let balance_after = ApiKeyDb::deduct_settlement_costs(
             self.database.pool(),
             api_key.id,
             transaction_id,
-            balance_type,
+            balance_type.clone(),
             SERVICE_FEE_USD,
             gas_cost_usd,
             &gas_data,
-        ).await.map_err(|e| format!("Credit deduction failed: {}", e))
+        ).await.map_err(|e| format!("Credit deduction failed: {}", e))?;
+        
+        Ok(DeductionResult {
+            service_fee_usd: SERVICE_FEE_USD,
+            gas_cost_usd,
+            total_fees_usd: total_usd,
+            balance_after,
+            balance_type: balance_type.as_str().to_string(),
+        })
     }
 
     /// Log transaction event to database for audit trail

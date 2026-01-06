@@ -48,6 +48,11 @@ fn is_public_path(path: &str) -> bool {
         return true;
     }
     
+    // Admin endpoints are public (internal only, should be firewalled)
+    if path.starts_with("/admin") {
+        return true;
+    }
+    
     // Credits creation endpoint is public (they validate the key in the body) - legacy
     if path == "/credits" {
         return true;

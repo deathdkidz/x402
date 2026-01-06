@@ -294,6 +294,26 @@ pub struct SettleResponse {
     /// Additional message
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    
+    /// Fee breakdown (only included on successful confirmed settlements)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fees: Option<SettlementFees>,
+}
+
+/// Fee breakdown for settlement response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlementFees {
+    /// Service fee in USD (e.g., "0.0050")
+    pub service_fee: String,
+    /// Gas cost in USD (e.g., "0.0012")
+    pub gas_cost: String,
+    /// Total fees in USD (service + gas)
+    pub total_fees: String,
+    /// Remaining balance after deduction
+    pub balance_after: String,
+    /// Network type (mainnet/testnet)
+    pub balance_type: String,
 }
 
 impl SettleResponse {
@@ -307,6 +327,27 @@ impl SettleResponse {
             status: Some(status),
             cached: None,
             message: None,
+            fees: None,
+        }
+    }
+    
+    pub fn success_with_fees(
+        network: String,
+        payer: String,
+        tx_hash: String,
+        status: SettlementStatus,
+        fees: SettlementFees,
+    ) -> Self {
+        Self {
+            success: true,
+            transaction: Some(tx_hash),
+            network,
+            payer: Some(payer),
+            error_reason: None,
+            status: Some(status),
+            cached: None,
+            message: None,
+            fees: Some(fees),
         }
     }
 
@@ -320,6 +361,7 @@ impl SettleResponse {
             status: Some(SettlementStatus::Failed),
             cached: None,
             message: None,
+            fees: None,
         }
     }
 
@@ -333,6 +375,7 @@ impl SettleResponse {
             status: Some(status),
             cached: Some(true),
             message: Some("Transaction already processed".to_string()),
+            fees: None,
         }
     }
 }

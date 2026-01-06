@@ -384,7 +384,14 @@ Success Response (200):
   "transaction": "0xabcdef1234567890...",
   "network": "eip155:84532",
   "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
-  "status": "completed"
+  "status": "completed",
+  "fees": {{
+    "serviceFee": "0.001000",     // Platform fee in USD
+    "gasCost": "0.000012",        // Actual gas cost in USD
+    "totalFees": "0.001012",      // Total deducted from balance
+    "balanceAfter": "0.999988",   // Remaining credit balance
+    "balanceType": "testnet"      // Which balance was charged
+  }}
 }}
 
 Status Values:
@@ -597,8 +604,7 @@ NONCE GENERATION
 
 Nonces must be unique 32-byte hex values. Options:
   1. Random: crypto.randomBytes(32) or similar
-  2. Sequential: Increment from last used
-  3. Timestamp-based: Include timestamp + random suffix
+  2. Timestamp-based: Include timestamp + random suffix
 
 Example (JavaScript):
   const nonce = '0x' + crypto.randomBytes(32).toString('hex');
@@ -625,8 +631,7 @@ SUPPORT
 ================================================================================
 
 For technical support or questions, refer to:
-- API Reference: /docs/API_REFERENCE.md
-- GitHub Issues: (repository URL)
+- GitHub Issues: -
 - Protocol Spec: x402 v2 specification
 
 ================================================================================
