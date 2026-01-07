@@ -11,14 +11,42 @@ export function middleware(request: NextRequest) {
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   
-  // Content Security Policy
+  // Content Security Policy - Updated for WalletConnect/RainbowKit
   const csp = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Required for Next.js
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: https:",
+    "img-src 'self' data: https: blob:",
     "font-src 'self' data:",
-    "connect-src 'self' https://rpc.walletconnect.com https://relay.walletconnect.org wss://relay.walletconnect.org https://*.infura.io https://*.alchemy.com https://api.netpay.id https://rpc.hyperliquid.xyz wss://rpc.hyperliquid.xyz",
+    // WalletConnect requires many endpoints for wallet discovery and relay
+    "connect-src 'self' " + [
+      // WalletConnect Core
+      "https://*.walletconnect.com",
+      "https://*.walletconnect.org", 
+      "wss://*.walletconnect.com",
+      "wss://*.walletconnect.org",
+      // WalletConnect Explorer API (for wallet list)
+      "https://explorer-api.walletconnect.com",
+      // WalletConnect Verify API
+      "https://verify.walletconnect.com",
+      "https://verify.walletconnect.org",
+      // Blockchain RPCs
+      "https://*.infura.io",
+      "https://*.alchemy.com",
+      "https://*.base.org",
+      "https://*.optimism.io",
+      "https://mainnet.base.org",
+      "https://sepolia.base.org",
+      "https://mainnet.optimism.io",
+      "https://sepolia.optimism.io",
+      // Other services
+      "https://api.netpay.id",
+      "https://rpc.hyperliquid.xyz",
+      "wss://rpc.hyperliquid.xyz",
+      // Cloudflare (often used by WalletConnect)
+      "https://*.cloudflare.com",
+    ].join(' '),
+    "frame-src 'self' https://verify.walletconnect.com https://verify.walletconnect.org",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

@@ -12,17 +12,13 @@ export default function DocsPage() {
       <header className="border-b border-neutral-800">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-              <span className="text-black font-bold text-sm">N</span>
+            <div className="site-logo rounded-lg flex items-center justify-center overflow-hidden">
+              <img src="/logo.svg" alt="NetPay" />
             </div>
-            <span className="font-semibold">NetPay</span>
           </Link>
           <nav className="flex items-center gap-6">
             <Link href="/" className="text-sm text-neutral-400 hover:text-white transition-colors">
-              Purchase Credits
-            </Link>
-            <Link href="/demo" className="text-sm text-neutral-400 hover:text-white transition-colors">
-              Demo
+              Home
             </Link>
             <span className="text-sm text-amber-500 font-medium">API Docs</span>
           </nav>
@@ -163,11 +159,11 @@ export default function DocsPage() {
             <div className="p-4 bg-neutral-900 border border-neutral-800 rounded-xl">
               <h4 className="font-semibold mb-3">Step 3: Call /settle</h4>
               <p className="text-sm text-neutral-400 mb-3">
-                Submit the signed authorization to our API:
+                Submit the signed authorization to our API using JSON body:
               </p>
               <pre className="p-3 bg-neutral-950 rounded-lg overflow-x-auto text-xs text-neutral-300">
-{`// Create PAYMENT-SIGNATURE payload
-const paymentSignature = {
+{`// Build JSON request body
+const paymentPayload = {
   authorization: {
     from: userAddress,
     to: merchantAddress,
@@ -176,29 +172,30 @@ const paymentSignature = {
     validBefore: "1735776000",
     nonce: "0x..."
   },
-  signature: userSignature,
-  network: "Base Sepolia",
-  asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+  signature: userSignature
 };
 
-// Create PAYMENT-REQUIRED payload
-const paymentRequired = {
+const paymentRequirements = {
   scheme: "exact",
   network: "eip155:84532",
   asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
   payTo: merchantAddress,
-  maxAmountRequired: "1000000"
+  maxAmountRequired: "1000000",
+  resource: "/api/premium",
+  description: "Premium access"
 };
 
-// Call API
+// Call API with JSON body
 const response = await fetch("https://api.netpay.id/settle", {
   method: "POST",
   headers: {
-    "Authorization": "Bearer a1b2c3d4e5f67890abc...",
-    "PAYMENT-VERSION": "2",
-    "PAYMENT-SIGNATURE": btoa(JSON.stringify(paymentSignature)),
-    "PAYMENT-REQUIRED": btoa(JSON.stringify(paymentRequired))
-  }
+    "Content-Type": "application/json",
+    "Authorization": "Bearer YOUR_API_KEY"
+  },
+  body: JSON.stringify({
+    paymentPayload,
+    paymentRequirements
+  })
 });
 
 const result = await response.json();
@@ -304,14 +301,22 @@ const result = await response.json();
               <div className="p-4 bg-neutral-900 border-b border-neutral-800 flex items-center gap-3">
                 <span className="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-mono rounded">POST</span>
                 <code className="text-sm">/account</code>
-                <span className="text-xs text-neutral-500 ml-auto">Various auth modes</span>
+                <span className="text-xs text-neutral-500 ml-auto">JSON body</span>
               </div>
               <div className="p-4 space-y-4">
                 <div>
-                  <p className="text-sm font-medium mb-2">Mode A: Create API Key</p>
-                  <p className="text-xs text-neutral-400 mb-2">Header: <code className="text-amber-500">PAYMENT-SIGNATURE</code></p>
+                  <p className="text-sm font-medium mb-2">Mode A: Create API Key (with payment)</p>
+                  <p className="text-xs text-neutral-400 mb-2">Send payment signature in JSON body to create account</p>
                   <pre className="p-3 bg-neutral-950 rounded-lg overflow-x-auto text-xs text-neutral-300">
-{`// Response
+{`// Request body
+{
+  "paymentSignature": {
+    "authorization": { ... },
+    "signature": "0x..."
+  }
+}
+
+// Response
 {
   "success": true,
   "action": "create",
@@ -321,7 +326,30 @@ const result = await response.json();
 }`}</pre>
                 </div>
                 <div>
-                  <p className="text-sm font-medium mb-2">Mode B: Check Balance</p>
+                  <p className="text-sm font-medium mb-2">Mode B: Top-up Existing Account</p>
+                  <p className="text-xs text-neutral-400 mb-2">Add credits to existing API key (no auth header needed)</p>
+                  <pre className="p-3 bg-neutral-950 rounded-lg overflow-x-auto text-xs text-neutral-300">
+{`// Request body
+{
+  "paymentSignature": {
+    "authorization": { ... },
+    "signature": "0x..."
+  },
+  "apiKey": "your_existing_64_char_hex_key"
+}
+
+// Response
+{
+  "success": true,
+  "action": "topup",
+  "balanceType": "testnet",
+  "usdc": "5.000000",
+  "newBalance": "6.000000",
+  "transaction": "0x..."
+}`}</pre>
+                </div>
+                <div>
+                  <p className="text-sm font-medium mb-2">Mode C: Check Balance</p>
                   <p className="text-xs text-neutral-400 mb-2">Header: <code className="text-amber-500">Authorization: Bearer &lt;api_key&gt;</code></p>
                   <pre className="p-3 bg-neutral-950 rounded-lg overflow-x-auto text-xs text-neutral-300">
 {`// Request body
@@ -348,9 +376,24 @@ const result = await response.json();
               </div>
               <div className="p-4">
                 <p className="text-sm text-neutral-400 mb-3">Verify payment authorization without executing (no credits spent)</p>
-                <p className="text-xs text-neutral-500 mb-2">Headers: <code className="text-amber-500">Authorization</code>, <code className="text-amber-500">PAYMENT-SIGNATURE</code>, <code className="text-amber-500">PAYMENT-REQUIRED</code></p>
+                <p className="text-xs text-neutral-500 mb-2">Header: <code className="text-amber-500">Authorization: Bearer &lt;api_key&gt;</code></p>
                 <pre className="p-3 bg-neutral-950 rounded-lg overflow-x-auto text-xs text-neutral-300">
-{`// Success response
+{`// Request body
+{
+  "paymentPayload": {
+    "authorization": { ... },
+    "signature": "0x..."
+  },
+  "paymentRequirements": {
+    "scheme": "exact",
+    "network": "eip155:84532",
+    "asset": "0x...",
+    "payTo": "0x...",
+    "maxAmountRequired": "1000000"
+  }
+}
+
+// Success response
 { "isValid": true, "payer": "0x..." }
 
 // Invalid response
@@ -367,15 +410,46 @@ const result = await response.json();
               </div>
               <div className="p-4">
                 <p className="text-sm text-neutral-400 mb-3">Execute payment settlement on blockchain</p>
-                <p className="text-xs text-neutral-500 mb-2">Headers: <code className="text-amber-500">Authorization</code>, <code className="text-amber-500">PAYMENT-SIGNATURE</code>, <code className="text-amber-500">PAYMENT-REQUIRED</code></p>
+                <p className="text-xs text-neutral-500 mb-2">Header: <code className="text-amber-500">Authorization: Bearer &lt;api_key&gt;</code></p>
                 <pre className="p-3 bg-neutral-950 rounded-lg overflow-x-auto text-xs text-neutral-300">
-{`// Success response
+{`// Request body
+{
+  "paymentPayload": {
+    "authorization": {
+      "from": "0x...",
+      "to": "0x...",
+      "value": "1000000",
+      "validAfter": "0",
+      "validBefore": "1735776000",
+      "nonce": "0x..."
+    },
+    "signature": "0x..."
+  },
+  "paymentRequirements": {
+    "scheme": "exact",
+    "network": "eip155:84532",
+    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    "payTo": "0x...",
+    "maxAmountRequired": "1000000",
+    "resource": "/api/premium",
+    "description": "Premium access"
+  }
+}
+
+// Success response
 {
   "success": true,
   "transaction": "0xabcdef...",
   "network": "eip155:84532",
   "payer": "0x...",
-  "status": "completed" // or "preconfirmed" for flashblocks
+  "status": "completed",
+  "fees": {
+    "serviceFee": "0.001000",     // Platform fee in USDC
+    "gasCost": "0.000012",        // Gas cost in USDC
+    "totalFees": "0.001012",      // Total deducted from balance
+    "balanceAfter": "0.999988",   // Remaining credit balance
+    "balanceType": "testnet"      // Which balance was charged
+  }
 }
 
 // Failure response
@@ -383,23 +457,8 @@ const result = await response.json();
   "success": false,
   "errorReason": "INSUFFICIENT_CREDITS",
   "status": "failed"
-}`}</pre>
-              </div>
-            </div>
-
-            {/* GET /balance */}
-            <div className="border border-neutral-800 rounded-xl overflow-hidden">
-              <div className="p-4 bg-neutral-900 border-b border-neutral-800 flex items-center gap-3">
-                <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-mono rounded">GET</span>
-                <code className="text-sm">/balance</code>
-                <span className="text-xs text-neutral-500 ml-auto">Auth required</span>
-              </div>
-              <div className="p-4">
-                <p className="text-sm text-neutral-400 mb-3">Quick balance check</p>
-                <p className="text-xs text-neutral-500 mb-2">Header: <code className="text-amber-500">Authorization: Bearer &lt;api_key&gt;</code></p>
-                <pre className="p-3 bg-neutral-950 rounded-lg overflow-x-auto text-xs text-neutral-300">
-{`// Response
-{ "balance": "9.956061" }`}</pre>
+}
+`}</pre>
               </div>
             </div>
           </div>
@@ -553,17 +612,12 @@ const result = await response.json();
       {/* Footer */}
       <footer className="border-t border-neutral-800 bg-neutral-900/30 mt-16">
         <div className="max-w-6xl mx-auto px-6 py-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center justify-center">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 bg-amber-500 rounded flex items-center justify-center">
                 <span className="text-black font-bold text-xs">N</span>
               </div>
               <span className="text-neutral-400 text-sm">NetPay © 2026</span>
-            </div>
-            <div className="flex items-center gap-6 text-sm text-neutral-500">
-              <Link href="/" className="hover:text-white transition-colors">Purchase Credits</Link>
-              <Link href="/demo" className="hover:text-white transition-colors">Demo</Link>
-              <a href="https://api.netpay.id/help" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">API Reference</a>
             </div>
           </div>
         </div>

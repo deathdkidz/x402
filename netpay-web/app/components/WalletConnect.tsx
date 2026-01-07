@@ -1,45 +1,16 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-import { useConnect, useAccount, useDisconnect, Connector } from 'wagmi';
-import { supportedChains } from './Web3Provider';
-
-// Extend window type for ethereum
-declare global {
-  interface Window {
-    ethereum?: {
-      isMetaMask?: boolean;
-      isBraveWallet?: boolean;
-      isRabby?: boolean;
-    };
-  }
-}
-
-interface WalletOption {
-  id: string;
-  name: string;
-  icon: string;
-  connector: Connector;
-}
+import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { useAccount, useDisconnect } from 'wagmi';
+import { useEffect } from 'react';
 
 interface WalletConnectProps {
   onConnected?: (address: string) => void;
   onError?: (error: Error) => void;
-  buttonClassName?: string;
-  modalClassName?: string;
 }
 
-export function WalletConnect({
-  onConnected,
-  onError,
-  buttonClassName = '',
-  modalClassName = '',
-}: WalletConnectProps) {
-  const { connectors, connect, isPending, error } = useConnect();
-  const { address, isConnected, isConnecting } = useAccount();
-  const { disconnect } = useDisconnect();
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedConnector, setSelectedConnector] = useState<string | null>(null);
+export function WalletConnect({ onConnected }: WalletConnectProps) {
+  const { address, isConnected } = useAccount();
 
   // Notify parent when connected
   useEffect(() => {
@@ -48,221 +19,102 @@ export function WalletConnect({
     }
   }, [isConnected, address, onConnected]);
 
-  // Handle errors
-  useEffect(() => {
-    if (error && onError) {
-      onError(error);
-    }
-  }, [error, onError]);
-
-  // Get wallet icon based on connector name
-  const getWalletIcon = (connector: Connector): string => {
-    const name = connector.name.toLowerCase();
-    if (name.includes('metamask')) return '🦊';
-    if (name.includes('coinbase')) return '🔵';
-    if (name.includes('walletconnect')) return '🔗';
-    if (name.includes('safe')) return '🔐';
-    if (name.includes('injected')) return '💉';
-    return '👛';
-  };
-
-  // Format connector name for display
-  const formatConnectorName = (connector: Connector): string => {
-    if (connector.name === 'Injected') {
-      // Try to detect the actual wallet
-      if (typeof window !== 'undefined' && window.ethereum) {
-        if (window.ethereum.isMetaMask) return 'MetaMask';
-        if (window.ethereum.isBraveWallet) return 'Brave Wallet';
-        if (window.ethereum.isRabby) return 'Rabby';
-      }
-      return 'Browser Wallet';
-    }
-    return connector.name;
-  };
-
-  // Get available wallets
-  const wallets: WalletOption[] = connectors
-    .filter(connector => connector.id !== 'injected' || typeof window !== 'undefined' && window.ethereum)
-    .map(connector => ({
-      id: connector.id,
-      name: formatConnectorName(connector),
-      icon: getWalletIcon(connector),
-      connector,
-    }));
-
-  const handleConnect = useCallback(async (connector: Connector) => {
-    setSelectedConnector(connector.id);
-    try {
-      await connect({ connector });
-      setIsModalOpen(false);
-    } catch (err) {
-      console.error('Connection failed:', err);
-    }
-    setSelectedConnector(null);
-  }, [connect]);
-
-  const handleDisconnect = useCallback(async () => {
-    await disconnect();
-  }, [disconnect]);
-
-  // Truncate address for display
-  const truncateAddress = (addr: string) => {
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-  };
-
-  if (isConnected && address) {
-    return (
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/30 rounded-lg">
-          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-          <span className="text-sm font-mono text-green-400">
-            {truncateAddress(address)}
-          </span>
-        </div>
-        <button
-          onClick={handleDisconnect}
-          className="px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors"
-        >
-          Disconnect
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <>
-      {/* Connect Button */}
-      <button
-        onClick={() => setIsModalOpen(true)}
-        disabled={isConnecting || isPending}
-        className={`
-          px-6 py-3 font-medium rounded-lg transition-all duration-200
-          ${isConnecting || isPending 
-            ? 'bg-gray-600 text-gray-300 cursor-not-allowed' 
-            : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-lg hover:shadow-xl'
-          }
-          ${buttonClassName}
-        `}
-      >
-        {isConnecting || isPending ? (
-          <span className="flex items-center gap-2">
-            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            Connecting...
-          </span>
-        ) : (
-          'Connect Wallet'
-        )}
-      </button>
+    <ConnectButton.Custom>
+      {({
+        account,
+        chain,
+        openAccountModal,
+        openChainModal,
+        openConnectModal,
+        mounted,
+      }) => {
+        const ready = mounted;
+        const connected = ready && account && chain;
 
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setIsModalOpen(false)}
-          />
-          
-          {/* Modal Content */}
-          <div className={`
-            relative z-10 w-full max-w-md mx-4 p-6
-            bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl
-            ${modalClassName}
-          `}>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-white">Connect Wallet</h2>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <p className="text-sm text-gray-400 mb-6">
-              Select a wallet to connect to NetPay
-            </p>
-
-            {/* Wallet Options */}
-            <div className="space-y-3">
-              {wallets.map((wallet) => (
-                <button
-                  key={wallet.id}
-                  onClick={() => handleConnect(wallet.connector)}
-                  disabled={isPending && selectedConnector === wallet.id}
-                  className={`
-                    w-full flex items-center gap-4 p-4
-                    bg-gray-800/50 hover:bg-gray-800 border border-gray-700 hover:border-gray-600
-                    rounded-xl transition-all duration-200
-                    ${isPending && selectedConnector === wallet.id ? 'opacity-50 cursor-not-allowed' : ''}
-                  `}
-                >
-                  <span className="text-3xl">{wallet.icon}</span>
-                  <span className="flex-1 text-left">
-                    <span className="block text-white font-medium">{wallet.name}</span>
-                    {isPending && selectedConnector === wallet.id && (
-                      <span className="block text-sm text-blue-400">Connecting...</span>
-                    )}
-                  </span>
-                  {isPending && selectedConnector === wallet.id ? (
-                    <svg className="animate-spin h-5 w-5 text-blue-400" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* Error Display */}
-            {error && (
-              <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <p className="text-sm text-red-400">
-                  {error.message || 'Connection failed. Please try again.'}
-                </p>
-              </div>
-            )}
-
-            {/* Supported Networks */}
-            <div className="mt-6 pt-4 border-t border-gray-700">
-              <p className="text-xs text-gray-500 mb-2">Supported Networks:</p>
-              <div className="flex flex-wrap gap-2">
-                {supportedChains.map((chain) => (
-                  <span
-                    key={chain.id}
-                    className="px-2 py-1 text-xs bg-gray-800 text-gray-400 rounded-full"
+        return (
+          <div
+            {...(!ready && {
+              'aria-hidden': true,
+              style: {
+                opacity: 0,
+                pointerEvents: 'none',
+                userSelect: 'none',
+              },
+            })}
+          >
+            {(() => {
+              if (!connected) {
+                return (
+                  <button
+                    onClick={openConnectModal}
+                    className="px-6 py-3 font-medium rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
                   >
-                    {chain.name}
-                  </span>
-                ))}
-              </div>
-            </div>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    <span>Connect Wallet</span>
+                  </button>
+                );
+              }
+
+              if (chain.unsupported) {
+                return (
+                  <button
+                    onClick={openChainModal}
+                    className="px-6 py-3 font-medium rounded-lg bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white shadow-lg transition-all duration-200 flex items-center gap-2"
+                  >
+                    Wrong Network
+                  </button>
+                );
+              }
+
+              return (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={openChainModal}
+                    className="flex items-center gap-2 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg hover:bg-neutral-700 transition-colors text-sm"
+                    title="Switch network"
+                  >
+                    {chain.hasIcon && chain.iconUrl && (
+                      <img
+                        src={chain.iconUrl}
+                        alt={chain.name ?? 'Chain icon'}
+                        className="w-4 h-4 rounded-full"
+                      />
+                    )}
+                    <span className="text-neutral-300 hidden sm:inline">{chain.name}</span>
+                  </button>
+
+                  <button
+                    onClick={openAccountModal}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/30 rounded-lg hover:bg-green-500/20 transition-colors"
+                  >
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-sm font-mono text-green-400">
+                      {account.displayName}
+                    </span>
+                  </button>
+                </div>
+              );
+            })()}
           </div>
-        </div>
-      )}
-    </>
+        );
+      }}
+    </ConnectButton.Custom>
   );
 }
 
-// Export a hook for using wallet connection state
+// Export hook for using wallet connection state
 export function useWalletConnection() {
-  const { address, isConnected, isConnecting, chain } = useAccount();
+  const { address, isConnected, status } = useAccount();
   const { disconnect } = useDisconnect();
-  
+
   return {
     address,
     isConnected,
-    isConnecting,
-    chain,
+    isConnecting: status === 'connecting' || status === 'reconnecting',
+    status,
     disconnect,
   };
 }

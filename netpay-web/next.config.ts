@@ -6,10 +6,12 @@ const nextConfig: NextConfig = {
     'pino',
     'pino-pretty',
     'thread-stream',
-    '@walletconnect/ethereum-provider',
-    '@walletconnect/universal-provider',
   ],
   turbopack: {},
+  webpack: (config) => {
+    config.externals.push('pino-pretty', 'lokijs', 'encoding');
+    return config;
+  },
 };
 
 export default nextConfig;

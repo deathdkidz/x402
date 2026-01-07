@@ -263,10 +263,14 @@ async function benchmarkVerify() {
       }
     };
     
+    const npHeaders = { 'Content-Type': 'application/json' };
+    if (CONFIG.netpay.apiKey) {
+      npHeaders['Authorization'] = `Bearer ${CONFIG.netpay.apiKey}`;
+    }
     let start = Date.now();
     await fetch(`${CONFIG.netpay.url}/verify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: npHeaders,
       body: JSON.stringify(npBody)
     });
     netpayLatencies.push(Date.now() - start);
