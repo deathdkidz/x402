@@ -14,7 +14,7 @@ export function middleware(request: NextRequest) {
   // Content Security Policy - Updated for WalletConnect/RainbowKit
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Required for Next.js
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com", // Required for Next.js + Cloudflare
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https: blob:",
     "font-src 'self' data:",
@@ -43,8 +43,24 @@ export function middleware(request: NextRequest) {
       "https://api.netpay.id",
       "https://rpc.hyperliquid.xyz",
       "wss://rpc.hyperliquid.xyz",
-      // Cloudflare (often used by WalletConnect)
+      // Cloudflare
       "https://*.cloudflare.com",
+      "https://static.cloudflareinsights.com",
+      "https://cloudflareinsights.com",
+      // RainbowKit/WalletConnect additional endpoints
+      "https://eth.merkle.io",
+      "https://*.merkle.io",
+      "https://rpc.walletconnect.com",
+      "https://rpc.walletconnect.org",
+      "https://pulse.walletconnect.com",
+      "https://pulse.walletconnect.org",
+      "https://keys.walletconnect.com",
+      "https://keys.walletconnect.org",
+      "wss://relay.walletconnect.com",
+      "wss://relay.walletconnect.org",
+      // Reown (WalletConnect rebrand)
+      "https://*.reown.com",
+      "wss://*.reown.com",
     ].join(' '),
     "frame-src 'self' https://verify.walletconnect.com https://verify.walletconnect.org",
     "frame-ancestors 'none'",

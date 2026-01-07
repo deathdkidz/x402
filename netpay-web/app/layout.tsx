@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
-import { WalletProvider } from "@/app/components/WalletProvider";
+import { ClientWalletProvider } from "@/app/components/ClientWalletProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,9 +24,8 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Get cookies for SSR hydration
-  const headersObj = await headers();
-  const cookies = headersObj.get('cookie');
+  // Get cookies for SSR hydration (not passed into client provider)
+  await headers();
 
   return (
     <html lang="en">
@@ -36,9 +35,9 @@ export default async function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <WalletProvider cookies={cookies}>
+        <ClientWalletProvider>
           {children}
-        </WalletProvider>
+        </ClientWalletProvider>
       </body>
     </html>
   );

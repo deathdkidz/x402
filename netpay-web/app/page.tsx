@@ -57,7 +57,35 @@ const getExplorerUrl = (chainId: number, txHash: string): string => {
   return (explorers[chainId] || '') + txHash;
 };
 
+// Loading component for SSR
+function LoadingState() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-neutral-950">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p className="text-neutral-400">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
+  // Track if mounted (client-side) to prevent SSR issues with wagmi hooks
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Show loading state during SSR
+  if (!mounted) {
+    return <LoadingState />;
+  }
+
+  return <HomeContent />;
+}
+
+function HomeContent() {
   // View state
   const [activeView, setActiveView] = useState<'none' | 'purchase' | 'demo'>('none');
   
@@ -106,11 +134,11 @@ export default function Home() {
           setNetworksData(data);
           
           // Default to first mainnet network with USDC, fall back to testnet
-          const mainnetsWithUsdc = data.mainnet.filter(n => n.tokens.some(t => t.symbol === 'USDC'));
+          const mainnetsWithUsdc = (data.mainnet || []).filter(n => n.tokens?.some(t => t.symbol === 'USDC'));
           if (mainnetsWithUsdc.length > 0) {
             setSelectedNetwork(mainnetsWithUsdc[0]);
           } else {
-            const testnetsWithUsdc = data.testnet.filter(n => n.tokens.some(t => t.symbol === 'USDC'));
+            const testnetsWithUsdc = (data.testnet || []).filter(n => n.tokens?.some(t => t.symbol === 'USDC'));
             if (testnetsWithUsdc.length > 0) setSelectedNetwork(testnetsWithUsdc[0]);
           }
         }
@@ -123,8 +151,8 @@ export default function Home() {
 
   // Get available networks based on type (only those with USDC)
   const availableNetworks = networksData
-    ? (networkType === 'mainnet' ? networksData.mainnet : networksData.testnet)
-        .filter(n => n.tokens.some(t => t.symbol === 'USDC'))
+    ? (networkType === 'mainnet' ? networksData.mainnet || [] : networksData.testnet || [])
+        .filter(n => n.tokens?.some(t => t.symbol === 'USDC'))
     : [];
 
   // Update selected network when type changes
