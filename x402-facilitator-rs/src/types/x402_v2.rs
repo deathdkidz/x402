@@ -1,10 +1,12 @@
 //! x402 Protocol v2 Types
 //!
-//! Implements the x402 v2 standard with:
-//! - Standardized headers: PAYMENT-REQUIRED, PAYMENT-SIGNATURE, PAYMENT-RESPONSE, PAYMENT-VERSION
-//! - Base64 encoded payloads (except PAYMENT-VERSION)
-//! - CAIP-2 network identifiers (eip155:chainId)
-//! - "accepts" field instead of "paymentOptions"
+//! Implements the x402 v2 data types for:
+//! - PaymentSignatureV2: EIP-3009 signed authorization
+//! - PaymentRequirementsV2: Payment requirements from merchant
+//! - PaymentResponseV2: Settlement response
+//!
+//! NOTE: The x402 protocol headers (PAYMENT-REQUIRED, PAYMENT-SIGNATURE, etc.)
+//! are used between merchants and buyers. The facilitator API uses JSON body only.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
@@ -15,7 +17,8 @@ use crate::config::network_resolver;
 /// x402 Protocol Version
 pub const X402_VERSION: &str = "2";
 
-/// Header names for x402 v2
+/// Header names for x402 v2 protocol (used between merchant and buyer)
+/// NOTE: These are NOT used by the facilitator API (which uses JSON body)
 pub mod headers {
     /// Payment requirements header (base64 encoded JSON)
     pub const PAYMENT_REQUIRED: &str = "payment-required";

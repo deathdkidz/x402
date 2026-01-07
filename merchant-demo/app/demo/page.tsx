@@ -87,7 +87,7 @@ export default function DemoPage() {
   useEffect(() => {
     const fetchNetworks = async () => {
       try {
-        const networksRes = await fetch(`${facilitatorUrl}/networks`);
+        const networksRes = await fetch(`${facilitatorUrl}/supported`);
         if (networksRes.ok) {
           const data = await networksRes.json();
           // Combine mainnet and testnet networks

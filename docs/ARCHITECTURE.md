@@ -387,7 +387,7 @@ Health check endpoint.
 }
 ```
 
-#### `GET /networks`
+#### `GET /supported`
 List supported networks and tokens.
 
 **Response**:
@@ -860,7 +860,7 @@ curl http://localhost:8080/health
 
 #### "Network not supported"
 - Verify network name matches supported list
-- Use `/networks` endpoint to see available networks
+- Use `/supported` endpoint to see available networks
 
 #### "Signature verification failed"
 - Ensure correct EIP-712 domain parameters

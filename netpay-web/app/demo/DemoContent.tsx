@@ -74,7 +74,7 @@ export default function DemoContent() {
   useEffect(() => {
     async function fetchNetworks() {
       try {
-        const response = await fetch(`${FACILITATOR_URL}/networks`);
+        const response = await fetch(`${FACILITATOR_URL}/supported`);
         if (response.ok) {
           const data = await response.json();
           // Filter networks with USDC

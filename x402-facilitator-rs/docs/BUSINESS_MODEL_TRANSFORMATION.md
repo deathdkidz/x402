@@ -79,12 +79,12 @@ Instead of request limits, use **credit deduction** as natural rate limiting:
 ┌─────────────────────────────────────────────────────────────┐
 │                    RATE LIMITING STRATEGY                    │
 ├─────────────────────────────────────────────────────────────┤
-│ Endpoint      │ Cost      │ Rate Limit                      │
-├───────────────┼───────────┼─────────────────────────────────┤
-│ GET /health   │ FREE      │ 1000/min (prevent DDoS)         │
-│ GET /networks │ FREE      │ 100/min                         │
-│ POST /verify  │ FREE      │ 10000/min (high for AI agents)  │
-│ POST /settle  │ CREDITS   │ Unlimited (pay per use)         │
+│ Endpoint       │ Cost      │ Rate Limit                      │
+├────────────────┼───────────┼─────────────────────────────────┤
+│ GET /health    │ FREE      │ 1000/min (prevent DDoS)         │
+│ GET /supported │ FREE      │ 100/min                         │
+│ POST /verify   │ FREE      │ 10000/min (high for AI agents)  │
+│ POST /settle   │ CREDITS   │ Unlimited (pay per use)         │
 └─────────────────────────────────────────────────────────────┘
 ```
 

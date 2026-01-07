@@ -13,7 +13,7 @@ use axum::{
 };
 
 use crate::routes::AppState;
-use crate::types::{X402_VERSION, headers};
+use crate::types::X402_VERSION;
 
 /// Create help router
 pub fn create_help_router() -> Router<Arc<AppState>> {
@@ -63,7 +63,6 @@ async fn help_handler(
                      x402 PAYMENT FACILITATOR - COMPLETE API REFERENCE
 ================================================================================
 Version: {version}
-Protocol: x402 v2
 Base URL: https://api.netpay.id
 
 ================================================================================
@@ -82,20 +81,24 @@ Key Features:
   - Multi-network: Supports multiple EVM chains
   - Credit-based: Merchants pre-fund settlement costs
 
+NOTE: All facilitator API calls use JSON body. The x402 protocol headers
+(PAYMENT-REQUIRED, PAYMENT-SIGNATURE, etc.) are used between merchants and
+buyers, NOT for facilitator API calls.
+
 ================================================================================
 QUICK START FOR AI AGENTS
 ================================================================================
 
 1. CREATE API KEY:
-   POST /account with PAYMENT-SIGNATURE header containing signed USDC transfer
-   to vault. Receive API key with credit balance.
+   POST /account with JSON body containing paymentSignature (signed USDC transfer
+   to vault). Receive API key with credit balance.
 
 2. VERIFY PAYMENT (free):
-   POST /verify with Authorization, PAYMENT-SIGNATURE, PAYMENT-REQUIRED headers.
-   Returns isValid boolean without spending credits.
+   POST /verify with Authorization header + JSON body containing paymentPayload
+   and paymentRequirements. Returns isValid boolean without spending credits.
 
 3. SETTLE PAYMENT (costs credits):
-   POST /settle with same headers as verify.
+   POST /settle with same format as verify.
    Executes on-chain transfer, deducts credits for gas + fee.
 
 ================================================================================
@@ -135,7 +138,6 @@ Response (200):
 {{
   "name": "x402 Facilitator",
   "description": "Secure x402 payment facilitator",
-  "version": "2.0.0",
   "endpoints": {{...}},
   "mainnetNetworks": ["Base", "OP Mainnet", "HyperEVM"],
   "testnetNetworks": ["Base Sepolia", "OP Sepolia", "HyperEVM Testnet"]
@@ -155,41 +157,16 @@ Response (200):
   "uptime": 86400.0
 }}
 
-Fields:
-  - status: Always "ok" if service is responding
-  - timestamp: Unix timestamp in milliseconds
-  - uptime: Seconds since service start
-
 --------------------------------------------------------------------------------
-GET /networks
+GET /supported
 --------------------------------------------------------------------------------
 Purpose: List all supported networks and token configurations
 Auth: None required
-Headers Returned: PAYMENT-VERSION: 2
 
 Response (200):
 {{
   "success": true,
-  "mainnet": [
-    {{
-      "network": "Base",
-      "caip2": "eip155:8453",
-      "chainId": 8453,
-      "tokens": [
-        {{
-          "symbol": "USDC",
-          "name": "USD Coin",
-          "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-          "decimals": 6,
-          "eip712": {{
-            "name": "USD Coin",
-            "version": "2",
-            "verifyingContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-          }}
-        }}
-      ]
-    }}
-  ],
+  "mainnet": [...],
   "testnet": [...]
 }}
 
@@ -199,7 +176,6 @@ GET /help
 Purpose: This complete documentation
 Auth: None required
 Content-Type: text/plain; charset=utf-8
-Headers Returned: PAYMENT-VERSION: 2
 
 --------------------------------------------------------------------------------
 GET /account
@@ -208,53 +184,53 @@ Purpose: Account service instructions (human-readable)
 Auth: None required
 Content-Type: text/plain; charset=utf-8
 
-Returns instructions for purchasing credits and managing accounts.
-
 --------------------------------------------------------------------------------
-POST /account - MODE A: PURCHASE CREDITS (new API key)
+POST /account - PURCHASE CREDITS (new API key)
 --------------------------------------------------------------------------------
 Purpose: Create new API key by sending USDC to vault
-Auth: PAYMENT-SIGNATURE header (base64 encoded)
+Auth: None (payment signature in body)
 
-Request Headers:
-  PAYMENT-SIGNATURE: <base64 encoded JSON>
-  PAYMENT-VERSION: 2 (optional, defaults to 2)
-
-PAYMENT-SIGNATURE Content (before base64):
+Request:
+  Content-Type: application/json
+  Body:
 {{
-  "authorization": {{
-    "from": "0xYourWallet...",
-    "to": "{vault_address}",
-    "value": "1000000",           // 1 USDC (6 decimals)
-    "validAfter": "0",
-    "validBefore": "1735776000",  // Unix timestamp
-    "nonce": "0x0000...0001"      // 32-byte unique hex
-  }},
-  "signature": "0x...",           // 65-byte EIP-712 signature
-  "network": "Base Sepolia",      // Network name or CAIP-2
-  "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"  // USDC address
+  "paymentSignature": {{
+    "authorization": {{
+      "from": "0xYourWallet...",
+      "to": "{vault_address}",
+      "value": "1000000",
+      "validAfter": "0",
+      "validBefore": "1735776000",
+      "nonce": "0x0000...0001"
+    }},
+    "signature": "0x...",
+    "network": "Base Sepolia",
+    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+  }}
 }}
 
 Success Response (200):
 {{
   "success": true,
   "action": "create",
-  "apiKey": "a1b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef12345678",  // SAVE THIS - shown only once!
+  "apiKey": "a1b2c3d4...64_char_hex",
   "balanceType": "testnet",
   "usdc": "1.000000",
-  "transaction": "0x..."
+  "transaction": "0x...",
+  "message": "API key created. SAVE THIS KEY - it will not be shown again!"
 }}
 
 --------------------------------------------------------------------------------
-POST /account - MODE A': TOP-UP EXISTING ACCOUNT
+POST /account - TOP-UP EXISTING ACCOUNT
 --------------------------------------------------------------------------------
 Purpose: Add credits to existing API key
-Auth: PAYMENT-SIGNATURE + API-KEY headers
+Auth: None (API key in body)
 
-Request Headers:
-  PAYMENT-SIGNATURE: <base64 encoded JSON>
-  API-KEY: a1b2c3d4e5f6...your_64_char_hex_key   // Your existing API key
-  PAYMENT-VERSION: 2
+Request Body:
+{{
+  "paymentSignature": {{...}},
+  "apiKey": "your_existing_64_char_hex_key"
+}}
 
 Success Response (200):
 {{
@@ -267,17 +243,14 @@ Success Response (200):
 }}
 
 --------------------------------------------------------------------------------
-POST /account - MODE B: QUERY BALANCE
+POST /account - QUERY BALANCE
 --------------------------------------------------------------------------------
 Purpose: Check account balance
 Auth: Authorization header (Bearer token)
 
 Request:
-  Headers:
-    Authorization: Bearer a1b2c3d4e5f6...your_64_char_hex_key
-    Content-Type: application/json
-  Body:
-    {{"action": "balance"}}
+  Headers: Authorization: Bearer <api_key>
+  Body: {{"action": "balance"}}
 
 Response (200):
 {{
@@ -292,17 +265,14 @@ Response (200):
 }}
 
 --------------------------------------------------------------------------------
-POST /account - MODE B: QUERY METRICS
+POST /account - QUERY METRICS
 --------------------------------------------------------------------------------
 Purpose: Get account usage statistics
 Auth: Authorization header (Bearer token)
 
 Request:
-  Headers:
-    Authorization: Bearer a1b2c3d4e5f6...your_64_char_hex_key
-    Content-Type: application/json
-  Body:
-    {{"action": "metrics"}}
+  Headers: Authorization: Bearer <api_key>
+  Body: {{"action": "metrics"}}
 
 Response (200):
 {{
@@ -327,21 +297,34 @@ POST /verify
 Purpose: Verify payment authorization without executing (free)
 Auth: Authorization header (Bearer token)
 
-Request Headers:
-  Authorization: Bearer a1b2c3d4e5f6...your_64_char_hex_key
-  PAYMENT-VERSION: 2
-  PAYMENT-SIGNATURE: <base64 encoded JSON>
-  PAYMENT-REQUIRED: <base64 encoded JSON>
-
-Alternative: JSON body instead of headers (legacy support):
+Request:
+  Headers: Authorization: Bearer <api_key>
+  Content-Type: application/json
+  Body:
 {{
-  "x402Version": 1,
-  "paymentPayload": {{...}},
-  "paymentRequirements": {{...}}
+  "paymentPayload": {{
+    "authorization": {{
+      "from": "0x...",
+      "to": "0x...",
+      "value": "1000000",
+      "validAfter": "0",
+      "validBefore": "1735776000",
+      "nonce": "0x0000...0001"
+    }},
+    "signature": "0x..."
+  }},
+  "paymentRequirements": {{
+    "scheme": "exact",
+    "network": "eip155:84532",
+    "asset": "0x036CbD...",
+    "payTo": "0x8ba1f1...",
+    "maxAmountRequired": "1000000",
+    "resource": "/api/premium",
+    "description": "Premium access",
+    "mimeType": "application/json",
+    "maxTimeoutSeconds": 60
+  }}
 }}
-
-Response Headers:
-  PAYMENT-VERSION: 2
 
 Success Response (200):
 {{
@@ -361,22 +344,9 @@ POST /settle
 Purpose: Execute payment settlement on blockchain (costs credits)
 Auth: Authorization header (Bearer token)
 
-Request Headers:
-  Authorization: Bearer a1b2c3d4e5f6...your_64_char_hex_key
-  PAYMENT-VERSION: 2
-  PAYMENT-SIGNATURE: <base64 encoded JSON>
-  PAYMENT-REQUIRED: <base64 encoded JSON>
-
-Alternative: JSON body instead of headers (legacy support):
-{{
-  "x402Version": 1,
-  "paymentPayload": {{...}},
-  "paymentRequirements": {{...}}
-}}
-
-Response Headers:
-  PAYMENT-VERSION: 2
-  PAYMENT-RESPONSE: <base64 encoded result>
+Request: (same as /verify)
+  Headers: Authorization: Bearer <api_key>
+  Body: {{"paymentPayload": {{...}}, "paymentRequirements": {{...}}}}
 
 Success Response (200):
 {{
@@ -386,11 +356,11 @@ Success Response (200):
   "payer": "0x742d35Cc6634C0532925a3b844Bc9e7595f1dE21",
   "status": "completed",
   "fees": {{
-    "serviceFee": "0.001000",     // Platform fee in USD
-    "gasCost": "0.000012",        // Actual gas cost in USD
-    "totalFees": "0.001012",      // Total deducted from balance
-    "balanceAfter": "0.999988",   // Remaining credit balance
-    "balanceType": "testnet"      // Which balance was charged
+    "serviceFee": "0.001000",
+    "gasCost": "0.000012",
+    "totalFees": "0.001012",
+    "balanceAfter": "0.999988",
+    "balanceType": "testnet"
   }}
 }}
 
@@ -400,111 +370,62 @@ Status Values:
   - "completed": Transaction confirmed on-chain
   - "failed": Transaction failed
 
-Cached Response (duplicate request):
-{{
-  "success": true,
-  "transaction": "0x...",
-  "network": "base",
-  "payer": "0x...",
-  "status": "completed",
-  "cached": true,
-  "message": "Transaction already processed"
-}}
-
-Failure Response (200):
-{{
-  "success": false,
-  "network": "base",
-  "errorReason": "INSUFFICIENT_CREDITS",
-  "status": "failed"
-}}
-
 ================================================================================
 DATA STRUCTURES
 ================================================================================
 
-PAYMENT-SIGNATURE (base64 encoded JSON):
+paymentPayload (JSON object):
 {{
   "authorization": {{
-    "from": "0x...",              // Payer wallet address (token owner)
-    "to": "0x...",                // Recipient address (merchant)
-    "value": "1000000",           // Amount in token smallest units
-    "validAfter": "0",            // Unix timestamp (usually "0")
-    "validBefore": "1735776000",  // Unix timestamp (expiry)
-    "nonce": "0x0000...0001"      // 32-byte unique hex (prevent replay)
+    "from": "0x...",
+    "to": "0x...",
+    "value": "1000000",
+    "validAfter": "0",
+    "validBefore": "1735776000",
+    "nonce": "0x0000...0001"
   }},
-  "signature": "0x...",           // 65-byte EIP-712 signature (r+s+v)
-  "network": "Base Sepolia",      // Network identifier (any format)
-  "asset": "0x036CbD..."          // Token contract address (USDC)
+  "signature": "0x..."
 }}
 
-PAYMENT-REQUIRED (base64 encoded JSON):
+paymentRequirements (JSON object):
 {{
-  "scheme": "exact",              // Always "exact" (only scheme supported)
-  "network": "eip155:84532",      // CAIP-2 format preferred
-  "asset": "0x036CbD...",         // USDC token contract address
-  "payTo": "0x8ba1f1...",         // Merchant receiving address
-  "maxAmountRequired": "1000000", // Amount in smallest units (6 decimals)
-  "resource": "/api/premium",     // Resource being purchased
-  "description": "Premium access",// Human-readable description
-  "mimeType": "application/json", // Response content type
-  "maxTimeoutSeconds": 60,        // Settlement timeout
-  "outputSchema": {{}},            // Optional: expected response schema
-  "extra": {{}}                    // Optional: additional metadata
-}}
-
-PAYMENT-RESPONSE (base64 encoded JSON, returned in header):
-{{
-  "success": true,
-  "transaction": "0x...",
+  "scheme": "exact",
   "network": "eip155:84532",
-  "payer": "0x...",
-  "error": null
+  "asset": "0x036CbD...",
+  "payTo": "0x8ba1f1...",
+  "maxAmountRequired": "1000000",
+  "resource": "/api/premium",
+  "description": "Premium access",
+  "mimeType": "application/json",
+  "maxTimeoutSeconds": 60
+}}
+
+paymentSignature (for /account):
+{{
+  "authorization": {{...}},
+  "signature": "0x...",
+  "network": "Base Sepolia",
+  "asset": "0x036CbD..."
 }}
 
 ================================================================================
-ERROR CODES (STANDARDIZED)
+ERROR CODES
 ================================================================================
 
 Authentication Errors (HTTP 401):
-  UNAUTHORIZED              Missing or invalid Authorization header
-  INVALID_API_KEY           API key not found or malformed
-  EXPIRED_API_KEY           API key has expired
-  INACTIVE_API_KEY          API key is deactivated
+  UNAUTHORIZED, INVALID_API_KEY, EXPIRED_API_KEY, INACTIVE_API_KEY
 
 Request Errors (HTTP 400):
-  MISSING_DATA              No headers or body provided
-  MISSING_FIELDS            Required fields missing in payload
-  INVALID_HEADER            Header present but unparseable
-  DECODE_ERROR              Base64 decoding failed
-  PARSE_ERROR               JSON parsing failed
-  INVALID_VERSION           x402 version not supported (must be 1 or 2)
-  INVALID_ACTION            Unknown action in account query
-  MISSING_PARAMETERS        POST /account missing required mode indicators
+  MISSING_DATA, MISSING_FIELDS, INVALID_REQUEST, PARSE_ERROR, INVALID_ACTION
 
 Validation Errors (HTTP 200, isValid=false or success=false):
-  INVALID_SIGNATURE         EIP-712 signature verification failed
-  INVALID_ADDRESS           Ethereum address format invalid
-  INVALID_NONCE             Nonce format invalid (must be 0x hex)
-  INVALID_VALUE             Value format invalid (must be numeric string)
-  INVALID_SCHEME            Scheme not "exact"
-  AMOUNT_MISMATCH           Authorization value != maxAmountRequired
-  RECIPIENT_MISMATCH        Authorization "to" != payTo
-  NONCE_ALREADY_USED        Nonce has been consumed on-chain
-  AUTHORIZATION_EXPIRED     validBefore timestamp has passed
-  AUTHORIZATION_NOT_VALID   validAfter timestamp is in future
-  INSUFFICIENT_BALANCE      Payer token balance too low
+  INVALID_SIGNATURE, INVALID_ADDRESS, INVALID_NONCE, INVALID_VALUE,
+  AMOUNT_MISMATCH, RECIPIENT_MISMATCH, NONCE_ALREADY_USED,
+  AUTHORIZATION_EXPIRED, INSUFFICIENT_BALANCE
 
 Settlement Errors (HTTP 200, success=false):
-  INSUFFICIENT_CREDITS      Merchant API key has insufficient balance
-  UNSUPPORTED_NETWORK       Network not configured on facilitator
-  TOKEN_NOT_SUPPORTED       Token not configured for network
-  SETTLEMENT_FAILED         On-chain transaction reverted
-  TIMEOUT                   Settlement took too long
-
-Configuration Errors (HTTP 400):
-  CONFIG_ERROR              Server misconfiguration (e.g., vault not set)
-  INTERNAL_ERROR            Unexpected server error
+  INSUFFICIENT_CREDITS, UNSUPPORTED_NETWORK, TOKEN_NOT_SUPPORTED,
+  SETTLEMENT_FAILED, TIMEOUT
 
 ================================================================================
 PRICING
@@ -514,64 +435,45 @@ Service Fee:     0.001 USDC per settlement
 Gas Cost:        Variable (~0.0001-0.01 USDC depending on network)
 Minimum Deposit: 1.00 USDC
 
-Estimated settlements per USDC:
-  - Base/OP Mainnet: ~800-900 settlements
-  - Testnets: ~900-950 settlements (lower gas)
-
 ================================================================================
 EXAMPLES
 ================================================================================
 
-EXAMPLE 1: Create API key with 10 USDC (testnet)
-------------------------------------------------
-# First, sign an EIP-712 transferWithAuthorization in your wallet
-# Then base64 encode the signature JSON and send:
-
+EXAMPLE 1: Create API key
+-------------------------
 curl -X POST https://api.netpay.id/account \
-  -H "PAYMENT-VERSION: 2" \
-  -H "PAYMENT-SIGNATURE: eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweC4uLiIsInRvIjoiMHguLi4iLCJ2YWx1ZSI6IjEwMDAwMDAwIiwidmFsaWRBZnRlciI6IjAiLCJ2YWxpZEJlZm9yZSI6IjE3MzU3NzYwMDAiLCJub25jZSI6IjB4MDAwMC4uLjAwMDEifSwic2lnbmF0dXJlIjoiMHguLi4iLCJuZXR3b3JrIjoiQmFzZSBTZXBvbGlhIiwiYXNzZXQiOiIweDAwMENiRC4uLiJ9"
+  -H "Content-Type: application/json" \
+  -d '{{"paymentSignature": {{"authorization": {{...}}, "signature": "0x...", "network": "Base Sepolia", "asset": "0x..."}}}}'
 
 EXAMPLE 2: Check balance
 ------------------------
 curl -X POST https://api.netpay.id/account \
-  -H "Authorization: Bearer a1b2c3d4e5f6...your_64_char_hex_key" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{{"action": "balance"}}'
 
-EXAMPLE 3: Verify payment (free)
---------------------------------
-PAYMENT_SIG=$(echo -n '{{"authorization":{{"from":"0x...","to":"0x...","value":"1000000","validAfter":"0","validBefore":"1735776000","nonce":"0x0001"}},"signature":"0x...","network":"Base Sepolia","asset":"0x036CbD..."}}' | base64 -w0)
-PAYMENT_REQ=$(echo -n '{{"scheme":"exact","network":"eip155:84532","asset":"0x036CbD...","payTo":"0x...","maxAmountRequired":"1000000","resource":"/api","description":"test","mimeType":"application/json","maxTimeoutSeconds":60}}' | base64 -w0)
-
+EXAMPLE 3: Verify payment
+-------------------------
 curl -X POST https://api.netpay.id/verify \
-  -H "Authorization: Bearer a1b2c3d4e5f6...your_64_char_hex_key" \
-  -H "PAYMENT-VERSION: 2" \
-  -H "PAYMENT-SIGNATURE: $PAYMENT_SIG" \
-  -H "PAYMENT-REQUIRED: $PAYMENT_REQ"
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{{"paymentPayload": {{...}}, "paymentRequirements": {{...}}}}'
 
-EXAMPLE 4: Settle payment (costs credits)
------------------------------------------
+EXAMPLE 4: Settle payment
+-------------------------
 curl -X POST https://api.netpay.id/settle \
-  -H "Authorization: Bearer a1b2c3d4e5f6...your_64_char_hex_key" \
-  -H "PAYMENT-VERSION: 2" \
-  -H "PAYMENT-SIGNATURE: $PAYMENT_SIG" \
-  -H "PAYMENT-REQUIRED: $PAYMENT_REQ"
-
-EXAMPLE 5: Decode base64 header
--------------------------------
-echo "eyJzY2hlbWUiOiJleGFjdCJ9" | base64 -d
-# Output: {{"scheme":"exact"}}
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{{"paymentPayload": {{...}}, "paymentRequirements": {{...}}}}'
 
 ================================================================================
 EIP-712 SIGNING GUIDE
 ================================================================================
 
-To create a valid payment signature, sign this EIP-712 typed data:
-
 Domain:
 {{
-  "name": "<USDC token name from /networks>",
-  "version": "<USDC version from /networks>",
+  "name": "<USDC token name from /supported>",
+  "version": "<USDC version from /supported>",
   "chainId": <chain ID>,
   "verifyingContract": "<USDC contract address>"
 }}
@@ -588,51 +490,20 @@ Types:
   ]
 }}
 
-Message:
-{{
-  "from": "0xYourWalletAddress",
-  "to": "0xMerchantAddress",
-  "value": "1000000",
-  "validAfter": "0",
-  "validBefore": "1735776000",
-  "nonce": "0x0000000000000000000000000000000000000000000000000000000000000001"
-}}
-
-================================================================================
-NONCE GENERATION
-================================================================================
-
-Nonces must be unique 32-byte hex values. Options:
-  1. Random: crypto.randomBytes(32) or similar
-  2. Timestamp-based: Include timestamp + random suffix
-
-Example (JavaScript):
-  const nonce = '0x' + crypto.randomBytes(32).toString('hex');
-
 ================================================================================
 INTEGRATION CHECKLIST
 ================================================================================
 
 [ ] Get USDC on supported network (testnet first)
-[ ] Send USDC to vault address via EIP-712 signed transfer
+[ ] POST /account with paymentSignature to vault address
 [ ] Receive and securely store API key
 [ ] For each payment:
     [ ] Create EIP-3009 authorization with unique nonce
     [ ] Sign with user's wallet (EIP-712)
-    [ ] Base64 encode PAYMENT-SIGNATURE and PAYMENT-REQUIRED
-    [ ] Call POST /verify to validate (free)
-    [ ] Call POST /settle to execute (costs credits)
-    [ ] Handle success/failure response
+    [ ] Call POST /verify with JSON body to validate (free)
+    [ ] Call POST /settle with JSON body to execute (costs credits)
 [ ] Monitor balance via POST /account {{"action": "balance"}}
 [ ] Top up credits before running out
-
-================================================================================
-SUPPORT
-================================================================================
-
-For technical support or questions, refer to:
-- GitHub Issues: -
-- Protocol Spec: x402 v2 specification
 
 ================================================================================
 "#, 
@@ -643,7 +514,6 @@ For technical support or questions, refer to:
     );
     
     let mut response_headers = HeaderMap::new();
-    response_headers.insert(headers::PAYMENT_VERSION, HeaderValue::from_static(X402_VERSION));
     response_headers.insert(
         axum::http::header::CONTENT_TYPE,
         HeaderValue::from_static("text/plain; charset=utf-8")

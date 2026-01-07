@@ -35,9 +35,9 @@
     "explorer": "https://basescan.org",
     "gasToken": "ETH",
     "type": "mainnet",
-    "batchContract": null,
-    "rebalanceThreshold": "0.01",
-    "minBalanceToKeep": "0.005"
+    "batchContract": "0xF7B3f366aaA6d293E4C391F2E834056dB7f3bE50",
+    "rebalanceThreshold": "0.001",
+    "minBalanceToKeep": "0.0005"
   },
   "Ethereum": {
     "rpcUrl": "ETHEREUM_RPC",
@@ -75,8 +75,8 @@
     "explorer": "https://optimistic.etherscan.io",
     "gasToken": "ETH",
     "type": "mainnet",
-    "batchContract": null,
-    "rebalanceThreshold": "0.01",
-    "minBalanceToKeep": "0.005"
+    "batchContract": "0xF7B3f366aaA6d293E4C391F2E834056dB7f3bE50",
+    "rebalanceThreshold": "0.001",
+    "minBalanceToKeep": "0.0005"
   }
 }

@@ -61,7 +61,7 @@ export default function XPaymentDemo() {
   useEffect(() => {
     const fetchNetworks = async () => {
       try {
-        const response = await fetch(`${facilitatorUrl}/networks`);
+        const response = await fetch(`${facilitatorUrl}/supported`);
         if (response.ok) {
           const data = await response.json();
           // Combine mainnet and testnet networks

@@ -2,7 +2,7 @@
 //!
 //! Single endpoint for:
 //! - GET /account: Plain text instructions with supported networks and USDC addresses
-//! - POST /account: Purchase credits with PAYMENT-SIGNATURE header
+//! - POST /account: Purchase credits with JSON body (paymentSignature)
 
 use std::sync::Arc;
 use axum::{
@@ -23,7 +23,7 @@ use tracing::{info, warn, error};
 
 use crate::routes::AppState;
 use crate::services::ApiKeyDb;
-use crate::types::{X402_VERSION, headers, PaymentSignatureV2, ErrorResponse};
+use crate::types::{X402_VERSION, PaymentSignatureV2, ErrorResponse};
 use crate::types::api_key::BalanceType;
 use crate::config::network_resolver;
 
@@ -39,11 +39,15 @@ const SERVICE_FEE_USD: &str = "0.001";
 /// Minimum purchase amount in USD
 const MIN_PURCHASE_USD: &str = "1.00";
 
-/// Credit purchase request body
+/// Credit purchase request body (JSON)
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CreditPurchaseRequest {
-    /// Network name or CAIP-2 identifier
-    network: String,
+    /// Signed payment (same structure as paymentSignature in verify/settle)
+    payment_signature: PaymentSignatureV2,
+    /// Optional: existing API key to top-up instead of creating new
+    #[serde(default)]
+    api_key: Option<String>,
 }
 
 /// GET /account - Plain text instructions
@@ -94,7 +98,7 @@ Version: {version}
 HOW TO PURCHASE CREDITS
 -----------------------
 1. Create a signed EIP-3009 USDC transfer to our vault
-2. POST to /account with PAYMENT-SIGNATURE header
+2. POST to /account with JSON body containing paymentSignature
 3. Receive API key with USDC balance
 
 VAULT ADDRESS (send USDC here)
@@ -107,25 +111,24 @@ SUPPORTED NETWORKS & USDC ADDRESSES
 REQUEST FORMAT
 --------------
 POST /account
-Headers:
-  PAYMENT-SIGNATURE: <base64 encoded payment signature>
-  API-KEY: <existing key> (optional - to add balance to existing account)
+Content-Type: application/json
 
-PAYMENT-SIGNATURE STRUCTURE
----------------------------
-Base64 encoded JSON:
+Request Body (JSON):
 {{
-  "authorization": {{
-    "from": "0x...",        // your wallet address
-    "to": "{vault_address}", // vault address
-    "value": "1000000",     // amount in USDC (6 decimals) - min 1 USDC
-    "validAfter": "0",      // unix timestamp
-    "validBefore": "...",   // unix timestamp (expiry)
-    "nonce": "0x..."        // unique 32-byte hex
+  "paymentSignature": {{
+    "authorization": {{
+      "from": "0x...",        // your wallet address
+      "to": "{vault_address}", // vault address
+      "value": "1000000",     // amount in USDC (6 decimals) - min 1 USDC
+      "validAfter": "0",      // unix timestamp
+      "validBefore": "...",   // unix timestamp (expiry)
+      "nonce": "0x..."        // unique 32-byte hex
+    }},
+    "signature": "0x...",     // EIP-712 signature
+    "network": "Base Sepolia", // network name or CAIP-2
+    "asset": "0x..."          // USDC token address
   }},
-  "signature": "0x...",     // EIP-712 signature
-  "network": "Base Sepolia", // network name or CAIP-2
-  "asset": "0x..."          // USDC token address
+  "apiKey": "existing_key"    // optional - to top-up existing account
 }}
 
 RESPONSE (new account)
@@ -230,25 +233,11 @@ async fn account_purchase_handler(
     headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
-    // Check for PAYMENT-SIGNATURE header (purchase flow)
-    let has_payment_signature = headers.get(headers::PAYMENT_SIGNATURE).is_some();
-    
     // Check for Authorization header (query flow - balance/metrics)
     let auth_header = headers.get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
     
-    // Check for API-KEY header (for top-up to existing account)
-    let api_key_header: Option<String> = headers.get("API-KEY")
-        .or_else(|| headers.get("api-key"))
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    
-    // Flow A: Credit purchase with PAYMENT-SIGNATURE
-    if has_payment_signature {
-        return handle_credit_purchase(state, headers, body, api_key_header.as_deref()).await;
-    }
-    
-    // Flow B: Account query with Authorization header
+    // If Authorization header present, this is a query (balance/metrics)
     if let Some(auth) = auth_header {
         let api_key_str = if auth.starts_with("Bearer ") {
             &auth[7..]
@@ -293,77 +282,57 @@ async fn account_purchase_handler(
         };
     }
     
-    // Neither PAYMENT-SIGNATURE nor Authorization provided
-    (
-        StatusCode::BAD_REQUEST,
-        Json(json!({
-            "error": "MISSING_PARAMETERS",
-            "message": "POST /account requires either PAYMENT-SIGNATURE header (for purchase) or Authorization header with action body (for queries)",
-            "usage": {
-                "purchase": {
-                    "headers": {"PAYMENT-SIGNATURE": "<base64>", "PAYMENT-VERSION": "2"},
-                    "note": "Send payment to vault address"
-                },
-                "query": {
-                    "headers": {"Authorization": "Bearer <api_key>"},
-                    "body": {"action": "balance or metrics"}
-                }
-            }
-        }))
-    ).into_response()
-}
-
-/// Handle credit purchase with PAYMENT-SIGNATURE
-async fn handle_credit_purchase(
-    state: Arc<AppState>,
-    headers: HeaderMap,
-    body: Bytes,
-    existing_api_key: Option<&str>,
-) -> axum::response::Response {
-    info!("=== CREDIT PURCHASE REQUEST ===");
-    
-    // Decode PAYMENT-SIGNATURE first (to extract network if present)
-    let signature_b64 = match headers.get(headers::PAYMENT_SIGNATURE)
-        .and_then(|v| v.to_str().ok()) 
-    {
-        Some(s) => s,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::new("INVALID_HEADER", "Invalid PAYMENT-SIGNATURE header"))
-            ).into_response();
-        }
-    };
-    
-    let payment_sig = match PaymentSignatureV2::from_base64(signature_b64) {
-        Ok(p) => p,
+    // Try to parse as credit purchase request (JSON body with paymentSignature)
+    let purchase_req: CreditPurchaseRequest = match serde_json::from_slice(&body) {
+        Ok(req) => req,
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::new("DECODE_ERROR", format!("Failed to decode PAYMENT-SIGNATURE: {}", e)))
+                Json(json!({
+                    "error": "INVALID_REQUEST",
+                    "message": format!("Invalid JSON body: {}. Expected paymentSignature object", e),
+                    "usage": {
+                        "purchase": {
+                            "body": {"paymentSignature": {"authorization": {}, "signature": "0x...", "network": "...", "asset": "0x..."}, "apiKey": "optional"},
+                            "note": "Send signed payment to vault address"
+                        },
+                        "query": {
+                            "headers": {"Authorization": "Bearer <api_key>"},
+                            "body": {"action": "balance or metrics"}
+                        }
+                    }
+                }))
             ).into_response();
         }
     };
     
-    // Extract network from PAYMENT-SIGNATURE if present, otherwise from body
-    let network = if let Some(net) = &payment_sig.network {
-        net.clone()
-    } else {
-        // Fallback to body for backward compatibility
-        let purchase_req: CreditPurchaseRequest = match serde_json::from_slice(&body) {
-            Ok(req) => req,
-            Err(_) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({
-                        "error": "MISSING_NETWORK",
-                        "message": "Network not found in PAYMENT-SIGNATURE or request body",
-                        "hint": "Include 'network' field in PAYMENT-SIGNATURE or request body"
-                    }))
-                ).into_response();
-            }
-        };
-        purchase_req.network
+    // Handle credit purchase with JSON body
+    handle_credit_purchase(state, purchase_req).await
+}
+
+/// Handle credit purchase with JSON body
+async fn handle_credit_purchase(
+    state: Arc<AppState>,
+    purchase_req: CreditPurchaseRequest,
+) -> axum::response::Response {
+    info!("=== CREDIT PURCHASE REQUEST ===");
+    
+    let payment_sig = purchase_req.payment_signature;
+    let existing_api_key = purchase_req.api_key;
+    
+    // Extract network from paymentSignature
+    let network = match &payment_sig.network {
+        Some(net) => net.clone(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "MISSING_NETWORK",
+                    "message": "Network not found in paymentSignature",
+                    "hint": "Include 'network' field in paymentSignature object"
+                }))
+            ).into_response();
+        }
     };
     
     // Get vault address from config
@@ -393,7 +362,7 @@ async fn handle_credit_purchase(
     }
     
     // Validate existing API key if provided
-    if let Some(key) = existing_api_key {
+    if let Some(ref key) = existing_api_key {
         match ApiKeyDb::validate_api_key(state.database.pool(), key).await {
             Ok(_) => {
                 info!("Top-up for existing API key: {}...{}", &key[..8.min(key.len())], &key[key.len().saturating_sub(4)..]);
@@ -404,7 +373,7 @@ async fn handle_credit_purchase(
                     StatusCode::BAD_REQUEST,
                     Json(json!({
                         "error": "INVALID_API_KEY",
-                        "message": "The provided API-KEY header contains an invalid or non-existent API key"
+                        "message": "The provided apiKey is invalid or non-existent"
                     }))
                 ).into_response();
             }
@@ -521,7 +490,7 @@ async fn handle_credit_purchase(
     }
     
     // Check if this is a top-up for existing API key (already validated above)
-    if let Some(existing_key) = existing_api_key {
+    if let Some(ref existing_key) = existing_api_key {
         // Key was already validated, get the key info
         match ApiKeyDb::validate_api_key(state.database.pool(), existing_key).await {
             Ok(key) => {

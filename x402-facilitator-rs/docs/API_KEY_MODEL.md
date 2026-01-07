@@ -1,14 +1,10 @@
-# x402 Facilitator v2.0 - API Key Model
+# x402 Facilitator - API Key Model
 
 ## Overview
 
-The x402 Facilitator implements the **x402 v2 standard** with a simplified API key model for easier integration by AI agents and developers.
+The x402 Facilitator provides a simplified API key model for easier integration by AI agents and developers.
 
-**x402 v2 Features:**
-- Standardized headers: `PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE`, `PAYMENT-VERSION`
-- Base64 encoded headers (except `PAYMENT-VERSION`)
-- CAIP-2 network identifiers (`eip155:<chainId>`)
-- `accepts` array in 402 responses
+**NOTE**: All facilitator API calls use JSON body. The x402 protocol headers (PAYMENT-REQUIRED, PAYMENT-SIGNATURE, etc.) are used between merchants and buyers, NOT for facilitator API calls.
 
 **API Key Model:**
 - No authentication/login required
@@ -21,62 +17,79 @@ The x402 Facilitator implements the **x402 v2 standard** with a simplified API k
 
 ### 1. Get an API Key
 
+POST /account with a signed USDC transfer to the vault address:
+
 ```bash
-# Create a new API key with $10 initial credits
-curl -X POST https://pay.netpay.app/credits \
+curl -X POST https://api.netpay.id/account \
   -H "Content-Type: application/json" \
-  -d '{"amount": 10}'
+  -d '{
+    "paymentSignature": {
+      "authorization": {
+        "from": "0xYourWallet...",
+        "to": "0xVaultAddress...",
+        "value": "10000000",
+        "validAfter": "0",
+        "validBefore": "1735776000",
+        "nonce": "0x..."
+      },
+      "signature": "0x...",
+      "network": "Base Sepolia",
+      "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+    }
+  }'
 ```
 
 Response:
 ```json
 {
   "success": true,
-  "apiKey": "x402_pk_live_abc123...",
-  "info": {
-    "balance": 10.0,
-    "totalTransactions": 0,
-    "successRate": 0,
-    "isActive": true,
-    "expiresAt": "2026-01-01T00:00:00Z"
-  },
-  "message": "API key created. IMPORTANT: Save this key securely - it won't be shown again!"
+  "action": "create",
+  "apiKey": "a1b2c3d4e5f6...",
+  "balanceType": "testnet",
+  "usdc": "10.000000",
+  "transaction": "0x...",
+  "message": "API key created. SAVE THIS KEY - it will not be shown again!"
 }
 ```
 
 ### 2. Check Balance
 
 ```bash
-curl -H "Authorization: Bearer YOUR_API_KEY" https://pay.netpay.app/api/credits/balance
+curl -X POST https://api.netpay.id/account \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "balance"}'
 ```
 
-### 3. Verify Payments (x402 v2 Headers)
+### 3. Verify Payments
 
 ```bash
-# Option 1: Using x402 v2 headers
-curl -X POST https://pay.netpay.app/verify \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "PAYMENT-VERSION: 2" \
-  -H "PAYMENT-SIGNATURE: $(echo '{"authorization":{...},"signature":"0x..."}' | base64)"
-
-# Option 2: Using JSON body
-curl -X POST https://pay.netpay.app/verify \
+curl -X POST https://api.netpay.id/verify \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "x402Version": 2,
-    "paymentPayload": {...},
-    "paymentRequirements": {"network": "eip155:8453", ...}
+    "paymentPayload": {
+      "authorization": {...},
+      "signature": "0x..."
+    },
+    "paymentRequirements": {
+      "scheme": "exact",
+      "network": "eip155:84532",
+      ...
+    }
   }'
 ```
 
 ### 4. Settle Payments
 
 ```bash
-curl -X POST https://pay.netpay.app/settle \
+curl -X POST https://api.netpay.id/settle \
   -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "PAYMENT-VERSION: 2" \
-  -H "PAYMENT-SIGNATURE: $(echo '{"authorization":{...},"signature":"0x..."}' | base64)"
+  -H "Content-Type: application/json" \
+  -d '{
+    "paymentPayload": {...},
+    "paymentRequirements": {...}
+  }'
 ```
 
 ## Endpoints
@@ -85,10 +98,10 @@ curl -X POST https://pay.netpay.app/settle \
 |--------|------|------|-------------|
 | GET | `/` | No | Service info |
 | GET | `/health` | No | Health check |
-| GET | `/networks` | No | Supported networks (with CAIP-2) |
-| GET | `/help` | No | x402 v2 protocol documentation |
-| GET | `/api/credits/balance` | Yes | Check balance |
-| GET | `/api/transactions` | Yes | Transaction history |
+| GET | `/supported` | No | Supported networks |
+| GET | `/help` | No | Complete API documentation |
+| GET | `/account` | No | Account instructions |
+| POST | `/account` | Varies | Create key, top-up, or query balance |
 | POST | `/verify` | Yes | Verify payment signature |
 | POST | `/settle` | Yes | Execute settlement |
 

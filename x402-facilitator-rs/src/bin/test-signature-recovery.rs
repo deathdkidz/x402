@@ -55,7 +55,7 @@ fn main() {
     println!("\n=== Key Debug Points ===");
     println!("1. Make sure the demo app is using the correct chainId from the network config");
     println!("2. Make sure the demo app is using 'USDC' not 'USD Coin' as the domain name");  
-    println!("3. The /networks endpoint returns the correct eip712 config");
+    println!("3. The /supported endpoint returns the correct eip712 config");
     println!("4. Check that wagmi/viem is using the values correctly");
 }
 

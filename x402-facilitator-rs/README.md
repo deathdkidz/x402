@@ -1,15 +1,12 @@
 # x402 Facilitator (Rust)
 
-Fast, reliable, and cheap **x402 v2** payment facilitator service built in Rust.
+Fast, reliable, and cheap payment facilitator service built in Rust.
 
-## x402 v2 Standard
+## Overview
 
-This facilitator implements the x402 v2 protocol with:
+This facilitator enables gasless EIP-3009 (transferWithAuthorization) token transfers. Users sign payment authorizations off-chain, and the facilitator submits them on-chain, paying gas fees from merchant credit balances.
 
-- **Standardized Headers**: `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE`, `PAYMENT-VERSION`
-- **Base64 Encoding**: All headers (except `PAYMENT-VERSION`) are Base64 encoded JSON
-- **CAIP-2 Networks**: Primary network identifier using `eip155:<chainId>` format
-- **`accepts` Array**: Payment requirements use `accepts` instead of `paymentOptions`
+**NOTE**: All facilitator API calls use JSON body. The x402 protocol headers (PAYMENT-REQUIRED, PAYMENT-SIGNATURE, etc.) are used between merchants and buyers, NOT for facilitator API calls.
 
 ## Features
 
@@ -159,44 +156,51 @@ forge create X402Forwarder --constructor-args $OWNER_ADDRESS $USDC_ADDRESS
 
 - `POST /verify` - Verify a payment authorization
 - `POST /settle` - Execute a settlement
-- `GET /networks` - List supported networks (with CAIP-2)
+- `GET /supported` - List supported networks (with CAIP-2)
 - `GET /help` - x402 v2 protocol documentation (public, no auth)
 - `GET /health` - Health check
 - `GET /metrics` - Prometheus metrics
 
-### Account Endpoints (Internal API)
+### Account Endpoints
 
-- `POST /account` - Create API key or add credits (requires INTERNAL_API_SECRET)
-  - Body: `{ "network": "base", "amount": "1.00", "from_address": "0x...", "expected_payer_address": "0x..." }`
-  - Credits added to testnet or mainnet balance based on network
+- `POST /account` - Create API key with USDC payment or query account
+  - Create: `{ "paymentSignature": {...} }`
+  - Top-up: `{ "paymentSignature": {...}, "apiKey": "existing_key" }`
+  - Balance: `{ "action": "balance" }` (with Authorization header)
+  - Metrics: `{ "action": "metrics" }` (with Authorization header)
 
-### Credit Endpoints
+### Request Format
 
-- `GET /api/credits/balance` - Check credit balance (shows both mainnet and testnet)
-- `GET /api/transactions` - List transactions
+All endpoints use JSON body:
 
-### Request Formats
-
-Accepts both header-based (x402 v2) and JSON body requests:
-
-**Header-based (x402 v2):**
-```http
-POST /verify HTTP/1.1
-Authorization: Bearer x402_pk_live_abc123
-PAYMENT-VERSION: 2
-PAYMENT-SIGNATURE: <base64-encoded-payload>
-```
-
-**JSON body:**
 ```http
 POST /verify HTTP/1.1
 Authorization: Bearer x402_pk_live_abc123
 Content-Type: application/json
 
 {
-  "x402Version": 2,
-  "paymentPayload": {...},
-  "paymentRequirements": {...}
+  "paymentPayload": {
+    "authorization": {
+      "from": "0x...",
+      "to": "0x...",
+      "value": "1000000",
+      "validAfter": "0",
+      "validBefore": "1735776000",
+      "nonce": "0x..."
+    },
+    "signature": "0x..."
+  },
+  "paymentRequirements": {
+    "scheme": "exact",
+    "network": "eip155:84532",
+    "asset": "0x...",
+    "payTo": "0x...",
+    "maxAmountRequired": "1000000",
+    "resource": "/api",
+    "description": "API access",
+    "mimeType": "application/json",
+    "maxTimeoutSeconds": 60
+  }
 }
 ```
 

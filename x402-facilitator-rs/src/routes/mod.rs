@@ -2,14 +2,12 @@
 //! 
 //! HTTP route handlers for the x402 facilitator API
 //! 
-//! x402 v2 Standard:
-//! - Headers: PAYMENT-REQUIRED, PAYMENT-SIGNATURE, PAYMENT-RESPONSE, PAYMENT-VERSION
-//! - All except PAYMENT-VERSION are base64 encoded
-//! - CAIP-2 network identifiers (eip155:chainId)
-//! - "accepts" instead of "paymentOptions"
+//! All endpoints use JSON body for requests (no custom headers).
+//! The x402 protocol headers (PAYMENT-REQUIRED, PAYMENT-SIGNATURE, etc.) are
+//! used between merchants and buyers, NOT for facilitator API calls.
 //! 
 //! Endpoints:
-//! - Public: /, /health, /networks, /help, /account
+//! - Public: /, /health, /supported, /help, /account
 //! - Authenticated: /verify, /settle
 //! - Admin: /admin/purchases
 
@@ -23,14 +21,14 @@ use std::time::Instant;
 use axum::{
     body::Bytes,
     extract::State,
-    http::{HeaderMap, StatusCode, header::HeaderValue},
+    http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use tracing::{info, debug};
 
-use crate::config::{Config, network_resolver};
+use crate::config::Config;
 use crate::types::*;
 use crate::services::{VerificationService, SettlementService, MetricsService, Database, PriceFeedService};
 use crate::services::metrics;
@@ -60,7 +58,7 @@ pub fn create_router(state: AppState) -> Router {
         // Public endpoints
         .route("/", get(root_handler))
         .route("/health", get(health_handler))
-        .route("/networks", get(networks_handler))
+        .route("/supported", get(supported_handler))
         .route("/metrics", get(metrics_handler))
         // Core API (requires authentication)
         .route("/verify", post(verify_handler))
@@ -82,7 +80,7 @@ async fn root_handler(
         "description": state.config.service_description,
         "endpoints": {
             "health": "GET /health",
-            "networks": "GET /networks",
+            "supported": "GET /supported",
             "help": "GET /help",
             "account": "GET /account (info) | POST /account (purchase credits)",
             "verify": "POST /verify (requires API key)",
@@ -107,9 +105,9 @@ async fn health_handler(
     })
 }
 
-/// Networks endpoint - List supported networks and tokens (x402 v2)
+/// Supported endpoint - List supported networks and tokens
 /// Returns CAIP-2 identifiers for each network
-async fn networks_handler(
+async fn supported_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let mainnet: Vec<NetworkInfo> = state.config.mainnet_networks
@@ -166,15 +164,11 @@ async fn networks_handler(
         })
         .collect();
 
-    // Add PAYMENT-VERSION header
-    let mut headers = HeaderMap::new();
-    headers.insert(headers::PAYMENT_VERSION, HeaderValue::from_static(X402_VERSION));
-
-    (headers, Json(NetworksResponse {
+    Json(NetworksResponse {
         success: true,
         mainnet,
         testnet,
-    }))
+    })
 }
 
 /// Prometheus metrics endpoint
@@ -189,75 +183,22 @@ async fn metrics_handler(
     )
 }
 
-/// Extract x402 v2 request from headers or body
-/// Priority: headers > body (if both exist, use headers)
+/// Extract x402 request from JSON body
+/// All facilitator API calls use JSON body (not headers)
 fn extract_x402_request(
-    headers: &HeaderMap,
     body: &[u8],
 ) -> Result<(PaymentPayload, PaymentRequirements), (StatusCode, Json<ErrorResponse>)> {
-    // Check for x402 v2 headers first
-    let has_signature_header = headers.get(headers::PAYMENT_SIGNATURE).is_some();
-    let has_required_header = headers.get(headers::PAYMENT_REQUIRED).is_some();
-    
-    if has_signature_header && has_required_header {
-        // Parse from headers (x402 v2 format)
-        debug!("Parsing x402 v2 request from headers");
-        
-        let version = headers.get(headers::PAYMENT_VERSION)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("2");
-        
-        if version != "2" && version != "1" {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::new("INVALID_VERSION", format!("Unsupported x402 version: {}", version)))
-            ));
-        }
-        
-        let signature_b64 = headers.get(headers::PAYMENT_SIGNATURE)
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::new("INVALID_HEADER", "Invalid PAYMENT-SIGNATURE header"))
-            ))?;
-        
-        let required_b64 = headers.get(headers::PAYMENT_REQUIRED)
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::new("INVALID_HEADER", "Invalid PAYMENT-REQUIRED header"))
-            ))?;
-        
-        let payment_sig = PaymentSignatureV2::from_base64(signature_b64)
-            .map_err(|e| (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::new("DECODE_ERROR", format!("Failed to decode PAYMENT-SIGNATURE: {}", e)))
-            ))?;
-        
-        let payment_req = PaymentRequirementsV2::from_base64(required_b64)
-            .map_err(|e| (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::new("DECODE_ERROR", format!("Failed to decode PAYMENT-REQUIRED: {}", e)))
-            ))?;
-        
-        // Convert to legacy types for processing
-        let payload: PaymentPayload = (&payment_sig).into();
-        let requirements: PaymentRequirements = (&payment_req).into();
-        
-        return Ok((payload, requirements));
-    }
-    
-    // Fall back to JSON body
+    // JSON body required
     if body.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new("MISSING_DATA", "No x402 headers or JSON body provided"))
+            Json(ErrorResponse::new("MISSING_DATA", "JSON body required with paymentPayload and paymentRequirements"))
         ));
     }
     
     debug!("Parsing x402 request from JSON body");
     
-    // Try to parse as VerifyRequest or SettleRequest format
+    // Parse JSON body - supports both v1 and v2 formats
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct RequestBody {
@@ -265,7 +206,7 @@ fn extract_x402_request(
         x402_version: Option<u32>,
         payment_payload: Option<PaymentPayload>,
         payment_requirements: Option<PaymentRequirements>,
-        // v2 format fields
+        // v2 format fields (alternative naming)
         payment_signature: Option<PaymentSignatureV2>,
         #[serde(alias = "paymentRequirements")]
         requirements: Option<PaymentRequirementsV2>,
@@ -277,12 +218,12 @@ fn extract_x402_request(
             Json(ErrorResponse::new("PARSE_ERROR", format!("Invalid JSON: {}", e)))
         ))?;
     
-    // Try v1 format first (legacy)
+    // Try v1 format first (paymentPayload/paymentRequirements)
     if let (Some(payload), Some(requirements)) = (parsed.payment_payload, parsed.payment_requirements) {
         return Ok((payload, requirements));
     }
     
-    // Try v2 format
+    // Try v2 format (paymentSignature/requirements)
     if let (Some(sig), Some(req)) = (parsed.payment_signature, parsed.requirements) {
         let payload: PaymentPayload = (&sig).into();
         let requirements: PaymentRequirements = (&req).into();
@@ -291,22 +232,21 @@ fn extract_x402_request(
     
     Err((
         StatusCode::BAD_REQUEST,
-        Json(ErrorResponse::new("MISSING_FIELDS", "Missing paymentPayload/paymentRequirements or paymentSignature/requirements"))
+        Json(ErrorResponse::new("MISSING_FIELDS", "Missing paymentPayload/paymentRequirements in JSON body"))
     ))
 }
 
 /// Verify payment endpoint
-/// Accepts both x402 v2 headers and JSON body
+/// JSON body required with paymentPayload and paymentRequirements
 async fn verify_handler(
     State(state): State<Arc<AppState>>,
     axum::Extension(api_key): axum::Extension<crate::types::ApiKey>,
-    headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
     let start_time = Instant::now();
     
-    // Extract request from headers or body
-    let (payment_payload, payment_requirements) = match extract_x402_request(&headers, &body) {
+    // Extract request from JSON body
+    let (payment_payload, payment_requirements) = match extract_x402_request(&body) {
         Ok(data) => data,
         Err(err) => return err.into_response(),
     };
@@ -314,7 +254,7 @@ async fn verify_handler(
     // Normalize network name (supports CAIP-2, chain ID, various formats)
     let network = state.config.normalize_network_name(&payment_requirements.network);
     
-    info!("=== VERIFY REQUEST (x402 v2) ===");
+    info!("=== VERIFY REQUEST ===");
     info!("API Key: {}...{}", &api_key.api_key[..8], &api_key.api_key[api_key.api_key.len()-4..]);
     info!("Network: {} (input: {})", network, payment_requirements.network);
     info!("Asset: {}", payment_requirements.asset);
@@ -343,28 +283,20 @@ async fn verify_handler(
         if result.is_valid { "VALID" } else { "INVALID" }
     );
 
-    // Build response with x402 v2 headers
-    let mut response_headers = HeaderMap::new();
-    response_headers.insert(
-        headers::PAYMENT_VERSION,
-        HeaderValue::from_static(X402_VERSION)
-    );
-    
-    (response_headers, Json(result)).into_response()
+    Json(result).into_response()
 }
 
 /// Settle payment endpoint
-/// Accepts both x402 v2 headers and JSON body
+/// JSON body required with paymentPayload and paymentRequirements
 async fn settle_handler(
     State(state): State<Arc<AppState>>,
     axum::Extension(api_key): axum::Extension<crate::types::ApiKey>,
-    headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
     let start_time = Instant::now();
     
-    // Extract request from headers or body
-    let (payment_payload, payment_requirements) = match extract_x402_request(&headers, &body) {
+    // Extract request from JSON body
+    let (payment_payload, payment_requirements) = match extract_x402_request(&body) {
         Ok(data) => data,
         Err(err) => return err.into_response(),
     };
@@ -372,7 +304,7 @@ async fn settle_handler(
     // Normalize network name (supports CAIP-2, chain ID, various formats)
     let network = state.config.normalize_network_name(&payment_requirements.network);
     
-    info!("=== SETTLE REQUEST (x402 v2) ===");
+    info!("=== SETTLE REQUEST ===");
     info!("API Key: {}...{}", &api_key.api_key[..8], &api_key.api_key[api_key.api_key.len()-4..]);
     info!("Network: {} (input: {})", network, payment_requirements.network);
     info!("Asset: {}", payment_requirements.asset);
@@ -406,33 +338,5 @@ async fn settle_handler(
         if result.success { "SUCCESS" } else { "FAILED" }
     );
 
-    // Build x402 v2 response with headers
-    let mut response_headers = HeaderMap::new();
-    response_headers.insert(
-        headers::PAYMENT_VERSION,
-        HeaderValue::from_static(X402_VERSION)
-    );
-    
-    // Include PAYMENT-RESPONSE header with base64 encoded result
-    let caip2_network = network_resolver::get_caip2(&network).unwrap_or(network.clone());
-    let payment_response = if result.success {
-        PaymentResponseV2::success(
-            caip2_network,
-            result.payer.clone().unwrap_or_default(),
-            result.transaction.clone().unwrap_or_default(),
-        )
-    } else {
-        PaymentResponseV2::failure(
-            caip2_network,
-            result.error_reason.clone().unwrap_or_default(),
-        )
-    };
-    
-    if let Ok(encoded) = payment_response.to_base64() {
-        if let Ok(value) = HeaderValue::from_str(&encoded) {
-            response_headers.insert(headers::PAYMENT_RESPONSE, value);
-        }
-    }
-
-    (response_headers, Json(result)).into_response()
+    Json(result).into_response()
 }

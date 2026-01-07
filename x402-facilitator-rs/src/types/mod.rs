@@ -1,12 +1,9 @@
 //! x402 Protocol Types
 //! 
 //! Core data structures for payment verification and settlement
-//! 
-//! v2.0 supports:
-//! - API Key authentication model
-//! - x402 v2 headers (PAYMENT-REQUIRED, PAYMENT-SIGNATURE, PAYMENT-RESPONSE, PAYMENT-VERSION)
-//! - CAIP-2 network identifiers (eip155:chainId)
-//! - Both JSON body and header-based requests
+//!
+//! NOTE: All facilitator API calls use JSON body. The x402 protocol headers
+//! are used between merchants and buyers, NOT for facilitator API calls.
 
 #![allow(dead_code)]
 
@@ -21,10 +18,10 @@ use regex::Regex;
 // Re-export API key types
 pub use api_key::*;
 
-// Re-export x402 v2 types (used by routes)
+// Re-export x402 v2 types (used for data structures, not headers)
 pub use x402_v2::{
-    X402_VERSION, headers,
-    PaymentRequirementsV2, PaymentSignatureV2, PaymentResponseV2,
+    X402_VERSION,
+    PaymentRequirementsV2, PaymentSignatureV2,
 };
 
 // Regex patterns for validation
@@ -389,7 +386,7 @@ pub struct HealthResponse {
     pub uptime: f64,
 }
 
-/// Network info for /networks endpoint (x402 v2)
+/// Network info for /supported endpoint (x402 v2)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkInfo {
@@ -403,7 +400,7 @@ pub struct NetworkInfo {
     pub tokens: Vec<TokenInfo>,
 }
 
-/// Token info for /networks endpoint
+/// Token info for /supported endpoint
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenInfo {
     pub symbol: String,
@@ -414,7 +411,7 @@ pub struct TokenInfo {
     pub eip712: Option<Eip712Info>,
 }
 
-/// EIP-712 info for /networks endpoint
+/// EIP-712 info for /supported endpoint
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Eip712Info {
