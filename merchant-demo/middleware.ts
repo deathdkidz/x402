@@ -27,7 +27,7 @@ async function getCachedNetworks(): Promise<any[]> {
   }
   
   try {
-    const response = await fetch(`${FACILITATOR_URL}/supported`, {
+    const response = await fetch(`${FACILITATOR_URL}/networks`, {
       headers: { 'Connection': 'keep-alive' },
       keepalive: true
     });

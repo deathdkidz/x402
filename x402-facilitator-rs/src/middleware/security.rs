@@ -39,7 +39,8 @@ static ALLOWED_PATHS: Lazy<Vec<Regex>> = Lazy::new(|| {
     vec![
         Regex::new(r"^/$").unwrap(),                    // Root endpoint
         Regex::new(r"^/health$").unwrap(),              // Health check
-        Regex::new(r"^/supported$").unwrap(),           // Supported networks/tokens info
+        Regex::new(r"^/networks$").unwrap(),            // Networks info (detailed)
+        Regex::new(r"^/supported$").unwrap(),           // Supported kinds (x402 standard)
         Regex::new(r"^/metrics$").unwrap(),             // Prometheus metrics (localhost only)
         Regex::new(r"^/verify$").unwrap(),              // Verify payment
         Regex::new(r"^/settle$").unwrap(),              // Settle payment

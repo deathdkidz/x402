@@ -499,8 +499,8 @@ print_summary() {
     echo "  Status:  sudo systemctl status ${SERVICE_NAME}"
     echo
     echo "Test Endpoints:"
-    echo "  Health:    curl http://localhost:8080/health"
-    echo "  Supported: curl http://localhost:8080/supported"
+    echo "  Health:   curl http://localhost:8080/health"
+    echo "  Networks: curl http://localhost:8080/networks"
     echo
     echo "Configuration Files:"
     echo "  Env:      ${INSTALL_DIR}/.env"

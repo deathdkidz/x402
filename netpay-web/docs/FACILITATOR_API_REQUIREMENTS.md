@@ -32,7 +32,7 @@ Returns service information and available endpoints.
   "description": "Payment facilitator service for x402 protocol",
   "endpoints": {
     "health": "GET /health",
-    "supported": "GET /supported",
+    "networks": "GET /networks",
     "verify": "POST /verify",
     "settle": "POST /settle"
   },
@@ -59,7 +59,7 @@ Health check endpoint for load balancers and monitoring.
 
 ---
 
-### GET `/supported`
+### GET `/networks`
 
 Returns list of supported networks and their token configurations.
 
@@ -766,8 +766,8 @@ X-RateLimit-Reset: 1735776060
 # Health check
 curl https://api.netpay.id/health
 
-# Get supported networks
-curl https://api.netpay.id/supported
+# Get networks
+curl https://api.netpay.id/networks
 
 # Get SIWE nonce
 curl https://api.netpay.id/merchant/siwe/nonce

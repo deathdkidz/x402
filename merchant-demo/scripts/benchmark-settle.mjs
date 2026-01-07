@@ -135,7 +135,7 @@ async function configureTestParams() {
 // Get available networks from facilitator
 async function getAvailableNetworks() {
   try {
-    const response = await fetch(`${CONFIG.facilitator}/supported`);
+    const response = await fetch(`${CONFIG.facilitator}/networks`);
     if (!response.ok) return [];
     
     const data = await response.json();
@@ -167,7 +167,7 @@ function initializeWallet() {
 // Get network configuration from facilitator
 async function getNetworkConfig(network) {
   try {
-    const response = await fetch(`${CONFIG.facilitator}/supported`);
+    const response = await fetch(`${CONFIG.facilitator}/networks`);
     if (!response.ok) {
       throw new Error(`Failed to fetch networks: ${response.status}`);
     }

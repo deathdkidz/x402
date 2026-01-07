@@ -225,9 +225,9 @@ GET /health
 }
 ```
 
-### Supported Networks Information
+### Network Information
 ```http
-GET /supported
+GET /networks
 ```
 
 **Response:**
@@ -253,7 +253,7 @@ GET /
   "mainnetNetworks": ["Base", "Ethereum"],
   "endpoints": {
     "health": "GET /health",
-    "supported": "GET /supported",
+    "networks": "GET /networks",
     "verify": "POST /verify",
     "settle": "POST /settle",
     "merchants": "GET /merchants (admin)"
@@ -484,7 +484,7 @@ Set via `LOG_LEVEL` environment variable:
 curl https://api.netpay.id/health
 
 # Check network configuration
-curl https://api.netpay.id/supported
+curl https://api.netpay.id/networks
 
 # View PM2 status
 pm2 status
@@ -883,7 +883,7 @@ npm run dev
 curl http://localhost:8080/health
 
 # Test network configuration
-curl http://localhost:8080/supported
+curl http://localhost:8080/networks
 ```
 
 ### Integration Testing

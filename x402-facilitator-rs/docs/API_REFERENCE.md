@@ -25,7 +25,7 @@ https://api.netpay.id
 - [Public Endpoints](#public-endpoints)
   - [GET /](#get---service-info)
   - [GET /health](#get-health)
-  - [GET /supported](#get-supported)
+  - [GET /networks](#get-networks)
   - [GET /metrics](#get-metrics)
   - [GET /help](#get-help)
   - [GET /account](#get-account)
@@ -101,7 +101,7 @@ Returns service information and available endpoints.
   "version": "2.0.0",
   "endpoints": {
     "health": "GET /health",
-    "supported": "GET /supported",
+    "networks": "GET /networks",
     "help": "GET /help",
     "account": "GET /account (info) | POST /account (purchase credits)",
     "verify": "POST /verify (requires API key)",
@@ -140,7 +140,7 @@ Health check endpoint for load balancers and monitoring.
 
 ---
 
-### GET /supported
+### GET /networks
 
 Returns list of supported networks and their token configurations.
 
@@ -888,10 +888,10 @@ X-RateLimit-Reset: 1735776060
 curl https://api.netpay.id/health
 ```
 
-#### Get Supported Networks
+#### Get Networks
 
 ```bash
-curl https://api.netpay.id/supported
+curl https://api.netpay.id/networks
 ```
 
 #### Verify Payment (Header-Based x402 v2)

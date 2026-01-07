@@ -256,7 +256,7 @@ const result = await response.json();
           </div>
           
           <p className="text-sm text-neutral-500 mt-4">
-            Get the full list dynamically from <code className="text-amber-500">GET /supported</code>
+            Get the full list dynamically from <code className="text-amber-500">GET /networks</code>
           </p>
         </section>
 
@@ -270,11 +270,11 @@ const result = await response.json();
           <p className="text-neutral-400 mb-6">Base URL: <code className="text-amber-500">https://api.netpay.id</code></p>
 
           <div className="space-y-4">
-            {/* GET /supported */}
+            {/* GET /networks */}
             <div className="border border-neutral-800 rounded-xl overflow-hidden">
               <div className="p-4 bg-neutral-900 border-b border-neutral-800 flex items-center gap-3">
                 <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-mono rounded">GET</span>
-                <code className="text-sm">/supported</code>
+                <code className="text-sm">/networks</code>
                 <span className="text-xs text-neutral-500 ml-auto">No auth required</span>
               </div>
               <div className="p-4">

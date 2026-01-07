@@ -238,7 +238,7 @@ enabled = true
 
 After adding a network/token:
 
-- [ ] Network appears in `GET /supported` response
+- [ ] Network appears in `GET /networks` response
 - [ ] Token shows up under the network
 - [ ] Paymaster has native tokens for gas
 - [ ] Test verify endpoint works

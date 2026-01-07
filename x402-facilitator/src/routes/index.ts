@@ -23,9 +23,9 @@ router.get('/health', (req: Request, res: Response) => {
 
 /**
  * Get supported networks with token information
- * GET /supported
+ * GET /networks
  */
-router.get('/supported', (req: Request, res: Response) => {
+router.get('/networks', (req: Request, res: Response) => {
   const mainnetNetworks = config.mainnetNetworks.map(network => {
     const networkConfig = config.networks[network];
     
@@ -96,7 +96,7 @@ router.get('/', (req: Request, res: Response) => {
     description: config.serviceDescription,
     endpoints: {
       health: 'GET /health',
-      supported: 'GET /supported',
+      networks: 'GET /networks',
       verify: 'POST /verify',
       settle: 'POST /settle',
     },

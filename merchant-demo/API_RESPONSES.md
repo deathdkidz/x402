@@ -3,16 +3,16 @@
 Complete guide to all API responses from the X-402 facilitator service.
 
 ## Table of Contents
-- [Supported Networks Endpoint](#supported-networks-endpoint)
+- [Networks Endpoint](#networks-endpoint)
 - [Verify Endpoint](#verify-endpoint)
 - [Settle Endpoint](#settle-endpoint)
 - [Merchant Endpoint](#merchant-endpoint)
 
 ---
 
-## Supported Networks Endpoint
+## Networks Endpoint
 
-**GET** `/supported`
+**GET** `/networks`
 
 Returns all supported payment networks and tokens.
 
@@ -81,7 +81,7 @@ Returns all supported payment networks and tokens.
 ### Usage
 
 ```typescript
-const response = await fetch('https://api.novacasino.xyz/supported');
+const response = await fetch('https://api.novacasino.xyz/networks');
 const data = await response.json();
 
 // Access networks

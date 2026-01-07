@@ -100,7 +100,7 @@ export default function Home() {
   useEffect(() => {
     const fetchNetworks = async () => {
       try {
-        const response = await fetch(`${FACILITATOR_URL}/supported`);
+        const response = await fetch(`${FACILITATOR_URL}/networks`);
         if (response.ok) {
           const data: NetworksResponse = await response.json();
           setNetworksData(data);

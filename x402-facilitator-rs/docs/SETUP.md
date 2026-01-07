@@ -604,10 +604,10 @@ Expected response:
 }
 ```
 
-### 2. Supported Networks Endpoint
+### 2. Networks Endpoint
 
 ```bash
-curl http://localhost:8080/supported
+curl http://localhost:8080/networks
 ```
 
 Should list all configured networks with USDC addresses.

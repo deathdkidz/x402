@@ -23,7 +23,7 @@ const suspiciousPatterns = [
 const allowedPaths = [
   /^\/$/,                   // Root endpoint
   /^\/health$/,             // Health check
-  /^\/supported$/,          // Supported networks info
+  /^\/networks$/,           // Networks info
   /^\/verify$/,             // Verify payment
   /^\/settle$/,             // Settle payment
   /^\/merchant$/,           // Get current merchant

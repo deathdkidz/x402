@@ -158,7 +158,7 @@ Response (200):
 }}
 
 --------------------------------------------------------------------------------
-GET /supported
+GET /networks
 --------------------------------------------------------------------------------
 Purpose: List all supported networks and token configurations
 Auth: None required
@@ -472,8 +472,8 @@ EIP-712 SIGNING GUIDE
 
 Domain:
 {{
-  "name": "<USDC token name from /supported>",
-  "version": "<USDC version from /supported>",
+  "name": "<USDC token name from /networks>",
+  "version": "<USDC version from /networks>",
   "chainId": <chain ID>,
   "verifyingContract": "<USDC contract address>"
 }}

@@ -98,7 +98,8 @@ curl -X POST https://api.netpay.id/settle \
 |--------|------|------|-------------|
 | GET | `/` | No | Service info |
 | GET | `/health` | No | Health check |
-| GET | `/supported` | No | Supported networks |
+| GET | `/networks` | No | Supported networks |
+| GET | `/supported` | No | x402 protocol compatibility |
 | GET | `/help` | No | Complete API documentation |
 | GET | `/account` | No | Account instructions |
 | POST | `/account` | Varies | Create key, top-up, or query balance |

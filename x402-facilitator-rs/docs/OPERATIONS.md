@@ -354,7 +354,7 @@ mysql -u x402user -p -e "SELECT 1" x402_facilitator
 redis-cli ping
 
 # Network provider check (via API)
-curl http://localhost:8080/supported
+curl http://localhost:8080/networks
 ```
 
 ### Automated Health Monitoring Script

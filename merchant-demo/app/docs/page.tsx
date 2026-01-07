@@ -31,7 +31,7 @@ export default function DocsPage() {
               { id: 'responses', label: 'Response Guide' },
               { id: 'verify', label: '/verify' },
               { id: 'settle', label: '/settle' },
-              { id: 'supported', label: '/supported' },
+              { id: 'networks', label: '/networks' },
               { id: 'health', label: '/health' },
               { id: 'merchant', label: '/merchant' },
             ].map((tab) => (
@@ -358,11 +358,11 @@ export default function DocsPage() {
             </div>
           )}
 
-          {/* Supported Networks Endpoint Tab */}
-          {activeTab === 'supported' && (
+          {/* Networks Endpoint Tab */}
+          {activeTab === 'networks' && (
             <div className="space-y-6">
               <div>
-                <h2 className="text-2xl font-bold text-slate-100 mb-2">GET /supported</h2>
+                <h2 className="text-2xl font-bold text-slate-100 mb-2">GET /networks</h2>
                 <p className="text-slate-300">
                   Get information about supported networks and their tokens
                 </p>
@@ -442,7 +442,7 @@ export default function DocsPage() {
               <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-6">
                 <h3 className="text-lg font-bold text-slate-100 mb-3">Example cURL</h3>
                 <pre className="bg-slate-800/60 p-4 rounded-lg overflow-x-auto text-xs">
-                  <code className="text-slate-300 font-mono">{`curl ${process.env.NEXT_PUBLIC_FACILITATOR_URL || 'http://localhost:8080'}/supported`}</code>
+                  <code className="text-slate-300 font-mono">{`curl ${process.env.NEXT_PUBLIC_FACILITATOR_URL || 'http://localhost:8080'}/networks`}</code>
                 </pre>
               </div>
 
@@ -694,7 +694,7 @@ export default function DocsPage() {
                 <div className="space-y-3">
                   <div className="bg-slate-800/60 p-3 m-1 rounded">
                     <code className="text-red-400 text-sm">Network 'xxx' is not supported</code>
-                    <p className="text-slate-400 text-xs mt-1">Use exact network names from /supported endpoint</p>
+                    <p className="text-slate-400 text-xs mt-1">Use exact network names from /networks endpoint</p>
                   </div>
 
                   <div className="bg-slate-800/60 p-3 m-1 rounded">

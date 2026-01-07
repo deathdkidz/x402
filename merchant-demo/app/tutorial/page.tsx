@@ -156,7 +156,7 @@ export default function TutorialPage() {
     const fetchNetworks = async () => {
       setLoadingNetworks(true);
       try {
-        const response = await fetch(`${facilitatorUrl}/supported`);
+        const response = await fetch(`${facilitatorUrl}/networks`);
         if (response.ok) {
           const data = await response.json();
           // Combine mainnet and testnet networks

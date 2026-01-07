@@ -156,7 +156,8 @@ forge create X402Forwarder --constructor-args $OWNER_ADDRESS $USDC_ADDRESS
 
 - `POST /verify` - Verify a payment authorization
 - `POST /settle` - Execute a settlement
-- `GET /supported` - List supported networks (with CAIP-2)
+- `GET /networks` - List supported networks (with CAIP-2)
+- `GET /supported` - x402 protocol compatibility endpoint
 - `GET /help` - x402 v2 protocol documentation (public, no auth)
 - `GET /health` - Health check
 - `GET /metrics` - Prometheus metrics

@@ -27,6 +27,7 @@ pub struct AuthState {
 const PUBLIC_PATHS: &[&str] = &[
     "/", 
     "/health", 
+    "/networks",
     "/supported", 
     "/metrics",
 ];

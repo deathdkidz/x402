@@ -282,10 +282,10 @@ async function testPublicEndpoints() {
     recordTest('public', 'GET /health', false, e.message);
   }
 
-  // Test GET /supported
-  logTest('GET /supported - Network List');
+  // Test GET /networks
+  logTest('GET /networks - Network List');
   try {
-    const res = await request('GET', '/supported');
+    const res = await request('GET', '/networks');
     const hasPaymentVersion = res.headers['payment-version'] === '2';
     const hasMainnet = Array.isArray(res.json?.mainnet);
     const hasTestnet = Array.isArray(res.json?.testnet);
@@ -304,23 +304,23 @@ async function testPublicEndpoints() {
     }
 
     const checks = [res.status === 200, hasMainnet, hasTestnet, validStructure];
-    recordTest('public', 'GET /supported', checks.every(Boolean),
+    recordTest('public', 'GET /networks', checks.every(Boolean),
       `${res.json?.mainnet?.length || 0} mainnet, ${res.json?.testnet?.length || 0} testnet`);
     
     if (!hasPaymentVersion) {
-      recordWarning('public', 'GET /supported', 'Missing PAYMENT-VERSION header');
+      recordWarning('public', 'GET /networks', 'Missing PAYMENT-VERSION header');
     }
     
     // Check CAIP-2 format
     const allNetworks = [...(res.json?.mainnet || []), ...(res.json?.testnet || [])];
     for (const net of allNetworks) {
       if (!net.caip2?.startsWith('eip155:')) {
-        recordWarning('public', 'GET /supported', `Invalid CAIP-2 format: ${net.caip2}`);
+        recordWarning('public', 'GET /networks', `Invalid CAIP-2 format: ${net.caip2}`);
         break;
       }
     }
   } catch (e) {
-    recordTest('public', 'GET /supported', false, e.message);
+    recordTest('public', 'GET /networks', false, e.message);
   }
 
   // Test GET /metrics

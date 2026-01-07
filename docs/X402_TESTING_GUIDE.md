@@ -36,10 +36,10 @@ curl -X GET $FACILITATOR_URL/health | jq
 
 ---
 
-## Test 2: Get Supported Networks
+## Test 2: Get Networks
 
 ```bash
-curl -X GET $FACILITATOR_URL/supported | jq
+curl -X GET $FACILITATOR_URL/networks | jq
 ```
 
 **Expected Response:**
@@ -399,7 +399,7 @@ echo "Merchant: $(echo $MERCHANT_INFO | jq -r '.merchant.merchant_address')"
 
 # 2. Get network config
 echo -e "\n2. Getting network config..."
-NETWORKS=$(curl -s -X GET "$FACILITATOR_URL/supported")
+NETWORKS=$(curl -s -X GET "$FACILITATOR_URL/networks")
 TOKEN=$(echo $NETWORKS | jq -r '.networks[0].tokens[0].address')
 echo "Token: $TOKEN"
 

@@ -386,7 +386,7 @@ pub struct HealthResponse {
     pub uptime: f64,
 }
 
-/// Network info for /supported endpoint (x402 v2)
+/// Network info for /networks endpoint (x402 v2)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkInfo {
@@ -400,7 +400,7 @@ pub struct NetworkInfo {
     pub tokens: Vec<TokenInfo>,
 }
 
-/// Token info for /supported endpoint
+/// Token info for /networks endpoint
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenInfo {
     pub symbol: String,
@@ -411,7 +411,7 @@ pub struct TokenInfo {
     pub eip712: Option<Eip712Info>,
 }
 
-/// EIP-712 info for /supported endpoint
+/// EIP-712 info for /networks endpoint
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Eip712Info {

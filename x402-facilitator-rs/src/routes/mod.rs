@@ -7,7 +7,7 @@
 //! used between merchants and buyers, NOT for facilitator API calls.
 //! 
 //! Endpoints:
-//! - Public: /, /health, /supported, /help, /account
+//! - Public: /, /health, /networks, /supported, /help, /account
 //! - Authenticated: /verify, /settle
 //! - Admin: /admin/purchases
 
@@ -32,11 +32,34 @@ use crate::config::Config;
 use crate::types::*;
 use crate::services::{VerificationService, SettlementService, MetricsService, Database, PriceFeedService};
 use crate::services::metrics;
+use serde::Serialize;
 
 pub use account::create_account_router;
 pub use admin::create_admin_router;
 pub use credits::create_credits_router;
 pub use help::create_help_router;
+
+/// Root endpoint response - preserves field order
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RootResponse {
+    name: String,
+    description: String,
+    endpoints: RootEndpoints,
+    mainnet_networks: Vec<String>,
+    testnet_networks: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct RootEndpoints {
+    health: &'static str,
+    networks: &'static str,
+    supported: &'static str,
+    help: &'static str,
+    account: &'static str,
+    verify: &'static str,
+    settle: &'static str,
+}
 
 /// Application state shared across routes
 #[derive(Clone)]
@@ -58,6 +81,7 @@ pub fn create_router(state: AppState) -> Router {
         // Public endpoints
         .route("/", get(root_handler))
         .route("/health", get(health_handler))
+        .route("/networks", get(networks_handler))
         .route("/supported", get(supported_handler))
         .route("/metrics", get(metrics_handler))
         // Core API (requires authentication)
@@ -75,20 +99,21 @@ pub fn create_router(state: AppState) -> Router {
 async fn root_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    Json(serde_json::json!({
-        "name": state.config.service_name,
-        "description": state.config.service_description,
-        "endpoints": {
-            "health": "GET /health",
-            "supported": "GET /supported",
-            "help": "GET /help",
-            "account": "GET /account (info) | POST /account (purchase credits)",
-            "verify": "POST /verify (requires API key)",
-            "settle": "POST /settle (requires API key)"
+    Json(RootResponse {
+        name: state.config.service_name.clone(),
+        description: state.config.service_description.clone(),
+        endpoints: RootEndpoints {
+            health: "GET /health",
+            networks: "GET /networks",
+            supported: "GET /supported",
+            help: "GET /help",
+            account: "GET /account (info) | POST /account (purchase credits)",
+            verify: "POST /verify (requires API key)",
+            settle: "POST /settle (requires API key)",
         },
-        "mainnetNetworks": state.config.mainnet_networks,
-        "testnetNetworks": state.config.testnet_networks
-    }))
+        mainnet_networks: state.config.mainnet_networks.clone(),
+        testnet_networks: state.config.testnet_networks.clone(),
+    })
 }
 
 /// Health check endpoint
@@ -105,9 +130,9 @@ async fn health_handler(
     })
 }
 
-/// Supported endpoint - List supported networks and tokens
+/// Networks endpoint - List supported networks and tokens
 /// Returns CAIP-2 identifiers for each network
-async fn supported_handler(
+async fn networks_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let mainnet: Vec<NetworkInfo> = state.config.mainnet_networks
@@ -169,6 +194,39 @@ async fn supported_handler(
         mainnet,
         testnet,
     })
+}
+
+/// Supported endpoint - x402 protocol compatibility
+/// Returns supported payment kinds in standard x402 format
+async fn supported_handler(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let mut kinds = Vec::new();
+    
+    // Add all networks with x402 v2 support (using CAIP-2)
+    for network in &state.config.mainnet_networks {
+        if let Some(nc) = state.config.networks.get(network) {
+            kinds.push(serde_json::json!({
+                "x402Version": 2,
+                "scheme": "exact",
+                "network": format!("eip155:{}", nc.chain_id)
+            }));
+        }
+    }
+    
+    for network in &state.config.testnet_networks {
+        if let Some(nc) = state.config.networks.get(network) {
+            kinds.push(serde_json::json!({
+                "x402Version": 2,
+                "scheme": "exact",
+                "network": format!("eip155:{}", nc.chain_id)
+            }));
+        }
+    }
+    
+    Json(serde_json::json!({
+        "kinds": kinds
+    }))
 }
 
 /// Prometheus metrics endpoint
