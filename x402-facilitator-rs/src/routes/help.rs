@@ -136,8 +136,8 @@ Auth: None required
 
 Response (200):
 {{
-  "name": "x402 Facilitator",
-  "description": "Secure x402 payment facilitator",
+  "name": "NetPay x402 Facilitator",
+  "description": "Secure & fast x402 payment facilitator",
   "endpoints": {{...}},
   "mainnetNetworks": ["Base", "OP Mainnet", "HyperEVM"],
   "testnetNetworks": ["Base Sepolia", "OP Sepolia", "HyperEVM Testnet"]

@@ -593,8 +593,8 @@ pub fn get_config() -> parking_lot::RwLockReadGuard<'static, Option<Config>> {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            service_name: "x402 Facilitator".to_string(),
-            service_description: "Secure x402 payment facilitator".to_string(),
+            service_name: "NetPay x402 Facilitator".to_string(),
+            service_description: "Secure & fast x402 payment facilitator".to_string(),
             port: 8080,
             https_port: 8443,
             use_https: false,
