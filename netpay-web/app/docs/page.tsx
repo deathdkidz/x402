@@ -30,8 +30,18 @@ export default function DocsPage() {
         {/* Hero */}
         <div className="mb-12">
           <h1 className="text-4xl font-bold mb-4">API Documentation</h1>
-          <p className="text-lg text-neutral-400">
+          <p className="text-lg text-neutral-400 mb-6">
             Everything you need to integrate gasless USDC payments into your application.
+          </p>
+          <p className="text-sm text-neutral-500 mb-4">
+            Instructions for AI Agent: <a 
+              href="https://api.netpay.id/help" 
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-amber-400 hover:text-amber-300 underline"
+            >
+              https://api.netpay.id/help
+            </a>
           </p>
         </div>
 
@@ -562,27 +572,6 @@ const result = await response.json();
                 </div>
               </div>
             </div>
-          </div>
-        </section>
-
-        {/* Full API Reference */}
-        <section className="mb-16">
-          <div className="p-6 bg-gradient-to-r from-amber-500/10 to-transparent border border-amber-500/20 rounded-xl">
-            <h3 className="text-lg font-semibold mb-2">Need More Details?</h3>
-            <p className="text-neutral-400 mb-4">
-              View the complete API specification with all parameters, headers, and response schemas.
-            </p>
-            <a 
-              href="https://api.netpay.id/help" 
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-medium rounded-lg transition-colors"
-            >
-              Full API Reference
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </a>
           </div>
         </section>
 

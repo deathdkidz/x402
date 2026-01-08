@@ -11,68 +11,25 @@ export function middleware(request: NextRequest) {
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   
-  // Content Security Policy - Updated for WalletConnect/RainbowKit
+  // Content Security Policy - Permissive for WalletConnect/RainbowKit/Coinbase
+  // Note: Using wildcards more liberally to ensure wallet connections work
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com", // Required for Next.js + Cloudflare
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: https: blob:",
-    "font-src 'self' data:",
-    // WalletConnect requires many endpoints for wallet discovery and relay
-    "connect-src 'self' " + [
-      // WalletConnect Core
-      "https://*.walletconnect.com",
-      "https://*.walletconnect.org", 
-      "wss://*.walletconnect.com",
-      "wss://*.walletconnect.org",
-      // WalletConnect Explorer API (for wallet list)
-      "https://explorer-api.walletconnect.com",
-      // WalletConnect Verify API
-      "https://verify.walletconnect.com",
-      "https://verify.walletconnect.org",
-      // Coinbase Wallet SDK endpoints
-      "https://*.coinbase.com",
-      "wss://*.coinbase.com",
-      "https://keys.coinbase.com",
-      "https://rpc.coinbase.com",
-      "https://api.wallet.coinbase.com",
-      "wss://ws.wallet.coinbase.com",
-      // Blockchain RPCs
-      "https://*.infura.io",
-      "https://*.alchemy.com",
-      "https://*.base.org",
-      "https://*.optimism.io",
-      "https://mainnet.base.org",
-      "https://sepolia.base.org",
-      "https://mainnet.optimism.io",
-      "https://sepolia.optimism.io",
-      // Other services
-      "https://api.netpay.id",
-      "https://rpc.hyperliquid.xyz",
-      "wss://rpc.hyperliquid.xyz",
-      // Cloudflare
-      "https://*.cloudflare.com",
-      "https://static.cloudflareinsights.com",
-      "https://cloudflareinsights.com",
-      // RainbowKit/WalletConnect additional endpoints
-      "https://eth.merkle.io",
-      "https://*.merkle.io",
-      "https://rpc.walletconnect.com",
-      "https://rpc.walletconnect.org",
-      "https://pulse.walletconnect.com",
-      "https://pulse.walletconnect.org",
-      "https://keys.walletconnect.com",
-      "https://keys.walletconnect.org",
-      "wss://relay.walletconnect.com",
-      "wss://relay.walletconnect.org",
-      // Reown (WalletConnect rebrand)
-      "https://*.reown.com",
-      "wss://*.reown.com",
-    ].join(' '),
-    "frame-src 'self' https://verify.walletconnect.com https://verify.walletconnect.org https://*.coinbase.com",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https: blob:",
+    "style-src 'self' 'unsafe-inline' https:",
+    "img-src 'self' data: https: blob: *",
+    "font-src 'self' data: https:",
+    // connect-src needs to be very permissive for wallet connections
+    "connect-src 'self' https: wss: data: blob:",
+    // frame-src for wallet verification popups
+    "frame-src 'self' https:",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
+    // worker-src for WalletConnect service workers
+    "worker-src 'self' blob:",
+    // child-src for iframes and workers
+    "child-src 'self' blob: https:",
   ].join('; ');
   
   response.headers.set('Content-Security-Policy', csp);
