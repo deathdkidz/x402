@@ -60,7 +60,7 @@ async fn help_handler(
     let vault_address = config.vault_address.as_deref().unwrap_or("not configured");
     
     let help_text = format!(r#"================================================================================
-                     x402 PAYMENT FACILITATOR - COMPLETE API REFERENCE
+x402 PAYMENT FACILITATOR - COMPLETE API REFERENCE
 ================================================================================
 Version: {version}
 Base URL: https://api.netpay.id
@@ -80,10 +80,6 @@ Key Features:
   - EIP-712 signatures: Human-readable signing
   - Multi-network: Supports multiple EVM chains
   - Credit-based: Merchants pre-fund settlement costs
-
-NOTE: All facilitator API calls use JSON body. The x402 protocol headers
-(PAYMENT-REQUIRED, PAYMENT-SIGNATURE, etc.) are used between merchants and
-buyers, NOT for facilitator API calls.
 
 ================================================================================
 QUICK START FOR AI AGENTS
