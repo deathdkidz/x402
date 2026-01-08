@@ -553,6 +553,9 @@ function HomeContent() {
               <Link href="/docs" className="text-sm text-neutral-400 hover:text-white transition-colors">
                 API Docs
               </Link>
+              <a href="mailto:admin@netpay.id" className="text-sm text-neutral-400 hover:text-white transition-colors">
+                Contact
+              </a>
               <WalletConnect />
             </div>
           </div>
@@ -702,6 +705,30 @@ function HomeContent() {
                       Testnet
                     </button>
                   </div>
+                  {/* Network Type Info */}
+                  {networkType === 'testnet' ? (
+                    <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <svg className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="text-xs text-blue-300">
+                          <span className="font-medium">Testnet Mode:</span> Uses testnet USDC (free from faucets) for testing and development. Credits purchased here can only be used for testnet transactions. Perfect for integration testing before going live.
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <svg className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="text-xs text-green-300">
+                          <span className="font-medium">Mainnet Mode:</span> Uses real USDC for production transactions. Credits purchased here are used for live payment settlements with real value.
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Network Selector */}
@@ -998,6 +1025,30 @@ function HomeContent() {
                       Testnet
                     </button>
                   </div>
+                  {/* Network Type Info */}
+                  {networkType === 'testnet' ? (
+                    <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <svg className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="text-xs text-blue-300">
+                          <span className="font-medium">Testnet Mode:</span> Transactions use testnet USDC (no real value). Requires testnet credits.
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <svg className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="text-xs text-green-300">
+                          <span className="font-medium">Mainnet Mode:</span> Transactions use real USDC. Requires mainnet credits.
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Network Selector */}
@@ -1368,12 +1419,17 @@ function HomeContent() {
       {/* Footer */}
       <footer className="border-t border-neutral-800 bg-neutral-900/30">
         <div className="max-w-6xl mx-auto px-6 py-8">
-          <div className="flex items-center justify-center">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 bg-amber-500 rounded flex items-center justify-center">
                 <span className="text-black font-bold text-xs">N</span>
               </div>
               <span className="text-neutral-400 text-sm">NetPay © 2026</span>
+            </div>
+            <div>
+              <a href="mailto:admin@netpay.id" className="text-sm text-neutral-400 hover:text-white">
+                admin@netpay.id
+              </a>
             </div>
           </div>
         </div>

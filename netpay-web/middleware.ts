@@ -30,6 +30,13 @@ export function middleware(request: NextRequest) {
       // WalletConnect Verify API
       "https://verify.walletconnect.com",
       "https://verify.walletconnect.org",
+      // Coinbase Wallet SDK endpoints
+      "https://*.coinbase.com",
+      "wss://*.coinbase.com",
+      "https://keys.coinbase.com",
+      "https://rpc.coinbase.com",
+      "https://api.wallet.coinbase.com",
+      "wss://ws.wallet.coinbase.com",
       // Blockchain RPCs
       "https://*.infura.io",
       "https://*.alchemy.com",
@@ -62,7 +69,7 @@ export function middleware(request: NextRequest) {
       "https://*.reown.com",
       "wss://*.reown.com",
     ].join(' '),
-    "frame-src 'self' https://verify.walletconnect.com https://verify.walletconnect.org",
+    "frame-src 'self' https://verify.walletconnect.com https://verify.walletconnect.org https://*.coinbase.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

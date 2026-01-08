@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { headers } from "next/headers";
 import "./globals.css";
-import { ClientWalletProvider } from "@/app/components/ClientWalletProvider";
+import { WalletProvider } from "@/app/components/WalletProviderInner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,14 +18,11 @@ export const metadata: Metadata = {
   description: "Purchase API credits for gasless USDC payment settlements",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Get cookies for SSR hydration (not passed into client provider)
-  await headers();
-
   return (
     <html lang="en">
       <head>
@@ -35,9 +31,9 @@ export default async function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ClientWalletProvider>
+        <WalletProvider>
           {children}
-        </ClientWalletProvider>
+        </WalletProvider>
       </body>
     </html>
   );

@@ -1,28 +1,48 @@
-// Ensure this module is client-only to avoid initializing WalletConnect/AppKit on the server
 'use client';
 
-import { getDefaultConfig } from '@rainbow-me/rainbowkit';
+import { createConfig, http } from 'wagmi';
+import { 
+  connectorsForWallets 
+} from '@rainbow-me/rainbowkit';
+import {
+  coinbaseWallet,
+  metaMaskWallet,
+  walletConnectWallet,
+  rainbowWallet,
+} from '@rainbow-me/rainbowkit/wallets';
 import { mainnet, sepolia, base, baseSepolia, optimism, optimismSepolia } from 'wagmi/chains';
 
 // Get WalletConnect Project ID from https://cloud.walletconnect.com/
-const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '';
 
 if (!projectId) {
-  // Don't throw at import-time to avoid server build/runtime issues.
-  // Warn so developers know to set the env var for WalletConnect features.
-  // WalletConnect functionality will be disabled until a valid projectId is provided.
-  // Keep this module client-only; it should only run in the browser.
-  // eslint-disable-next-line no-console
   console.warn(
-    'NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set. WalletConnect features will be disabled.'
+    'NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set!\n' +
+    'Get your free project ID from: https://cloud.walletconnect.com/\n' +
+    'Then add it to your .env.local file as: NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_actual_id'
   );
 }
 
-const projectIdStr: string = projectId ?? '';
+const connectors = connectorsForWallets(
+  [
+    {
+      groupName: 'Recommended',
+      wallets: [
+        coinbaseWallet,  // Coinbase Wallet first (best for Base)
+        metaMaskWallet,
+        walletConnectWallet,
+        rainbowWallet,
+      ],
+    },
+  ],
+  {
+    appName: 'NetPay',
+    projectId,
+  }
+);
 
-export const config = getDefaultConfig({
-  appName: 'NetPay',
-  projectId: projectIdStr,
+export const config = createConfig({
+  connectors,
   chains: [
     base,        // Base Mainnet (Chain ID 8453)
     baseSepolia, // Base Sepolia (Chain ID 84532)
@@ -31,7 +51,13 @@ export const config = getDefaultConfig({
     mainnet,     // Ethereum Mainnet (Chain ID 1)
     sepolia,     // Ethereum Sepolia (Chain ID 11155111)
   ],
-  // Disable SSR to avoid pulling WalletConnect/AppKit into server bundles
-  // (WalletConnect is client-only functionality and should run in the browser).
-  ssr: false,
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+    [optimism.id]: http(),
+    [optimismSepolia.id]: http(),
+    [mainnet.id]: http(),
+    [sepolia.id]: http(),
+  },
+  ssr: true,
 });
