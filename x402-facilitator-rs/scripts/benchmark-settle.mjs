@@ -8,6 +8,19 @@
  * 
  * Usage:
  *   node benchmark-settle.mjs [iterations]
+ *   node benchmark-settle.mjs --concurrent [iterations]
+ *   node benchmark-settle.mjs --concurrent --concurrency=10 [iterations]
+ *   node benchmark-settle.mjs --skip-settle [iterations]
+ * 
+ * Options:
+ *   --concurrent          Run requests concurrently instead of sequentially
+ *   --concurrency=N       Number of concurrent requests (default: 5)
+ *   --skip-settle         Skip settlement tests (only run health/verify)
+ * 
+ * Rate Limiting:
+ *   The facilitator has rate limits (20 settlements/minute, 60 verifies/minute).
+ *   Concurrent mode automatically adds delays to respect these limits.
+ *   For high concurrency testing, consider increasing rate limits temporarily.
  * 
  * Environment Variables:
  *   PRIVATE_KEY       - Wallet private key (0x prefixed)
@@ -17,13 +30,40 @@
  */
 
 import { randomBytes } from 'crypto';
-import ethers from 'ethers';
+import { Wallet, getAddress } from 'ethers';
 
 // Configuration
 // Hardcoded test credentials from netpay-web
 const TEST_API_KEY = 'df120001616ba25dbd53c2016fbbdcab272dc31f377dc644cb7c0dd36ee54958';
 const TEST_PRIVATE_KEY = '0x2259e98a73602c87ef0b2c27366f8713988d0b67995f3c8d0dd3aa0990571280';
 const TEST_MERCHANT = '0x706044A25A845e7dC2286835Fcf5cf59D8B2A84b';
+
+// Parse command line arguments
+function parseArgs() {
+  const args = process.argv.slice(2); // Skip 'node' and script name
+  let iterations = 3;
+  let concurrent = false;
+  let concurrency = 5;
+  let skipSettle = false;
+  
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    
+    if (arg === '--concurrent') {
+      concurrent = true;
+    } else if (arg === '--skip-settle') {
+      skipSettle = true;
+    } else if (arg.startsWith('--concurrency=')) {
+      concurrency = parseInt(arg.split('=')[1]) || 5;
+    } else if (!isNaN(parseInt(arg))) {
+      iterations = parseInt(arg);
+    }
+  }
+  
+  return { iterations, concurrent, concurrency, skipSettle };
+}
+
+const parsedArgs = parseArgs();
 
 const CONFIG = {
   netpay: {
@@ -36,9 +76,11 @@ const CONFIG = {
   },
   privateKey: process.env.PRIVATE_KEY || TEST_PRIVATE_KEY,
   merchant: process.env.MERCHANT_ADDRESS || TEST_MERCHANT,
-  iterations: parseInt(process.argv[2]) || 3,
+  iterations: parsedArgs.iterations,
   network: process.env.NETWORK || 'base-sepolia',
-  skipSettle: process.argv.includes('--skip-settle')
+  concurrent: parsedArgs.concurrent,
+  concurrency: parsedArgs.concurrency,
+  skipSettle: parsedArgs.skipSettle
 };
 
 // Colors
@@ -67,8 +109,8 @@ let wallet;
 let checksummedMerchant;
 
 function initWallet() {
-  wallet = new ethers.Wallet(CONFIG.privateKey);
-  checksummedMerchant = ethers.utils.getAddress(CONFIG.merchant);
+  wallet = new Wallet(CONFIG.privateKey);
+  checksummedMerchant = getAddress(CONFIG.merchant);
   
   console.log(`${colors.cyan}🔑 Wallet: ${wallet.address}${colors.reset}`);
   console.log(`${colors.cyan}💰 Merchant: ${checksummedMerchant}${colors.reset}`);
@@ -92,7 +134,7 @@ async function createPayment() {
     name: USDC_CONFIG.eip712.name,
     version: USDC_CONFIG.eip712.version,
     chainId: USDC_CONFIG.chainId,
-    verifyingContract: ethers.utils.getAddress(USDC_CONFIG.eip712.verifyingContract)
+    verifyingContract: getAddress(USDC_CONFIG.eip712.verifyingContract)
   };
 
   const types = {
@@ -115,7 +157,7 @@ async function createPayment() {
     nonce: authorization.nonce
   };
 
-  const signature = await wallet._signTypedData(domain, types, message);
+  const signature = await wallet.signTypedData(domain, types, message);
 
   return { authorization, signature };
 }
@@ -241,74 +283,160 @@ async function benchmarkVerify() {
   const netpayLatencies = [];
   const payaiLatencies = [];
   
-  for (let i = 0; i < CONFIG.iterations; i++) {
-    process.stdout.write(`\r  Progress: ${i + 1}/${CONFIG.iterations}`);
-    
-    const payment = await createPayment();
-    
-    // NetPay verify
-    const npBody = {
-      x402Version: 1,
-      paymentPayload: payment,
-      paymentRequirements: {
-        scheme: 'exact',
-        network: CONFIG.network,
-        asset: USDC_CONFIG.address,
-        payTo: checksummedMerchant,
-        maxAmountRequired: '10000',
-        resource: `/verify-test/${i}`,
-        description: 'Verify test',
-        mimeType: 'application/json',
-        maxTimeoutSeconds: 60
+  if (CONFIG.concurrent) {
+    // Concurrent mode: run all requests in parallel batches
+    const batchSize = CONFIG.concurrency;
+    for (let batch = 0; batch < CONFIG.iterations; batch += batchSize) {
+      const batchEnd = Math.min(batch + batchSize, CONFIG.iterations);
+      process.stdout.write(`\r  Progress: ${batchEnd}/${CONFIG.iterations}`);
+      
+      const promises = [];
+      for (let i = batch; i < batchEnd; i++) {
+        promises.push(
+          (async () => {
+            const payment = await createPayment();
+            
+            // NetPay verify
+            const npBody = {
+              x402Version: 1,
+              paymentPayload: payment,
+              paymentRequirements: {
+                scheme: 'exact',
+                network: CONFIG.network,
+                asset: USDC_CONFIG.address,
+                payTo: checksummedMerchant,
+                maxAmountRequired: '10000',
+                resource: `/verify-test/${i}`,
+                description: 'Verify test',
+                mimeType: 'application/json',
+                maxTimeoutSeconds: 60
+              }
+            };
+            
+            const npHeaders = { 'Content-Type': 'application/json' };
+            if (CONFIG.netpay.apiKey) {
+              npHeaders['Authorization'] = `Bearer ${CONFIG.netpay.apiKey}`;
+            }
+            let start = Date.now();
+            await fetch(`${CONFIG.netpay.url}/verify`, {
+              method: 'POST',
+              headers: npHeaders,
+              body: JSON.stringify(npBody)
+            });
+            netpayLatencies.push(Date.now() - start);
+            
+            // PayAI verify
+            const paBody = {
+              paymentPayload: {
+                x402Version: 1,
+                scheme: 'exact',
+                network: CONFIG.network,
+                payload: {
+                  signature: payment.signature,
+                  authorization: payment.authorization
+                }
+              },
+              paymentRequirements: {
+                scheme: 'exact',
+                network: CONFIG.network,
+                asset: USDC_CONFIG.address,
+                payTo: checksummedMerchant,
+                maxAmountRequired: '10000',
+                resource: `/verify-test/${i}`,
+                description: 'Verify test',
+                mimeType: 'application/json',
+                maxTimeoutSeconds: 60,
+                extra: { name: 'USDC', version: '2' }
+              }
+            };
+            
+            start = Date.now();
+            await fetch(`${CONFIG.payai.url}/verify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(paBody)
+            });
+            payaiLatencies.push(Date.now() - start);
+          })()
+        );
       }
-    };
-    
-    const npHeaders = { 'Content-Type': 'application/json' };
-    if (CONFIG.netpay.apiKey) {
-      npHeaders['Authorization'] = `Bearer ${CONFIG.netpay.apiKey}`;
+      await Promise.all(promises);
+      // Add delay between batches to respect rate limits
+      // Verify rate limit: 60 per minute, so ~1 second between batches of 5
+      const rateLimitDelay = CONFIG.concurrent ? Math.max(500, (60 * 1000) / (CONFIG.concurrency * 2)) : 100;
+      await sleep(rateLimitDelay);
     }
-    let start = Date.now();
-    await fetch(`${CONFIG.netpay.url}/verify`, {
-      method: 'POST',
-      headers: npHeaders,
-      body: JSON.stringify(npBody)
-    });
-    netpayLatencies.push(Date.now() - start);
-    
-    // PayAI verify
-    const paBody = {
-      paymentPayload: {
+  } else {
+    // Sequential mode (original behavior)
+    for (let i = 0; i < CONFIG.iterations; i++) {
+      process.stdout.write(`\r  Progress: ${i + 1}/${CONFIG.iterations}`);
+      
+      const payment = await createPayment();
+      
+      // NetPay verify
+      const npBody = {
         x402Version: 1,
-        scheme: 'exact',
-        network: CONFIG.network,
-        payload: {
-          signature: payment.signature,
-          authorization: payment.authorization
+        paymentPayload: payment,
+        paymentRequirements: {
+          scheme: 'exact',
+          network: CONFIG.network,
+          asset: USDC_CONFIG.address,
+          payTo: checksummedMerchant,
+          maxAmountRequired: '10000',
+          resource: `/verify-test/${i}`,
+          description: 'Verify test',
+          mimeType: 'application/json',
+          maxTimeoutSeconds: 60
         }
-      },
-      paymentRequirements: {
-        scheme: 'exact',
-        network: CONFIG.network,
-        asset: USDC_CONFIG.address,
-        payTo: checksummedMerchant,
-        maxAmountRequired: '10000',
-        resource: `/verify-test/${i}`,
-        description: 'Verify test',
-        mimeType: 'application/json',
-        maxTimeoutSeconds: 60,
-        extra: { name: 'USDC', version: '2' }
+      };
+      
+      const npHeaders = { 'Content-Type': 'application/json' };
+      if (CONFIG.netpay.apiKey) {
+        npHeaders['Authorization'] = `Bearer ${CONFIG.netpay.apiKey}`;
       }
-    };
-    
-    start = Date.now();
-    await fetch(`${CONFIG.payai.url}/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(paBody)
-    });
-    payaiLatencies.push(Date.now() - start);
-    
-    await sleep(100);
+      let start = Date.now();
+      await fetch(`${CONFIG.netpay.url}/verify`, {
+        method: 'POST',
+        headers: npHeaders,
+        body: JSON.stringify(npBody)
+      });
+      netpayLatencies.push(Date.now() - start);
+      
+      // PayAI verify
+      const paBody = {
+        paymentPayload: {
+          x402Version: 1,
+          scheme: 'exact',
+          network: CONFIG.network,
+          payload: {
+            signature: payment.signature,
+            authorization: payment.authorization
+          }
+        },
+        paymentRequirements: {
+          scheme: 'exact',
+          network: CONFIG.network,
+          asset: USDC_CONFIG.address,
+          payTo: checksummedMerchant,
+          maxAmountRequired: '10000',
+          resource: `/verify-test/${i}`,
+          description: 'Verify test',
+          mimeType: 'application/json',
+          maxTimeoutSeconds: 60,
+          extra: { name: 'USDC', version: '2' }
+        }
+      };
+      
+      start = Date.now();
+      await fetch(`${CONFIG.payai.url}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paBody)
+      });
+      payaiLatencies.push(Date.now() - start);
+      
+      await sleep(100);
+    }
   }
   
   console.log(` ${colors.green}✓${colors.reset}`);
@@ -323,23 +451,58 @@ async function benchmarkSettle() {
   const netpayResults = [];
   const payaiResults = [];
   
-  for (let i = 0; i < CONFIG.iterations; i++) {
-    process.stdout.write(`\r  Progress: ${i + 1}/${CONFIG.iterations}`);
-    
-    // Create separate payments for each facilitator (different nonces)
-    const npPayment = await createPayment();
-    const paPayment = await createPayment();
-    
-    // Settle on both
-    const npResult = await settleNetPay(npPayment, i);
-    netpayResults.push(npResult);
-    
-    await sleep(500); // Wait between settlements
-    
-    const paResult = await settlePayAI(paPayment, i);
-    payaiResults.push(paResult);
-    
-    await sleep(500);
+  if (CONFIG.concurrent) {
+    // Concurrent mode: run all requests in parallel batches
+    const batchSize = CONFIG.concurrency;
+    for (let batch = 0; batch < CONFIG.iterations; batch += batchSize) {
+      const batchEnd = Math.min(batch + batchSize, CONFIG.iterations);
+      process.stdout.write(`\r  Progress: ${batchEnd}/${CONFIG.iterations}`);
+      
+      const promises = [];
+      for (let i = batch; i < batchEnd; i++) {
+        promises.push(
+          (async () => {
+            // Create separate payments for each facilitator (different nonces)
+            const npPayment = await createPayment();
+            const paPayment = await createPayment();
+            
+            // Settle on both concurrently
+            const [npResult, paResult] = await Promise.all([
+              settleNetPay(npPayment, i),
+              settlePayAI(paPayment, i)
+            ]);
+            
+            netpayResults.push(npResult);
+            payaiResults.push(paResult);
+          })()
+        );
+      }
+      await Promise.all(promises);
+      // Add delay between batches to respect rate limits
+      // Settlement rate limit: 20 per minute, so ~3 seconds between batches of 5
+      const rateLimitDelay = CONFIG.concurrent ? Math.max(1000, (60 * 1000) / CONFIG.concurrency) : 1000;
+      await sleep(rateLimitDelay);
+    }
+  } else {
+    // Sequential mode (original behavior)
+    for (let i = 0; i < CONFIG.iterations; i++) {
+      process.stdout.write(`\r  Progress: ${i + 1}/${CONFIG.iterations}`);
+      
+      // Create separate payments for each facilitator (different nonces)
+      const npPayment = await createPayment();
+      const paPayment = await createPayment();
+      
+      // Settle on both
+      const npResult = await settleNetPay(npPayment, i);
+      netpayResults.push(npResult);
+      
+      await sleep(500); // Wait between settlements
+      
+      const paResult = await settlePayAI(paPayment, i);
+      payaiResults.push(paResult);
+      
+      await sleep(500);
+    }
   }
   
   console.log(` ${colors.green}✓${colors.reset}`);
@@ -353,18 +516,45 @@ async function benchmarkHealth() {
   const netpayLatencies = [];
   const payaiLatencies = [];
   
-  for (let i = 0; i < CONFIG.iterations; i++) {
-    process.stdout.write(`\r  Progress: ${i + 1}/${CONFIG.iterations}`);
-    
-    let start = Date.now();
-    await fetch(`${CONFIG.netpay.url}/health`);
-    netpayLatencies.push(Date.now() - start);
-    
-    start = Date.now();
-    await fetch(`${CONFIG.payai.url}/health`);
-    payaiLatencies.push(Date.now() - start);
-    
-    await sleep(50);
+  if (CONFIG.concurrent) {
+    // Concurrent mode: run all requests in parallel batches
+    const batchSize = CONFIG.concurrency;
+    for (let batch = 0; batch < CONFIG.iterations; batch += batchSize) {
+      const batchEnd = Math.min(batch + batchSize, CONFIG.iterations);
+      process.stdout.write(`\r  Progress: ${batchEnd}/${CONFIG.iterations}`);
+      
+      const promises = [];
+      for (let i = batch; i < batchEnd; i++) {
+        promises.push(
+          (async () => {
+            let start = Date.now();
+            await fetch(`${CONFIG.netpay.url}/health`);
+            netpayLatencies.push(Date.now() - start);
+            
+            start = Date.now();
+            await fetch(`${CONFIG.payai.url}/health`);
+            payaiLatencies.push(Date.now() - start);
+          })()
+        );
+      }
+      await Promise.all(promises);
+      await sleep(50); // Small delay between batches
+    }
+  } else {
+    // Sequential mode (original behavior)
+    for (let i = 0; i < CONFIG.iterations; i++) {
+      process.stdout.write(`\r  Progress: ${i + 1}/${CONFIG.iterations}`);
+      
+      let start = Date.now();
+      await fetch(`${CONFIG.netpay.url}/health`);
+      netpayLatencies.push(Date.now() - start);
+      
+      start = Date.now();
+      await fetch(`${CONFIG.payai.url}/health`);
+      payaiLatencies.push(Date.now() - start);
+      
+      await sleep(50);
+    }
   }
   
   console.log(` ${colors.green}✓${colors.reset}`);
@@ -489,6 +679,11 @@ async function main() {
   console.log(`  PayAI Key:    ${CONFIG.payai.apiKey ? colors.green + '✓ configured' + colors.reset : colors.yellow + '○ not set (may work without)' + colors.reset}`);
   console.log(`  Network:      ${CONFIG.network}`);
   console.log(`  Iterations:   ${CONFIG.iterations}`);
+  if (CONFIG.concurrent) {
+    console.log(`  Mode:         ${colors.green}Concurrent (${CONFIG.concurrency} parallel)${colors.reset}`);
+  } else {
+    console.log(`  Mode:         Sequential`);
+  }
   if (CONFIG.skipSettle) {
     console.log(`  ${colors.yellow}⚠️  Settlement tests skipped (--skip-settle)${colors.reset}`);
   }

@@ -613,9 +613,9 @@ impl Default for Config {
             security_cleanup_interval_ms: 60000,
             gas_buffer_percentage: 20,
             verify_rate_limit_window_ms: 60000,
-            verify_rate_limit_max: 60,
+            verify_rate_limit_max: 120,
             settle_rate_limit_window_ms: 60000,
-            settle_rate_limit_max: 20,
+            settle_rate_limit_max: 120,
             internal_api_secret: None,
             external: None,
         }

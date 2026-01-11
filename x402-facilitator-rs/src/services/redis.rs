@@ -23,6 +23,23 @@ pub struct CachedNonce {
     pub timestamp: u64,
 }
 
+/// Preconfirmed transaction data for rebroadcast capability
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreconfirmedTxData {
+    pub transaction_hash: String,
+    pub network: String,
+    pub token_address: String,
+    pub from: String,
+    pub to: String,
+    pub value: String,
+    pub valid_after: String,
+    pub valid_before: String,
+    pub nonce: String,
+    pub signature: String,
+    pub preconfirmed_at: u64,
+    pub confirmation_count: u32,
+}
+
 /// Cached merchant rate limits
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedRateLimits {
@@ -118,6 +135,108 @@ impl Redis {
                 Ok(Some(data))
             }
             None => Ok(None),
+        }
+    }
+
+    /// Store preconfirmed transaction data for rebroadcast capability
+    pub async fn store_preconfirmed_tx(
+        &self,
+        tx_hash: &str,
+        data: &PreconfirmedTxData,
+        ttl_secs: u64,
+    ) -> Result<(), RedisError> {
+        let mut conn = self.get_conn().await?;
+        
+        let key = format!("preconfirmed:{}", tx_hash);
+        let json = serde_json::to_string(data)
+            .map_err(|e| RedisError::SerializationError(e.to_string()))?;
+        
+        conn.set_ex::<_, _, ()>(&key, &json, ttl_secs)
+            .await
+            .map_err(|e| RedisError::CommandError(e.to_string()))?;
+        
+        // Also add to a set of preconfirmed transactions for easy lookup
+        let set_key = format!("preconfirmed_set:{}", data.network);
+        conn.sadd::<_, _, ()>(&set_key, tx_hash)
+            .await
+            .map_err(|e| RedisError::CommandError(e.to_string()))?;
+        
+        debug!("Stored preconfirmed tx data: {}", tx_hash);
+        Ok(())
+    }
+
+    /// Get preconfirmed transaction data
+    pub async fn get_preconfirmed_tx(
+        &self,
+        tx_hash: &str,
+    ) -> Result<Option<PreconfirmedTxData>, RedisError> {
+        let mut conn = self.get_conn().await?;
+        
+        let key = format!("preconfirmed:{}", tx_hash);
+        let result: Option<String> = conn.get(&key)
+            .await
+            .map_err(|e| RedisError::CommandError(e.to_string()))?;
+        
+        match result {
+            Some(json) => {
+                let data: PreconfirmedTxData = serde_json::from_str(&json)
+                    .map_err(|e| RedisError::SerializationError(e.to_string()))?;
+                Ok(Some(data))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Delete preconfirmed transaction data (after finalization)
+    pub async fn delete_preconfirmed_tx(
+        &self,
+        tx_hash: &str,
+        network: &str,
+    ) -> Result<(), RedisError> {
+        let mut conn = self.get_conn().await?;
+        
+        let key = format!("preconfirmed:{}", tx_hash);
+        conn.del::<_, ()>(&key)
+            .await
+            .map_err(|e| RedisError::CommandError(e.to_string()))?;
+        
+        // Remove from the set
+        let set_key = format!("preconfirmed_set:{}", network);
+        conn.srem::<_, _, ()>(&set_key, tx_hash)
+            .await
+            .map_err(|e| RedisError::CommandError(e.to_string()))?;
+        
+        debug!("Deleted preconfirmed tx data: {}", tx_hash);
+        Ok(())
+    }
+
+    /// Get all preconfirmed transaction hashes for a network
+    pub async fn get_preconfirmed_tx_hashes(
+        &self,
+        network: &str,
+    ) -> Result<Vec<String>, RedisError> {
+        let mut conn = self.get_conn().await?;
+        
+        let set_key = format!("preconfirmed_set:{}", network);
+        let hashes: Vec<String> = conn.smembers(&set_key)
+            .await
+            .map_err(|e| RedisError::CommandError(e.to_string()))?;
+        
+        Ok(hashes)
+    }
+
+    /// Update preconfirmed transaction confirmation count
+    pub async fn increment_preconfirmed_confirmations(
+        &self,
+        tx_hash: &str,
+    ) -> Result<u32, RedisError> {
+        // Get current data, increment, and save
+        if let Some(mut data) = self.get_preconfirmed_tx(tx_hash).await? {
+            data.confirmation_count += 1;
+            self.store_preconfirmed_tx(tx_hash, &data, 3600).await?; // 1 hour TTL
+            Ok(data.confirmation_count)
+        } else {
+            Ok(0)
         }
     }
 

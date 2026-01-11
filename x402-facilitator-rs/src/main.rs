@@ -123,6 +123,16 @@ async fn main() {
         Arc::new(services::WebhookService::new(config.clone(), database.clone())),
     ));
 
+    // Start transaction monitor (background task for finality checking and reorg handling)
+    let transaction_monitor = Arc::new(services::TransactionMonitor::new(
+        config.clone(),
+        provider_pool.clone(),
+        paymaster_pool.clone(),
+        redis.clone(),
+        database.clone(),
+    ));
+    transaction_monitor.start();
+
     // Initialize Prometheus metrics
     let metrics_service = match MetricsService::new() {
         Ok(m) => Arc::new(m),

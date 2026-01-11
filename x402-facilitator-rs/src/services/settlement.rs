@@ -331,6 +331,93 @@ impl SettlementService {
                     self.log_gas_to_db(r, &normalized_network, &tx_hash).await;
                 }
                 
+                // Handle preconfirmed (flashblock) - store for monitoring but return completed to client
+                if confirmed && final_status == "preconfirmed" {
+                    info!("⚡ Flashblock preconfirmed, storing for finality monitoring: {}", tx_hash);
+                    info!("⏱️ Total settlement time: {}ms", total_start.elapsed().as_millis());
+                    
+                    // Log preconfirmed event
+                    self.log_tx_event(transaction_id, "preconfirmed", Some("pending"), Some("preconfirmed"), None).await;
+                    
+                    // Store preconfirmed transaction data for rebroadcast capability
+                    let preconfirmed_data = crate::services::redis::PreconfirmedTxData {
+                        transaction_hash: tx_hash.clone(),
+                        network: normalized_network.clone(),
+                        token_address: requirements.asset.clone(),
+                        from: payer.clone(),
+                        to: requirements.pay_to.clone(),
+                        value: requirements.max_amount_required.clone(),
+                        valid_after: payload.authorization.valid_after.clone(),
+                        valid_before: payload.authorization.valid_before.clone(),
+                        nonce: nonce.clone(),
+                        signature: payload.signature.clone(),
+                        preconfirmed_at: chrono::Utc::now().timestamp_millis() as u64,
+                        confirmation_count: 0,
+                    };
+                    
+                    if let Err(e) = self.redis.store_preconfirmed_tx(&tx_hash, &preconfirmed_data, 3600).await {
+                        warn!("Failed to store preconfirmed tx data: {} (non-fatal)", e);
+                    }
+                    
+                    // Atomic USD credit deduction (gas cost + service fee)
+                    // This happens synchronously to ensure balance is deducted before response
+                    let fees_info = if let Some(ref receipt) = receipt {
+                        match self.deduct_credits_for_settlement(
+                            &api_key.api_key,
+                            transaction_id,
+                            receipt,
+                            &normalized_network,
+                        ).await {
+                            Ok(deduction) => {
+                                // Invalidate API key cache so next request sees updated balance
+                                let _ = self.redis.invalidate_api_key(&api_key.api_key).await;
+                                
+                                Some(crate::types::SettlementFees {
+                                    service_fee: format!("{:.6}", deduction.service_fee_usd),
+                                    gas_cost: format!("{:.6}", deduction.gas_cost_usd),
+                                    total_fees: format!("{:.6}", deduction.total_fees_usd),
+                                    balance_after: format!("{:.6}", deduction.balance_after),
+                                    balance_type: deduction.balance_type,
+                                })
+                            },
+                            Err(e) => {
+                                warn!("Failed to deduct USD credits: {} (non-fatal)", e);
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+
+                    // Update database with preconfirmed status (monitor will finalize)
+                    if let Err(e) = self.database.update_transaction(transaction_id, "preconfirmed").await {
+                        error!("Failed to update transaction status: {}", e);
+                    }
+
+                    // Cache the nonce with preconfirmed status
+                    if let Err(e) = self.redis.cache_used_nonce(payer, nonce, &tx_hash, "preconfirmed", 86400).await {
+                        error!("Failed to cache nonce: {}", e);
+                    }
+
+                    // Return "completed" to client for fast UX - monitor handles finality
+                    if let Some(fees) = fees_info {
+                        return SettleResponse::success_with_fees(
+                            normalized_network,
+                            payer.clone(),
+                            tx_hash,
+                            SettlementStatus::Completed, // Client sees completed
+                            fees,
+                        );
+                    } else {
+                        return SettleResponse::success(
+                            normalized_network,
+                            payer.clone(),
+                            tx_hash,
+                            SettlementStatus::Completed, // Client sees completed
+                        );
+                    }
+                }
+                
                 if confirmed && final_status == "completed" {
                     info!("✅ Settlement confirmed: {}", tx_hash);
                     info!("⏱️ Total settlement time: {}ms", total_start.elapsed().as_millis());
@@ -602,15 +689,34 @@ impl SettlementService {
     }
 
     /// Wait for transaction confirmation with flashblock optimization
-    /// Uses WebSocket transport for RPC calls when available (low latency)
+    /// Uses HTTP for polling (better parallelism under concurrent load)
     /// Returns (confirmed: bool, status: &'static str, Option<TransactionReceipt>)
     async fn wait_for_confirmation_with_receipt(&self, tx_hash: &str, network: &str) -> (bool, &'static str, Option<alloy::rpc::types::TransactionReceipt>) {
-        let provider_arc = match self.provider_pool.get_provider(network) {
-            Ok(p) => p,
-            Err(e) => {
-                warn!("Provider error during confirmation wait: {}", e);
+        // Get RPC URL and create HTTP provider for polling
+        // HTTP is better for concurrent polling because each request is independent
+        // WebSocket multiplexes on a single connection, causing queueing under load
+        let rpc_url = match self.config.get_rpc_url(network) {
+            Some(url) => url,
+            None => {
+                warn!("No RPC URL for network: {}", network);
                 return (false, "pending", None);
             }
+        };
+        
+        // Convert to HTTP URL if needed
+        let http_url = if rpc_url.starts_with("wss://") {
+            rpc_url.replace("wss://", "https://")
+        } else if rpc_url.starts_with("ws://") {
+            rpc_url.replace("ws://", "http://")
+        } else {
+            rpc_url.to_string()
+        };
+        
+        // Create HTTP provider (reqwest pools connections automatically)
+        let provider = match ProviderBuilder::new()
+            .on_http(http_url.parse().unwrap_or_else(|_| "http://localhost:8545".parse().unwrap()))
+        {
+            p => p,
         };
 
         // Parse hash
@@ -626,37 +732,26 @@ impl SettlementService {
         
         let hash: FixedBytes<32> = FixedBytes::from_slice(&hash_bytes);
         let is_flashblock = Self::is_flashblock_network(network);
-        let transport_type = if provider_arc.is_websocket() { "WebSocket" } else { "HTTP" };
-        
-        // Helper to get receipt based on provider type
-        let get_receipt = |hash: FixedBytes<32>| {
-            let provider = provider_arc.clone();
-            async move {
-                match provider.as_ref() {
-                    ProviderType::Http(p) => p.get_transaction_receipt(hash).await,
-                    ProviderType::WebSocket(p) => p.get_transaction_receipt(hash).await,
-                }
-            }
-        };
         
         if is_flashblock {
-            info!("⚡ Flashblock fast polling via {} for {}", transport_type, network);
+            info!("⚡ Flashblock fast polling via HTTP (pooled) for {}", network);
             
             // Phase 1: Aggressive flashblock polling (100ms intervals for 2s)
-            // WebSocket transport provides lowest latency for each RPC call
+            // HTTP with connection pooling allows true parallelism
             let start = std::time::Instant::now();
             let flashblock_duration = Duration::from_millis(2000);
             let flashblock_interval = Duration::from_millis(100);
             
             while start.elapsed() < flashblock_duration {
-                match get_receipt(hash).await {
+                match provider.get_transaction_receipt(hash).await {
                     Ok(Some(receipt)) => {
                         let elapsed = start.elapsed().as_millis();
                         Self::log_gas_usage(&receipt, network, tx_hash);
                         
                         if receipt.status() {
-                            info!("⚡ Flashblock confirmation in {}ms via {}: {}", elapsed, transport_type, tx_hash);
-                            return (true, "completed", Some(receipt));
+                            info!("⚡ Flashblock preconfirmation in {}ms via HTTP: {}", elapsed, tx_hash);
+                            // Return "preconfirmed" for flashblock - monitor will finalize
+                            return (true, "preconfirmed", Some(receipt));
                         } else {
                             info!("⚡ Transaction reverted in {}ms: {}", elapsed, tx_hash);
                             return (true, "failed", Some(receipt));
@@ -679,13 +774,13 @@ impl SettlementService {
         let start = std::time::Instant::now();
         
         while start.elapsed() < standard_duration {
-            match get_receipt(hash).await {
+            match provider.get_transaction_receipt(hash).await {
                 Ok(Some(receipt)) => {
                     let elapsed = start.elapsed().as_millis();
                     Self::log_gas_usage(&receipt, network, tx_hash);
                     
                     if receipt.status() {
-                        info!("✅ Transaction confirmed in {}ms via {}: {}", elapsed, transport_type, tx_hash);
+                        info!("✅ Transaction confirmed in {}ms via HTTP: {}", elapsed, tx_hash);
                         return (true, "completed", Some(receipt));
                     } else {
                         info!("❌ Transaction reverted in {}ms: {}", elapsed, tx_hash);

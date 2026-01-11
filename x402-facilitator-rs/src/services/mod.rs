@@ -20,6 +20,7 @@ pub use provider_pool::ProviderPool;
 pub use paymaster_pool::PaymasterPool;
 pub use verification::VerificationService;
 pub use settlement::SettlementService;
+pub use transaction_monitor::TransactionMonitor;
 pub use webhook::WebhookService;
 pub use metrics::MetricsService;
 pub use api_key_db::{ApiKeyDb, ApiKeyDbError, GasDeductionData, ApiKeyStats};

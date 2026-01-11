@@ -15,15 +15,14 @@
 //! - signature: EIP-712 signature (v, r, s)
 
 use std::sync::Arc;
-use std::time::{Instant, Duration};
+use std::time::Instant;
 use async_trait::async_trait;
 use tracing::{info, warn, debug};
 use alloy::primitives::{Address, U256, FixedBytes, keccak256, B256};
 use alloy::signers::k256::ecdsa::{RecoveryId, Signature as K256Signature, VerifyingKey};
-use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::providers::ProviderBuilder;
 use alloy::network::EthereumWallet;
 use alloy::sol;
-use tokio::time::timeout;
 
 use crate::config::external::{TransferType, ExternalConfig};
 use crate::services::provider_pool::{ProviderPool, ProviderType};
@@ -462,79 +461,36 @@ impl TransferStrategy for Erc3009Strategy {
         info!("   Value: {}", value);
         info!("   Nonce: 0x{}", hex::encode(nonce));
         
-        // Determine connection type and execute
-        let is_ws_url = rpc_url.starts_with("wss://") || rpc_url.starts_with("ws://");
-        let mut used_websocket = false;
-        
-        let tx_hash = if is_ws_url {
-            // Try WebSocket first
-            let ws_result: Result<String, StrategyError> = async {
-                let ws_connect = WsConnect::new(rpc_url.clone());
-                let provider = timeout(
-                    Duration::from_secs(10),
-                    ProviderBuilder::new()
-                        .with_recommended_fillers()
-                        .wallet(wallet.clone())
-                        .on_ws(ws_connect)
-                ).await
-                    .map_err(|_| StrategyError::NetworkError("WebSocket connection timeout".to_string()))?
-                    .map_err(|e| StrategyError::NetworkError(format!("WebSocket connect failed: {}", e)))?;
-                
-                let contract = IERC3009::new(token, &provider);
-                let tx = contract.transferWithAuthorization(
-                    from, to, value, valid_after, valid_before, nonce,
-                    sig.v, sig.r_bytes(), sig.s_bytes(),
-                ).gas(gas_limit);
-                
-                let pending = tx.send().await
-                    .map_err(|e| StrategyError::ExecutionError(format!("Transaction send failed: {}", e)))?;
-                Ok(format!("{:?}", pending.tx_hash()))
-            }.await;
-            
-            match ws_result {
-                Ok(hash) => {
-                    used_websocket = true;
-                    hash
-                }
-                Err(ws_err) => {
-                    warn!("⚠️ WebSocket failed ({}), falling back to HTTP", ws_err);
-                    let http_url = rpc_url.replace("wss://", "https://").replace("ws://", "http://");
-                    let provider = ProviderBuilder::new()
-                        .with_recommended_fillers()
-                        .wallet(wallet.clone())
-                        .on_http(http_url.parse().map_err(|e| StrategyError::NetworkError(format!("Invalid URL: {}", e)))?);
-                    
-                    let contract = IERC3009::new(token, &provider);
-                    let tx = contract.transferWithAuthorization(
-                        from, to, value, valid_after, valid_before, nonce,
-                        sig.v, sig.r_bytes(), sig.s_bytes(),
-                    ).gas(gas_limit);
-                    
-                    let pending = tx.send().await
-                        .map_err(|e| StrategyError::ExecutionError(format!("Transaction send failed: {}", e)))?;
-                    format!("{:?}", pending.tx_hash())
-                }
-            }
+        // Convert WebSocket URL to HTTP for transaction sending
+        // HTTP is preferred because reqwest pools connections automatically,
+        // avoiding the ~200ms WebSocket handshake overhead per transaction.
+        // Transaction send is a single RPC call, so WS streaming isn't needed.
+        let http_url = if rpc_url.starts_with("wss://") {
+            rpc_url.replace("wss://", "https://")
+        } else if rpc_url.starts_with("ws://") {
+            rpc_url.replace("ws://", "http://")
         } else {
-            // HTTP only
-            let provider = ProviderBuilder::new()
-                .with_recommended_fillers()
-                .wallet(wallet.clone())
-                .on_http(rpc_url.parse().map_err(|e| StrategyError::NetworkError(format!("Invalid URL: {}", e)))?);
-            
-            let contract = IERC3009::new(token, &provider);
-            let tx = contract.transferWithAuthorization(
-                from, to, value, valid_after, valid_before, nonce,
-                sig.v, sig.r_bytes(), sig.s_bytes(),
-            ).gas(gas_limit);
-            
-            let pending = tx.send().await
-                .map_err(|e| StrategyError::ExecutionError(format!("Transaction send failed: {}", e)))?;
-            format!("{:?}", pending.tx_hash())
+            rpc_url.clone()
         };
         
-        info!("✅ Transaction sent via {}: {} ({}ms)", 
-              if used_websocket { "WebSocket" } else { "HTTP" }, 
+        // Use HTTP provider with automatic connection pooling
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(wallet.clone())
+            .on_http(http_url.parse().map_err(|e| StrategyError::NetworkError(format!("Invalid URL: {}", e)))?);
+        
+        let contract = IERC3009::new(token, &provider);
+        let tx = contract.transferWithAuthorization(
+            from, to, value, valid_after, valid_before, nonce,
+            sig.v, sig.r_bytes(), sig.s_bytes(),
+        ).gas(gas_limit);
+        
+        let tx_hash = tx.send().await
+            .map_err(|e| StrategyError::ExecutionError(format!("Transaction send failed: {}", e)))?
+            .tx_hash()
+            .to_string();
+        
+        info!("✅ Transaction sent via HTTP (pooled): {} ({}ms)", 
               tx_hash, 
               start.elapsed().as_millis());
         
