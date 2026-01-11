@@ -33,7 +33,7 @@ pub fn init_logging(log_level: &str, log_dir: &Path) {
     // Build env filter
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| {
-            EnvFilter::new(format!("x402_facilitator={},tower_http=debug", log_level))
+            EnvFilter::new(format!("x402_facilitator={},tower_http={}", log_level, log_level))
         });
 
     // Console layer with colors

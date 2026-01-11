@@ -519,6 +519,9 @@ async fn handle_credit_purchase(
                         info!("✓ Added {:.2} USDC ({}) to existing API key {}...{}", 
                               usdc_amount, balance_type.as_str(), &existing_key[..8.min(existing_key.len())], &existing_key[existing_key.len().saturating_sub(4)..]);
                         
+                        // Invalidate cache so balance updates are seen immediately
+                        let _ = state.settlement_service.invalidate_api_key_cache(&existing_key).await;
+                        
                         return (
                             StatusCode::OK,
                             Json(json!({

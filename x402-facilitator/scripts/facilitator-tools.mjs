@@ -958,19 +958,26 @@ async function consolidateFundsMenu() {
     const wallets = keys.map(k => new ethers.Wallet(k, provider));
     const feeData = await provider.getFeeData();
     const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || 0n;
-    const gasCost = BigInt(GAS_LIMIT_SIMPLE_TRANSFER) * gasPrice;
+    // Add 50% buffer for gas price fluctuations and safety margin
+    const gasCost = (BigInt(GAS_LIMIT_SIMPLE_TRANSFER) * gasPrice * 150n) / 100n;
+    // Minimum amount to make consolidation worthwhile (must be > gas cost)
+    const minThreshold = gasCost * 110n / 100n;
     
     let totalToConsolidate = 0n;
     
     console.log('Wallet balances:');
     for (let i = 0; i < wallets.length; i++) {
       const balance = await provider.getBalance(wallets[i].address);
-      const amountToSend = balance > gasCost ? balance - gasCost : 0n;
+      const amountToSend = balance > minThreshold ? balance - gasCost : 0n;
       totalToConsolidate += amountToSend;
       
       console.log(`[${i + 1}] ${wallets[i].address}`);
       console.log(`    Balance: ${ethers.formatEther(balance)} ${config.gasToken}`);
-      console.log(`    Will send: ${ethers.formatEther(amountToSend)} ${config.gasToken}`);
+      if (balance < minThreshold) {
+        console.log(`    Will send: 0 ${config.gasToken} (balance too low)`);
+      } else {
+        console.log(`    Will send: ${ethers.formatEther(amountToSend)} ${config.gasToken}`);
+      }
     }
     
     console.log(`\nTotal to consolidate: ${ethers.formatEther(totalToConsolidate)} ${config.gasToken}`);
@@ -981,11 +988,18 @@ async function consolidateFundsMenu() {
       console.log(`\n🚀 Executing consolidation...`);
       
       for (let i = 0; i < wallets.length; i++) {
+        // Re-fetch balance and gas price right before each transaction
+        const currentFeeData = await provider.getFeeData();
+        const currentGasPrice = currentFeeData.gasPrice || currentFeeData.maxFeePerGas || 0n;
+        const currentGasCost = (BigInt(GAS_LIMIT_SIMPLE_TRANSFER) * currentGasPrice * 150n) / 100n;
+        
         const balance = await provider.getBalance(wallets[i].address);
-        const amountToSend = balance > gasCost ? balance - gasCost : 0n;
+        const amountToSend = balance > (currentGasCost * 110n / 100n) ? balance - currentGasCost : 0n;
         
         if (amountToSend > 0n) {
           console.log(`\n[${i + 1}/${wallets.length}] Consolidating from wallet [${i + 1}]`);
+          console.log(`  Balance: ${ethers.formatEther(balance)} ${config.gasToken}`);
+          console.log(`  Sending: ${ethers.formatEther(amountToSend)} ${config.gasToken}`);
           
           try {
             const tx = await wallets[i].sendTransaction({
@@ -1000,6 +1014,8 @@ async function consolidateFundsMenu() {
           } catch (error) {
             console.log(`  ❌ Error: ${error.message}`);
           }
+        } else if (balance > 0n) {
+          console.log(`\n[${i + 1}/${wallets.length}] Skipping wallet [${i + 1}] - balance too low (${ethers.formatEther(balance)} ${config.gasToken})`);
         }
       }
       

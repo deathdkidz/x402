@@ -123,6 +123,11 @@ impl SettlementService {
         }
     }
 
+    /// Invalidate API key cache (public wrapper for redis invalidation)
+    pub async fn invalidate_api_key_cache(&self, api_key: &str) -> Result<(), crate::services::redis::RedisError> {
+        self.redis.invalidate_api_key(api_key).await
+    }
+
     /// Main settlement method with safety checks and timing instrumentation
     pub async fn settle(
         &self,
@@ -244,19 +249,29 @@ impl SettlementService {
         debug!("⏱️ Parallel RPC checks (balance + nonce): {}ms", start.elapsed().as_millis());
         info!("✓ Parallel checks completed successfully");
 
-        // Check API key has sufficient USD credits
-        // With new model: gas is deducted atomically after confirmation
-        // So we just check they have some balance (minimum $0.01)
+        // Check API key has sufficient USD credits for estimated settlement cost
+        // This is a pre-flight check to ensure merchant can afford the transaction
         use crate::services::price_feed::SERVICE_FEE_USD;
+        use crate::config::network_resolver;
         
-        let min_balance = SERVICE_FEE_USD; // $0.001 service fee minimum
-        let total_balance = api_key.total_balance();
-        if total_balance < min_balance {
-            warn!("API key {}... has insufficient USD credits: ${} < ${}", 
-                  &api_key.api_key[..8], total_balance, min_balance);
+        let is_testnet = network_resolver::is_testnet(&normalized_network).unwrap_or(false);
+        let relevant_balance = if is_testnet { api_key.testnet_balance } else { api_key.mainnet_balance };
+        
+        // Estimate settlement cost: service fee + estimated gas cost
+        // Use conservative estimate: 100,000 gas at current price + 50% buffer
+        let estimated_cost = self.estimate_settlement_cost(&normalized_network).await;
+        
+        let balance_type = if is_testnet { "testnet" } else { "mainnet" };
+        info!("💳 Pre-settlement credit check: {} balance ${:.6} vs estimated cost ${:.6}", 
+              balance_type, relevant_balance, estimated_cost);
+        
+        if relevant_balance < estimated_cost {
+            warn!("❌ API key {}... has insufficient {} credits: ${:.6} < ${:.6}", 
+                  &api_key.api_key[..8], balance_type, relevant_balance, estimated_cost);
             return SettleResponse::failure(
                 normalized_network, 
-                format!("Insufficient USD credits. Balance: ${}, Minimum: ${}", total_balance, min_balance)
+                format!("Insufficient {} credits. Balance: ${:.6}, Estimated cost: ${:.6}. Please top up your account.",
+                    balance_type, relevant_balance, estimated_cost)
             );
         }
 
@@ -332,13 +347,18 @@ impl SettlementService {
                             receipt,
                             &normalized_network,
                         ).await {
-                            Ok(deduction) => Some(crate::types::SettlementFees {
-                                service_fee: format!("{:.6}", deduction.service_fee_usd),
-                                gas_cost: format!("{:.6}", deduction.gas_cost_usd),
-                                total_fees: format!("{:.6}", deduction.total_fees_usd),
-                                balance_after: format!("{:.6}", deduction.balance_after),
-                                balance_type: deduction.balance_type,
-                            }),
+                            Ok(deduction) => {
+                                // Invalidate API key cache so next request sees updated balance
+                                let _ = self.redis.invalidate_api_key(&api_key.api_key).await;
+                                
+                                Some(crate::types::SettlementFees {
+                                    service_fee: format!("{:.6}", deduction.service_fee_usd),
+                                    gas_cost: format!("{:.6}", deduction.gas_cost_usd),
+                                    total_fees: format!("{:.6}", deduction.total_fees_usd),
+                                    balance_after: format!("{:.6}", deduction.balance_after),
+                                    balance_type: deduction.balance_type,
+                                })
+                            },
                             Err(e) => {
                                 warn!("Failed to deduct USD credits: {} (non-fatal)", e);
                                 None
@@ -582,6 +602,7 @@ impl SettlementService {
     }
 
     /// Wait for transaction confirmation with flashblock optimization
+    /// Uses WebSocket transport for RPC calls when available (low latency)
     /// Returns (confirmed: bool, status: &'static str, Option<TransactionReceipt>)
     async fn wait_for_confirmation_with_receipt(&self, tx_hash: &str, network: &str) -> (bool, &'static str, Option<alloy::rpc::types::TransactionReceipt>) {
         let provider_arc = match self.provider_pool.get_provider(network) {
@@ -605,6 +626,7 @@ impl SettlementService {
         
         let hash: FixedBytes<32> = FixedBytes::from_slice(&hash_bytes);
         let is_flashblock = Self::is_flashblock_network(network);
+        let transport_type = if provider_arc.is_websocket() { "WebSocket" } else { "HTTP" };
         
         // Helper to get receipt based on provider type
         let get_receipt = |hash: FixedBytes<32>| {
@@ -618,22 +640,22 @@ impl SettlementService {
         };
         
         if is_flashblock {
-            info!("⚡ Using Flashblock-optimized polling for {}", network);
+            info!("⚡ Flashblock fast polling via {} for {}", transport_type, network);
             
-            // Phase 1: Aggressive flashblock polling (100ms intervals for 1.5s)
+            // Phase 1: Aggressive flashblock polling (100ms intervals for 2s)
+            // WebSocket transport provides lowest latency for each RPC call
             let start = std::time::Instant::now();
-            let flashblock_duration = Duration::from_millis(1500);
+            let flashblock_duration = Duration::from_millis(2000);
             let flashblock_interval = Duration::from_millis(100);
             
             while start.elapsed() < flashblock_duration {
                 match get_receipt(hash).await {
                     Ok(Some(receipt)) => {
                         let elapsed = start.elapsed().as_millis();
-                        // Log gas usage
                         Self::log_gas_usage(&receipt, network, tx_hash);
                         
                         if receipt.status() {
-                            info!("⚡ Flashblock confirmation in {}ms: {}", elapsed, tx_hash);
+                            info!("⚡ Flashblock confirmation in {}ms via {}: {}", elapsed, transport_type, tx_hash);
                             return (true, "completed", Some(receipt));
                         } else {
                             info!("⚡ Transaction reverted in {}ms: {}", elapsed, tx_hash);
@@ -660,11 +682,10 @@ impl SettlementService {
             match get_receipt(hash).await {
                 Ok(Some(receipt)) => {
                     let elapsed = start.elapsed().as_millis();
-                    // Log gas usage
                     Self::log_gas_usage(&receipt, network, tx_hash);
                     
                     if receipt.status() {
-                        info!("✅ Transaction confirmed in {}ms: {}", elapsed, tx_hash);
+                        info!("✅ Transaction confirmed in {}ms via {}: {}", elapsed, transport_type, tx_hash);
                         return (true, "completed", Some(receipt));
                     } else {
                         info!("❌ Transaction reverted in {}ms: {}", elapsed, tx_hash);
@@ -801,6 +822,67 @@ impl SettlementService {
             balance_after,
             balance_type: balance_type.as_str().to_string(),
         })
+    }
+
+    /// Estimate settlement cost (gas + service fee) in USD
+    /// Uses conservative estimate: 100,000 gas at current network gas price
+    /// with a 50% buffer to ensure merchant won't run out mid-transaction
+    async fn estimate_settlement_cost(&self, network: &str) -> rust_decimal::Decimal {
+        use rust_decimal::Decimal;
+        use rust_decimal_macros::dec;
+        use crate::services::{ApiKeyDb, price_feed::SERVICE_FEE_USD};
+        
+        // Conservative gas estimate for ERC-3009 transferWithAuthorization
+        let estimated_gas: u64 = 100_000;
+        
+        // Try to get current gas price from provider (returns wei as u128)
+        let gas_price_wei = match self.provider_pool.get_provider(network) {
+            Ok(provider_arc) => {
+                let result = match provider_arc.as_ref() {
+                    ProviderType::Http(p) => p.get_gas_price().await,
+                    ProviderType::WebSocket(p) => p.get_gas_price().await,
+                };
+                match result {
+                    Ok(price) => price as f64,
+                    Err(_) => 1_000_000_000.0, // Fallback to 1 gwei in wei
+                }
+            }
+            Err(_) => 1_000_000_000.0, // Fallback to 1 gwei in wei
+        };
+        
+        // Get native token price from database cache
+        let native_symbol = self.config.networks.get(network)
+            .map(|n| n.native_token.symbol.as_str())
+            .unwrap_or("ETH");
+        
+        let native_price_usd = match ApiKeyDb::get_native_token_price(
+            self.database.pool(),
+            native_symbol,
+        ).await {
+            Ok(Some(price)) => price,
+            _ => dec!(2000), // Fallback to $2000 (conservative ETH estimate)
+        };
+        
+        // Calculate gas cost: gas_used * gas_price_wei * 1e-18 * native_price
+        // gas_price_wei is in wei, so multiply by 1e-18 to get ETH
+        let gas_cost_native = Decimal::try_from(
+            (estimated_gas as f64) * gas_price_wei * 1e-18
+        ).unwrap_or(dec!(0.0001));
+        
+        let gas_cost_usd = gas_cost_native * native_price_usd;
+        
+        // Total cost = gas + service fee, with 50% buffer for price fluctuations
+        let total = (gas_cost_usd + SERVICE_FEE_USD) * dec!(1.5);
+        
+        // Convert wei to gwei for logging
+        let gas_price_gwei = gas_price_wei / 1e9;
+        
+        info!(
+            "💰 Pre-flight cost estimate for {}: {}gas @ {:.4}gwei × ${:.2}/ETH = ${:.6} (fee: ${:.3}, total with 50% buffer: ${:.6})",
+            network, estimated_gas, gas_price_gwei, native_price_usd, gas_cost_usd, SERVICE_FEE_USD, total
+        );
+        
+        total
     }
 
     /// Log transaction event to database for audit trail

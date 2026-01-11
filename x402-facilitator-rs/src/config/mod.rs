@@ -58,7 +58,6 @@ pub struct NetworkConfig {
     pub network_type: NetworkType,
     pub rpc_url: String,
     pub flashblock_enabled: bool,
-    pub credit_cost: i32,
     pub gas_limit: u64,
     pub gas_buffer_percent: u32,
     pub native_token: NativeTokenConfig,
@@ -278,7 +277,6 @@ impl Config {
                 network_type: net.network_type.clone(),
                 rpc_url,
                 flashblock_enabled: net.flashblock_enabled,
-                credit_cost: net.credit_cost,
                 gas_limit: net.gas_limit,
                 gas_buffer_percent: net.gas_buffer_percent,
                 native_token: NativeTokenConfig {
@@ -327,7 +325,6 @@ impl Config {
             network_type: NetworkType::Evm,
             rpc_url: env::var("BASE_RPC").unwrap_or_else(|_| "wss://base-mainnet.g.alchemy.com/v2/demo".to_string()),
             flashblock_enabled: true,
-            credit_cost: 1,
             gas_limit: 200000,
             gas_buffer_percent: 20,
             native_token: eth_native(),
@@ -340,7 +337,6 @@ impl Config {
             network_type: NetworkType::Evm,
             rpc_url: env::var("ETHEREUM_RPC").unwrap_or_else(|_| "https://eth-mainnet.g.alchemy.com/v2/demo".to_string()),
             flashblock_enabled: false,
-            credit_cost: 3,
             gas_limit: 200000,
             gas_buffer_percent: 25,
             native_token: eth_native(),
@@ -353,7 +349,6 @@ impl Config {
             network_type: NetworkType::Evm,
             rpc_url: env::var("OP_MAINNET_RPC").unwrap_or_else(|_| "wss://opt-mainnet.g.alchemy.com/v2/demo".to_string()),
             flashblock_enabled: true,
-            credit_cost: 1,
             gas_limit: 200000,
             gas_buffer_percent: 20,
             native_token: eth_native(),
@@ -366,7 +361,6 @@ impl Config {
             network_type: NetworkType::Evm,
             rpc_url: env::var("HYPEREVM_RPC").unwrap_or_else(|_| "wss://hyperliquid-mainnet.g.alchemy.com/v2/demo".to_string()),
             flashblock_enabled: false,
-            credit_cost: 1,
             gas_limit: 200000,
             gas_buffer_percent: 20,
             native_token: NativeTokenConfig {
@@ -384,7 +378,6 @@ impl Config {
             network_type: NetworkType::Evm,
             rpc_url: env::var("BASE_SEPOLIA_RPC").unwrap_or_else(|_| "wss://base-sepolia.g.alchemy.com/v2/demo".to_string()),
             flashblock_enabled: true,
-            credit_cost: 0,
             gas_limit: 200000,
             gas_buffer_percent: 20,
             native_token: eth_native(),
@@ -397,7 +390,6 @@ impl Config {
             network_type: NetworkType::Evm,
             rpc_url: env::var("ETHEREUM_SEPOLIA_RPC").unwrap_or_else(|_| "https://eth-sepolia.g.alchemy.com/v2/demo".to_string()),
             flashblock_enabled: false,
-            credit_cost: 0,
             gas_limit: 200000,
             gas_buffer_percent: 25,
             native_token: eth_native(),
@@ -410,7 +402,6 @@ impl Config {
             network_type: NetworkType::Evm,
             rpc_url: env::var("OP_SEPOLIA_RPC").unwrap_or_else(|_| "https://opt-sepolia.g.alchemy.com/v2/demo".to_string()),
             flashblock_enabled: true,
-            credit_cost: 0,
             gas_limit: 200000,
             gas_buffer_percent: 20,
             native_token: eth_native(),
@@ -423,7 +414,6 @@ impl Config {
             network_type: NetworkType::Evm,
             rpc_url: env::var("HYPEREVM_TESTNET_RPC").unwrap_or_else(|_| "wss://hyperliquid-testnet.g.alchemy.com/v2/demo".to_string()),
             flashblock_enabled: false,
-            credit_cost: 0,
             gas_limit: 200000,
             gas_buffer_percent: 20,
             native_token: NativeTokenConfig {
@@ -487,13 +477,6 @@ impl Config {
     pub fn get_forwarder_address(&self, network: &str, token_address: &str) -> Option<String> {
         self.get_token_by_address(network, token_address)
             .and_then(|t| t.forwarder_address.clone())
-    }
-
-    /// Get credit cost for a network
-    pub fn get_credit_cost(&self, network: &str) -> i32 {
-        self.networks.get(network)
-            .map(|n| n.credit_cost)
-            .unwrap_or(1)
     }
 
     /// Check if network supports flashblocks
@@ -651,7 +634,6 @@ mod tests {
                     network_type: NetworkType::Evm,
                     rpc_url: "https://example.com".to_string(),
                     flashblock_enabled: true,
-                    credit_cost: 1,
                     gas_limit: 200000,
                     gas_buffer_percent: 20,
                     native_token: NativeTokenConfig {
@@ -667,7 +649,6 @@ mod tests {
                     network_type: NetworkType::Evm,
                     rpc_url: "https://example.com".to_string(),
                     flashblock_enabled: false,
-                    credit_cost: 0,
                     gas_limit: 200000,
                     gas_buffer_percent: 20,
                     native_token: NativeTokenConfig {

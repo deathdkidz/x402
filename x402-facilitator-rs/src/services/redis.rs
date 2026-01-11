@@ -165,6 +165,21 @@ impl Redis {
         Ok(())
     }
 
+    /// Invalidate cached API key (balance, etc.)
+    /// Call this after any balance update so the facilitator uses fresh data
+    pub async fn invalidate_api_key(&self, api_key: &str) -> Result<(), RedisError> {
+        let mut conn = self.get_conn().await?;
+        
+        let key = format!("apikey:{}", api_key);
+        
+        conn.del::<_, ()>(&key)
+            .await
+            .map_err(|e| RedisError::CommandError(e.to_string()))?;
+        
+        info!("🔄 Invalidated API key cache: {}...", &api_key[..8.min(api_key.len())]);
+        Ok(())
+    }
+
     /// Cache merchant rate limits
     pub async fn cache_merchant_rate_limits(
         &self,

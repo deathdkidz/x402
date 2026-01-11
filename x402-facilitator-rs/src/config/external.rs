@@ -104,8 +104,6 @@ pub struct NetworkConfigExternal {
     pub explorer_url: Option<String>,
     #[serde(default)]
     pub flashblock_enabled: bool,
-    #[serde(default = "default_credit_cost")]
-    pub credit_cost: i32,
     #[serde(default = "default_gas_limit")]
     pub gas_limit: u64,
     #[serde(default = "default_gas_buffer")]
@@ -120,10 +118,6 @@ pub struct NetworkConfigExternal {
     /// Whether this network is enabled (default: true)
     #[serde(default = "default_true")]
     pub enabled: bool,
-}
-
-fn default_credit_cost() -> i32 {
-    1
 }
 
 fn default_gas_limit() -> u64 {
@@ -190,10 +184,6 @@ pub struct CreditPackage {
 /// Credit system config
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct CreditSystemConfig {
-    #[serde(default = "default_credit_cost")]
-    pub mainnet_base_credit_cost: i32,
-    #[serde(default)]
-    pub testnet_base_credit_cost: i32,
     #[serde(default)]
     pub bonus_tiers: Vec<BonusTier>,
 }
@@ -591,110 +581,6 @@ impl ExternalConfig {
             .map(|n| n.name.clone())
             .collect()
     }
-    
-    /// Get credit cost for a network
-    pub fn get_credit_cost(&self, network: &str) -> i32 {
-        self.get_network(network)
-            .map(|n| n.credit_cost)
-            .unwrap_or(self.fees.credit_system.mainnet_base_credit_cost)
-    }
-    
-    /// Calculate bonus credits for a USD amount
-    pub fn calculate_bonus(&self, usd_amount: f64) -> u32 {
-        for tier in &self.fees.credit_system.bonus_tiers {
-            if usd_amount >= tier.min_usd && usd_amount <= tier.max_usd {
-                return tier.bonus_percent;
-            }
-        }
-        0
-    }
-    
-    /// Convert to legacy Config format for backward compatibility
-    pub fn to_legacy_config(&self) -> HashMap<String, LegacyNetworkConfig> {
-        let mut networks = HashMap::new();
-        
-        for network in self.networks.networks.iter().filter(|n| n.enabled) {
-            let tokens: Vec<LegacyTokenConfig> = network.tokens.iter()
-                .filter(|t| t.enabled)
-                .map(|t| LegacyTokenConfig {
-                    symbol: t.symbol.clone(),
-                    name: t.name.clone(),
-                    address: t.address.clone(),
-                    decimals: t.decimals,
-                    transfer_type: t.transfer_type.clone(),
-                    eip712: t.eip712_name.as_ref().map(|name| LegacyEip712Config {
-                        name: name.clone(),
-                        version: t.eip712_version.clone().unwrap_or_else(|| "1".to_string()),
-                    }),
-                    forwarder_address: t.forwarder_address.clone().filter(|s| !s.is_empty()),
-                })
-                .collect();
-            
-            let rpc_url = self.get_rpc_url(&network.name)
-                .unwrap_or_else(|| network.rpc_url_default.clone().unwrap_or_default());
-            
-            networks.insert(network.name.clone(), LegacyNetworkConfig {
-                chain_id: network.chain_id,
-                network_type: network.network_type.clone(),
-                rpc_url,
-                flashblock_enabled: network.flashblock_enabled,
-                credit_cost: network.credit_cost,
-                gas_limit: network.gas_limit,
-                gas_buffer_percent: network.gas_buffer_percent,
-                native_token: LegacyNativeToken {
-                    symbol: network.native_symbol.clone(),
-                    name: network.native_name.clone(),
-                    decimals: network.native_decimals,
-                    cmc_slug: network.native_cmc_slug.clone().unwrap_or_default(),
-                },
-                tokens,
-            });
-        }
-        
-        networks
-    }
-}
-
-/// Legacy token config for backward compatibility
-#[derive(Debug, Clone)]
-pub struct LegacyTokenConfig {
-    pub symbol: String,
-    pub name: String,
-    pub address: String,
-    pub decimals: u8,
-    pub transfer_type: TransferType,
-    pub eip712: Option<LegacyEip712Config>,
-    pub forwarder_address: Option<String>,
-}
-
-/// Legacy EIP-712 config
-#[derive(Debug, Clone)]
-pub struct LegacyEip712Config {
-    pub name: String,
-    pub version: String,
-}
-
-/// Legacy native token config
-#[derive(Debug, Clone)]
-pub struct LegacyNativeToken {
-    pub symbol: String,
-    pub name: String,
-    pub decimals: u8,
-    pub cmc_slug: String,
-}
-
-/// Legacy network config for backward compatibility
-#[derive(Debug, Clone)]
-pub struct LegacyNetworkConfig {
-    pub chain_id: u64,
-    pub network_type: NetworkType,
-    pub rpc_url: String,
-    pub flashblock_enabled: bool,
-    pub credit_cost: i32,
-    pub gas_limit: u64,
-    pub gas_buffer_percent: u32,
-    pub native_token: LegacyNativeToken,
-    pub tokens: Vec<LegacyTokenConfig>,
 }
 
 /// Configuration loader errors
