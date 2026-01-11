@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAccount, useConnect, useDisconnect, useSignTypedData, useChainId, useSwitchChain } from 'wagmi';
 import { injected } from 'wagmi/connectors';
 import Link from 'next/link';
@@ -106,7 +106,8 @@ function HomeContent() {
   const [apiKey, setApiKey] = useState('');
   const [apiKeyValidated, setApiKeyValidated] = useState(false);
   const [validatingKey, setValidatingKey] = useState(false);
-  const [keyBalance, setKeyBalance] = useState<string | null>(null);
+  const [keyBalanceMain, setKeyBalanceMain] = useState<string | null>(null);
+  const [keyBalanceTest, setKeyBalanceTest] = useState<string | null>(null);
   const [demoStep, setDemoStep] = useState<'apikey' | 'config' | 'payment' | 'success'>('apikey');
   const [recipientAddress, setRecipientAddress] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('0.01');
@@ -299,7 +300,10 @@ function HomeContent() {
           balance: result.usdc || result.newBalance,
         });
       } else {
-        setPurchaseError(result.error || 'Purchase failed');
+        // Extract detailed error message from API response
+        const errorMsg = result.error || result.message || result.details || 'Purchase failed';
+        const statusInfo = !response.ok ? ` (HTTP ${response.status})` : '';
+        setPurchaseError(`${errorMsg}${statusInfo}`);
       }
     } catch (err: unknown) {
       console.error('Purchase error:', err);
@@ -347,16 +351,19 @@ function HomeContent() {
 
       if (response.ok) {
         const data = await response.json();
-        // Prefer testnet balance, then mainnet, then generic fields
-        const balance = data.testnetBalance || data.mainnetBalance || data.balance || data.usdc || null;
-        setKeyBalance(balance);
+        // Populate both mainnet and testnet balances when available
+        const main = data.mainnetBalance || data.balance || data.usdc || null;
+        const test = data.testnetBalance || null;
+        setKeyBalanceMain(main);
+        setKeyBalanceTest(test);
         setApiKeyValidated(true);
         setDemoStep('config');
       } else if (response.status === 401) {
         setDemoError('Invalid API key. Please check and try again.');
       } else {
         const data = await response.json().catch(() => ({}));
-        setDemoError(data.error || 'Failed to validate API key');
+        const errorMsg = data.error || data.message || data.details || `Failed to validate API key (HTTP ${response.status})`;
+        setDemoError(errorMsg);
       }
     } catch (err) {
       setDemoError('Failed to connect to API. Please try again.');
@@ -364,6 +371,63 @@ function HomeContent() {
       setValidatingKey(false);
     }
   }, [apiKey]);
+
+  // Poll balances every 1s while demo view is active and API key is validated.
+  const pollInProgress = useRef(false);
+  useEffect(() => {
+    if (!apiKeyValidated || activeView !== 'demo' || !apiKey) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const poll = async () => {
+      if (pollInProgress.current) return;
+      pollInProgress.current = true;
+      try {
+        const res = await fetch(`${FACILITATOR_URL}/account`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ action: 'balance' }),
+          signal: controller.signal,
+        });
+
+        if (cancelled) return;
+
+        if (res.ok) {
+          const data = await res.json();
+          const main = data.mainnetBalance || data.balance || data.usdc || null;
+          const test = data.testnetBalance || null;
+          setKeyBalanceMain(main);
+          setKeyBalanceTest(test);
+        } else if (res.status === 401) {
+          setDemoError('Invalid API key. Please re-enter your API key.');
+          setApiKeyValidated(false);
+          setKeyBalanceMain(null);
+          setKeyBalanceTest(null);
+        } else {
+          const data = await res.json().catch(() => ({}));
+          console.warn('Balance poll error', res.status, data);
+        }
+      } catch (e) {
+        if (!cancelled) console.warn('Balance poll failed', e);
+      } finally {
+        pollInProgress.current = false;
+      }
+    };
+
+    // start immediate poll then interval
+    poll();
+    const id = setInterval(poll, 1000);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(id);
+    };
+  }, [apiKeyValidated, activeView, apiKey]);
 
   const handleProceedToPayment = () => {
     if (!recipientAddress || !recipientAddress.startsWith('0x') || recipientAddress.length !== 42) {
@@ -500,21 +564,28 @@ function HomeContent() {
         // Update fees and merchant API key balance if provided
         if (result.fees) {
           setDemoFees(result.fees);
-          if (result.fees.balanceAfter) setKeyBalance(result.fees.balanceAfter);
+          if (result.fees.balanceAfter) {
+            if (networkType === 'mainnet') setKeyBalanceMain(result.fees.balanceAfter);
+            else setKeyBalanceTest(result.fees.balanceAfter);
+          }
         } else {
           setDemoFees(null);
         }
 
         setDemoStep('success');
       } else {
-        setDemoError(result.error || 'Settlement failed');
+        // Extract detailed error from API response
+        const errorMsg = result.error || result.message || result.details || 'Settlement failed';
+        const statusInfo = !response.ok ? ` (HTTP ${response.status})` : '';
+        const fullError = `${errorMsg}${statusInfo}`;
+        setDemoError(fullError);
       }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Payment failed';
       if (errorMessage.includes('rejected') || errorMessage.includes('denied')) {
-        setDemoError('Transaction was rejected');
+        setDemoError('Transaction was rejected by user');
       } else {
-        setDemoError(errorMessage);
+        setDemoError(`Payment error: ${errorMessage}`);
       }
     } finally {
       setDemoProcessing(false);
@@ -533,7 +604,8 @@ function HomeContent() {
 
   const handleChangeApiKey = () => {
     setApiKeyValidated(false);
-    setKeyBalance(null);
+    setKeyBalanceMain(null);
+    setKeyBalanceTest(null);
     setDemoStep('apikey');
     setDemoError('');
   };
@@ -598,7 +670,7 @@ function HomeContent() {
                   : 'bg-neutral-900 text-neutral-300 hover:bg-neutral-800 hover:text-white border border-neutral-800'
               }`}
             >
-              Try Demo
+              Try sending USDC
             </button>
           </div>
         </div>
@@ -671,7 +743,7 @@ function HomeContent() {
                     onClick={() => handleViewToggle('demo')}
                     className="flex-1 px-6 py-4 bg-amber-500 hover:bg-amber-400 text-black rounded-lg font-semibold transition-colors"
                   >
-                    Try Demo
+                    Try sending USDC
                   </button>
                 </div>
               </div>
@@ -991,11 +1063,14 @@ function HomeContent() {
                       Change
                     </button>
                   </div>
-                  {keyBalance && (
-                    <p className="text-xs text-neutral-400 mt-1">
-                      Balance: {keyBalance} USDC credits
-                    </p>
-                  )}
+                  <div className="text-xs text-neutral-400 mt-1">
+                    {keyBalanceMain !== null && (
+                      <div>Mainnet balance: {keyBalanceMain} USDC credits</div>
+                    )}
+                    {keyBalanceTest !== null && (
+                      <div>Testnet balance: {keyBalanceTest} USDC credits</div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Network Type Toggle */}
