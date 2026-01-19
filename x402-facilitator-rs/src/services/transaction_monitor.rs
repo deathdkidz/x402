@@ -415,7 +415,7 @@ impl TransactionMonitor {
         let is_ws = rpc_url.starts_with("wss://") || rpc_url.starts_with("ws://");
         
         let tx_hash = if is_ws {
-            let ws_connect = WsConnect::new(rpc_url.clone());
+            let ws_connect = WsConnect::new(rpc_url);
             let provider = tokio::time::timeout(
                 Duration::from_secs(10),
                 ProviderBuilder::new()

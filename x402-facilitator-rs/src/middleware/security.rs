@@ -48,7 +48,7 @@ static ALLOWED_PATHS: Lazy<Vec<Regex>> = Lazy::new(|| {
         Regex::new(r"^/account").unwrap(),              // Account API (purchase credits, balance, metrics)
         Regex::new(r"^/credits").unwrap(),              // Credits API (legacy)
         Regex::new(r"^/api/").unwrap(),                 // API endpoints (credits, transactions)
-        Regex::new(r"^/admin/").unwrap(),               // Admin dashboard API
+
     ]
 });
 
@@ -131,6 +131,14 @@ pub async fn security_middleware(
     request: Request,
     next: Next,
 ) -> Response {
+    let path = request.uri().path();
+
+    // Fast path for health check - bypass extensive security checks
+    // Rate limiting (next layer) will still protect it
+    if path == "/health" {
+        return next.run(request).await;
+    }
+
     // Get real client IP from proxy headers (Nginx sets these)
     // Priority: X-Forwarded-For > X-Real-IP > ConnectInfo
     let ip = request.headers()
@@ -146,8 +154,6 @@ pub async fn security_middleware(
         })
         .unwrap_or_else(|| addr.ip().to_string());
     
-    let path = request.uri().path();
-
     // Check if IP is banned
     if state.is_banned(&ip) {
         warn!("🚫 Blocked banned IP: {} ({})", ip, path);

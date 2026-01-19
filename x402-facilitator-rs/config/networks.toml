@@ -72,7 +72,7 @@ name = "USD Coin"
 address = "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
 decimals = 6
 transfer_type = "erc3009"
-eip712_name = "USDC"
+eip712_name = "USD Coin"
 eip712_version = "2"
 enabled = true
 
@@ -103,7 +103,7 @@ address = "0xb88339CB7199b77E23DB6E890353E22632Ba630f"
 decimals = 6
 transfer_type = "erc3009"
 eip712_name = "USDC"
-eip712_version = "1"
+eip712_version = "2"
 enabled = true
 
 # =============================================================================

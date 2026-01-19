@@ -131,6 +131,7 @@ pub struct Config {
     pub security_cleanup_interval_ms: u64,
     pub gas_buffer_percentage: u32,
     pub internal_api_secret: Option<String>,
+    pub allowed_origins: Vec<String>,
     
     /// External configuration (networks, tokens, fees from TOML files)
     pub external: Option<Arc<ExternalConfig>>,
@@ -243,6 +244,11 @@ impl Config {
             settle_rate_limit_window_ms: env::var("SETTLE_RATE_LIMIT_WINDOW_MS").unwrap_or_else(|_| "60000".to_string()).parse().unwrap_or(60000),
             settle_rate_limit_max: env::var("SETTLE_RATE_LIMIT_MAX").unwrap_or_else(|_| "20".to_string()).parse().unwrap_or(20),
             internal_api_secret: env::var("INTERNAL_API_SECRET").ok().filter(|s| !s.is_empty()),
+            allowed_origins: env::var("ALLOWED_ORIGINS")
+                .unwrap_or_else(|_| "*".to_string())
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect(),
             external: external_config,
         })
     }
@@ -323,7 +329,7 @@ impl Config {
         networks.insert("Base".to_string(), NetworkConfig {
             chain_id: 8453,
             network_type: NetworkType::Evm,
-            rpc_url: env::var("BASE_RPC").unwrap_or_else(|_| "wss://base-mainnet.g.alchemy.com/v2/demo".to_string()),
+            rpc_url: env::var("BASE_RPC").expect("BASE_RPC must be set"),
             flashblock_enabled: true,
             gas_limit: 200000,
             gas_buffer_percent: 20,
@@ -335,7 +341,7 @@ impl Config {
         networks.insert("Ethereum".to_string(), NetworkConfig {
             chain_id: 1,
             network_type: NetworkType::Evm,
-            rpc_url: env::var("ETHEREUM_RPC").unwrap_or_else(|_| "https://eth-mainnet.g.alchemy.com/v2/demo".to_string()),
+            rpc_url: env::var("ETHEREUM_RPC").expect("ETHEREUM_RPC must be set"),
             flashblock_enabled: false,
             gas_limit: 200000,
             gas_buffer_percent: 25,
@@ -347,19 +353,19 @@ impl Config {
         networks.insert("OP Mainnet".to_string(), NetworkConfig {
             chain_id: 10,
             network_type: NetworkType::Evm,
-            rpc_url: env::var("OP_MAINNET_RPC").unwrap_or_else(|_| "wss://opt-mainnet.g.alchemy.com/v2/demo".to_string()),
+            rpc_url: env::var("OP_MAINNET_RPC").expect("OP_MAINNET_RPC must be set"),
             flashblock_enabled: true,
             gas_limit: 200000,
             gas_buffer_percent: 20,
             native_token: eth_native(),
-            tokens: vec![usdc_token("0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", "USDC", "2")],
+            tokens: vec![usdc_token("0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", "USD Coin", "2")],
         });
         
         // HyperEVM
         networks.insert("HyperEVM".to_string(), NetworkConfig {
             chain_id: 999,
             network_type: NetworkType::Evm,
-            rpc_url: env::var("HYPEREVM_RPC").unwrap_or_else(|_| "wss://hyperliquid-mainnet.g.alchemy.com/v2/demo".to_string()),
+            rpc_url: env::var("HYPEREVM_RPC").expect("HYPEREVM_RPC must be set"),
             flashblock_enabled: false,
             gas_limit: 200000,
             gas_buffer_percent: 20,
@@ -617,6 +623,7 @@ impl Default for Config {
             settle_rate_limit_window_ms: 60000,
             settle_rate_limit_max: 120,
             internal_api_secret: None,
+            allowed_origins: vec!["*".to_string()],
             external: None,
         }
     }

@@ -1202,7 +1202,7 @@ impl SettlementService {
         let tx_hash = if is_ws_url {
             // Try WebSocket first
             let ws_result: Result<String, String> = async {
-                let ws_connect = WsConnect::new(rpc_url.clone());
+                let ws_connect = WsConnect::new(rpc_url);
                 let provider = timeout(
                     Duration::from_secs(10),
                     ProviderBuilder::new()

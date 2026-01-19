@@ -477,22 +477,19 @@ fn compute_typed_data_hash(domain_separator: [u8; 32], struct_hash: [u8; 32]) ->
     keccak256(&encoded).into()
 }
 
-/// Recover signer from signature (simplified - would use secp256k1 in production)
 #[allow(deprecated)]
 fn recover_signer(message_hash: &[u8], r: &[u8], s: &[u8], v: u8) -> Result<String, String> {
-    use alloy::primitives::Signature;
+    use alloy::primitives::PrimitiveSignature;
     
     // Normalize v value
     let recovery_id = if v >= 27 { v - 27 } else { v };
+    let y_parity = recovery_id != 0;
     
     // Create signature
-    let mut sig_bytes = [0u8; 65];
-    sig_bytes[0..32].copy_from_slice(r);
-    sig_bytes[32..64].copy_from_slice(s);
-    sig_bytes[64] = recovery_id;
+    let r_val = U256::from_be_slice(r);
+    let s_val = U256::from_be_slice(s);
     
-    let signature = Signature::try_from(sig_bytes.as_slice())
-        .map_err(|e| format!("Invalid signature: {}", e))?;
+    let signature = PrimitiveSignature::new(r_val, s_val, y_parity);
     
     // Create fixed bytes for message hash
     let hash: FixedBytes<32> = FixedBytes::from_slice(message_hash);

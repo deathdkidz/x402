@@ -187,10 +187,21 @@ async fn main() {
         .layer(RequestBodyLimitLayer::new(1024 * 1024)) // 1MB limit
         .layer(TraceLayer::new_for_http())
         .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
+            if config.allowed_origins.contains(&"*".to_string()) {
+                CorsLayer::new()
+                    .allow_origin(Any)
+                    .allow_methods(Any)
+                    .allow_headers(Any)
+            } else {
+                let origins: Vec<axum::http::HeaderValue> = config.allowed_origins
+                    .iter()
+                    .map(|s| s.parse().unwrap()) // Safe to unwrap here as config should be valid
+                    .collect();
+                CorsLayer::new()
+                    .allow_origin(origins)
+                    .allow_methods(Any)
+                    .allow_headers(Any)
+            }
         );
 
     // Start server

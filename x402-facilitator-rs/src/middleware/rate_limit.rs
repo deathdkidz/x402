@@ -83,7 +83,20 @@ pub async fn general_rate_limiter(
         return next.run(request).await;
     }
     
-    let ip = addr.ip().to_string();
+    // Get real client IP from proxy headers (Nginx sets these)
+    // Priority: X-Forwarded-For > X-Real-IP > ConnectInfo
+    let ip = request.headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next()) // First IP in chain is the client
+        .map(|s| s.trim().to_string())
+        .or_else(|| {
+            request.headers()
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| addr.ip().to_string());
     
     if state.public.check_key(&ip).is_err() {
         warn!("Rate limit exceeded for IP: {} (limit: {}/min)", ip, PUBLIC_LIMIT_PER_MIN);

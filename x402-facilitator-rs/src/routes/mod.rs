@@ -9,10 +9,10 @@
 //! Endpoints:
 //! - Public: /, /health, /networks, /supported, /help, /account
 //! - Authenticated: /verify, /settle
-//! - Admin: /admin/purchases
+
 
 mod account;
-mod admin;
+
 mod credits;
 mod help;
 
@@ -35,7 +35,7 @@ use crate::services::metrics;
 use serde::Serialize;
 
 pub use account::create_account_router;
-pub use admin::create_admin_router;
+
 pub use credits::create_credits_router;
 pub use help::create_help_router;
 
@@ -91,7 +91,7 @@ pub fn create_router(state: AppState) -> Router {
         .merge(create_account_router())
         .merge(create_credits_router())  // Keep for backward compatibility
         .merge(create_help_router())
-        .merge(create_admin_router())    // Internal admin endpoints
+
         .with_state(state_arc)
 }
 

@@ -21,6 +21,7 @@ use tracing::{info, warn, error, debug};
 use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy::transports::http::Http;
 use alloy::pubsub::PubSubFrontend;
+use futures::future::join_all;
 
 use reqwest::Client;
 use tokio::time::timeout;
@@ -92,11 +93,18 @@ impl ProviderPool {
         
         info!("📡 Initializing provider pool for {} networks...", networks.len());
         
+        let futures: Vec<_> = networks.iter().map(|network| {
+            self.create_provider(network)
+        }).collect();
+        
+        let results = join_all(futures).await;
+        
         let mut http_count = 0;
         let mut ws_count = 0;
         
-        for network in &networks {
-            match self.create_provider(network).await {
+        for (index, result) in results.into_iter().enumerate() {
+            let network = &networks[index];
+            match result {
                 Ok(is_ws) => {
                     if is_ws {
                         ws_count += 1;
