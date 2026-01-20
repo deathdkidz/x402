@@ -88,12 +88,12 @@ export default function Home() {
 function HomeContent() {
   // View state
   const [activeView, setActiveView] = useState<'none' | 'purchase' | 'demo'>('none');
-  
+
   // Network data
   const [networksData, setNetworksData] = useState<NetworksResponse | null>(null);
   const [networkType, setNetworkType] = useState<'testnet' | 'mainnet'>('mainnet');
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkConfig | null>(null);
-  
+
   // Purchase state
   const [purchaseAmount, setPurchaseAmount] = useState<string>('10');
   const [purchaseProcessing, setPurchaseProcessing] = useState(false);
@@ -133,7 +133,7 @@ function HomeContent() {
         if (response.ok) {
           const data: NetworksResponse = await response.json();
           setNetworksData(data);
-          
+
           // Default to first mainnet network with USDC, fall back to testnet
           const mainnetsWithUsdc = (data.mainnet || []).filter(n => n.tokens?.some(t => t.symbol === 'USDC'));
           if (mainnetsWithUsdc.length > 0) {
@@ -153,7 +153,7 @@ function HomeContent() {
   // Get available networks based on type (only those with USDC)
   const availableNetworks = networksData
     ? (networkType === 'mainnet' ? networksData.mainnet || [] : networksData.testnet || [])
-        .filter(n => n.tokens?.some(t => t.symbol === 'USDC'))
+      .filter(n => n.tokens?.some(t => t.symbol === 'USDC'))
     : [];
 
   // Update selected network when type changes
@@ -301,8 +301,11 @@ function HomeContent() {
         });
       } else {
         // Extract detailed error message from API response
-        const errorMsg = result.error || result.message || result.details || 'Purchase failed';
+        // Extract detailed error message from API response
+        // Prefer 'message' which contains the human-readable description
+        const errorMsg = result.message || result.error || result.details || 'Purchase failed';
         const statusInfo = !response.ok ? ` (HTTP ${response.status})` : '';
+        console.error('Purchase failed response:', result); // Log full response for debugging
         setPurchaseError(`${errorMsg}${statusInfo}`);
       }
     } catch (err: unknown) {
@@ -338,7 +341,7 @@ function HomeContent() {
 
     setValidatingKey(true);
     setDemoError('');
-    
+
     try {
       const response = await fetch(`${FACILITATOR_URL}/account`, {
         method: 'POST',
@@ -575,7 +578,8 @@ function HomeContent() {
         setDemoStep('success');
       } else {
         // Extract detailed error from API response
-        const errorMsg = result.error || result.message || result.details || 'Settlement failed';
+        // Extract detailed error from API response
+        const errorMsg = result.message || result.error || result.details || 'Settlement failed';
         const statusInfo = !response.ok ? ` (HTTP ${response.status})` : '';
         const fullError = `${errorMsg}${statusInfo}`;
         setDemoError(fullError);
@@ -642,33 +646,31 @@ function HomeContent() {
             x402 Payment Protocol
           </div>
           <h1 className="text-4xl md:text-5xl font-bold mb-4 leading-tight">
-            X402 USDC Payments<br/>
+            X402 USDC Payments<br />
             <span className="text-amber-500">for Developers</span>
           </h1>
           <p className="text-lg text-neutral-400 max-w-xl mx-auto mb-8">
-            x402 facilitator service for instant USDC payment settlements. 
+            x402 facilitator service for instant USDC payment settlements.
             Non-custodial, sub-second confirmation on multiple chains.
           </p>
-          
+
           {/* Two Action Options */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-md mx-auto">
             <button
               onClick={() => handleViewToggle('purchase')}
-              className={`flex-1 px-6 py-4 font-medium rounded-lg transition-all text-center ${
-                activeView === 'purchase'
-                  ? 'bg-amber-500 text-black shadow-lg'
-                  : 'bg-neutral-900 text-neutral-300 hover:bg-neutral-800 hover:text-white border border-neutral-800'
-              }`}
+              className={`flex-1 px-6 py-4 font-medium rounded-lg transition-all text-center ${activeView === 'purchase'
+                ? 'bg-amber-500 text-black shadow-lg'
+                : 'bg-neutral-900 text-neutral-300 hover:bg-neutral-800 hover:text-white border border-neutral-800'
+                }`}
             >
               Purchase Credits
             </button>
             <button
               onClick={() => handleViewToggle('demo')}
-              className={`flex-1 px-6 py-4 font-medium rounded-lg transition-all text-center ${
-                activeView === 'demo'
-                  ? 'bg-amber-500 text-black shadow-lg'
-                  : 'bg-neutral-900 text-neutral-300 hover:bg-neutral-800 hover:text-white border border-neutral-800'
-              }`}
+              className={`flex-1 px-6 py-4 font-medium rounded-lg transition-all text-center ${activeView === 'demo'
+                ? 'bg-amber-500 text-black shadow-lg'
+                : 'bg-neutral-900 text-neutral-300 hover:bg-neutral-800 hover:text-white border border-neutral-800'
+                }`}
             >
               Try sending USDC
             </button>
@@ -718,7 +720,7 @@ function HomeContent() {
                 {purchaseSuccess.transaction && selectedNetwork && (
                   <div className="p-4 bg-neutral-950 rounded-lg">
                     <p className="text-neutral-400 text-sm mb-2">Transaction</p>
-                    <a 
+                    <a
                       href={getExplorerUrl(selectedNetwork.chainId, purchaseSuccess.transaction)}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -758,21 +760,19 @@ function HomeContent() {
                   <div className="flex p-1 bg-neutral-950 rounded-lg">
                     <button
                       onClick={() => handleNetworkTypeChange('mainnet')}
-                      className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors ${
-                        networkType === 'mainnet'
-                          ? 'bg-amber-500 text-black'
-                          : 'text-neutral-400 hover:text-white'
-                      }`}
+                      className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors ${networkType === 'mainnet'
+                        ? 'bg-amber-500 text-black'
+                        : 'text-neutral-400 hover:text-white'
+                        }`}
                     >
                       Mainnet
                     </button>
                     <button
                       onClick={() => handleNetworkTypeChange('testnet')}
-                      className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors ${
-                        networkType === 'testnet'
-                          ? 'bg-amber-500 text-black'
-                          : 'text-neutral-400 hover:text-white'
-                      }`}
+                      className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors ${networkType === 'testnet'
+                        ? 'bg-amber-500 text-black'
+                        : 'text-neutral-400 hover:text-white'
+                        }`}
                     >
                       Testnet
                     </button>
@@ -839,11 +839,10 @@ function HomeContent() {
                       onChange={(e) => setPurchaseAmount(e.target.value)}
                       min="1"
                       step="1"
-                      className={`w-full px-4 py-3 bg-neutral-950 border rounded-lg text-white focus:outline-none ${
-                        purchaseAmount && !isValidAmount(purchaseAmount, 1, 10000)
-                          ? 'border-red-500/50 focus:border-red-500'
-                          : 'border-neutral-800 focus:border-amber-500'
-                      }`}
+                      className={`w-full px-4 py-3 bg-neutral-950 border rounded-lg text-white focus:outline-none ${purchaseAmount && !isValidAmount(purchaseAmount, 1, 10000)
+                        ? 'border-red-500/50 focus:border-red-500'
+                        : 'border-neutral-800 focus:border-amber-500'
+                        }`}
                     />
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-500">
                       ≈ {Math.floor(parseFloat(purchaseAmount || '0') * 900)} settlements
@@ -859,11 +858,10 @@ function HomeContent() {
                       <button
                         key={amt}
                         onClick={() => setPurchaseAmount(amt)}
-                        className={`px-3 py-1 text-sm rounded ${
-                          purchaseAmount === amt
-                            ? 'bg-amber-500 text-black'
-                            : 'bg-neutral-800 text-neutral-400 hover:text-white'
-                        }`}
+                        className={`px-3 py-1 text-sm rounded ${purchaseAmount === amt
+                          ? 'bg-amber-500 text-black'
+                          : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                          }`}
                       >
                         {amt} USDC
                       </button>
@@ -875,14 +873,12 @@ function HomeContent() {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setIsTopUp(!isTopUp)}
-                    className={`relative w-11 h-6 rounded-full transition-colors ${
-                      isTopUp ? 'bg-amber-500' : 'bg-neutral-700'
-                    }`}
+                    className={`relative w-11 h-6 rounded-full transition-colors ${isTopUp ? 'bg-amber-500' : 'bg-neutral-700'
+                      }`}
                   >
                     <span
-                      className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                        isTopUp ? 'translate-x-5' : ''
-                      }`}
+                      className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${isTopUp ? 'translate-x-5' : ''
+                        }`}
                     />
                   </button>
                   <span className="text-sm text-neutral-400">Top up existing API key</span>
@@ -900,11 +896,10 @@ function HomeContent() {
                       onChange={(e) => setExistingApiKey(e.target.value.replace(/[^A-Za-z0-9]/g, ''))}
                       placeholder="64 character alphanumeric key..."
                       maxLength={64}
-                      className={`w-full px-4 py-3 bg-neutral-950 border rounded-lg text-white placeholder-neutral-600 focus:outline-none font-mono text-sm ${
-                        existingApiKey && !isValidApiKey(existingApiKey)
-                          ? 'border-red-500/50 focus:border-red-500'
-                          : 'border-neutral-800 focus:border-amber-500'
-                      }`}
+                      className={`w-full px-4 py-3 bg-neutral-950 border rounded-lg text-white placeholder-neutral-600 focus:outline-none font-mono text-sm ${existingApiKey && !isValidApiKey(existingApiKey)
+                        ? 'border-red-500/50 focus:border-red-500'
+                        : 'border-neutral-800 focus:border-amber-500'
+                        }`}
                     />
                     {existingApiKey && !isValidApiKey(existingApiKey) && (
                       <p className="text-xs text-red-400 mt-1">
@@ -1002,11 +997,10 @@ function HomeContent() {
                     onChange={(e) => setApiKey(e.target.value.replace(/[^A-Za-z0-9]/g, ''))}
                     placeholder="64 character alphanumeric key..."
                     maxLength={64}
-                    className={`w-full px-4 py-3 bg-neutral-950 border rounded-lg text-white placeholder-neutral-600 focus:outline-none font-mono text-sm ${
-                      apiKey && !isValidApiKey(apiKey)
-                        ? 'border-red-500/50 focus:border-red-500'
-                        : 'border-neutral-800 focus:border-amber-500'
-                    }`}
+                    className={`w-full px-4 py-3 bg-neutral-950 border rounded-lg text-white placeholder-neutral-600 focus:outline-none font-mono text-sm ${apiKey && !isValidApiKey(apiKey)
+                      ? 'border-red-500/50 focus:border-red-500'
+                      : 'border-neutral-800 focus:border-amber-500'
+                      }`}
                   />
                   {apiKey && !isValidApiKey(apiKey) && (
                     <p className="text-xs text-red-400 mt-1">
@@ -1056,7 +1050,7 @@ function HomeContent() {
                       </svg>
                       <span className="text-sm text-green-400">API key validated</span>
                     </div>
-                    <button 
+                    <button
                       onClick={handleChangeApiKey}
                       className="text-xs text-neutral-400 hover:text-white"
                     >
@@ -1081,21 +1075,19 @@ function HomeContent() {
                   <div className="flex p-1 bg-neutral-950 rounded-lg">
                     <button
                       onClick={() => handleNetworkTypeChange('mainnet')}
-                      className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors ${
-                        networkType === 'mainnet'
-                          ? 'bg-amber-500 text-black'
-                          : 'text-neutral-400 hover:text-white'
-                      }`}
+                      className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors ${networkType === 'mainnet'
+                        ? 'bg-amber-500 text-black'
+                        : 'text-neutral-400 hover:text-white'
+                        }`}
                     >
                       Mainnet
                     </button>
                     <button
                       onClick={() => handleNetworkTypeChange('testnet')}
-                      className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors ${
-                        networkType === 'testnet'
-                          ? 'bg-amber-500 text-black'
-                          : 'text-neutral-400 hover:text-white'
-                      }`}
+                      className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors ${networkType === 'testnet'
+                        ? 'bg-amber-500 text-black'
+                        : 'text-neutral-400 hover:text-white'
+                        }`}
                     >
                       Testnet
                     </button>
@@ -1161,11 +1153,10 @@ function HomeContent() {
                     onChange={(e) => setRecipientAddress(e.target.value)}
                     placeholder="0x..."
                     maxLength={42}
-                    className={`w-full px-4 py-3 bg-neutral-950 border rounded-lg text-white placeholder-neutral-600 focus:outline-none ${
-                      recipientAddress && !isValidAddress(recipientAddress)
-                        ? 'border-red-500/50 focus:border-red-500'
-                        : 'border-neutral-800 focus:border-amber-500'
-                    }`}
+                    className={`w-full px-4 py-3 bg-neutral-950 border rounded-lg text-white placeholder-neutral-600 focus:outline-none ${recipientAddress && !isValidAddress(recipientAddress)
+                      ? 'border-red-500/50 focus:border-red-500'
+                      : 'border-neutral-800 focus:border-amber-500'
+                      }`}
                   />
                   {recipientAddress && !isValidAddress(recipientAddress) ? (
                     <p className="text-xs text-red-400 mt-1">
@@ -1190,11 +1181,10 @@ function HomeContent() {
                     min="0.001"
                     max="10"
                     step="0.001"
-                    className={`w-full px-4 py-3 bg-neutral-950 border rounded-lg text-white focus:outline-none ${
-                      paymentAmount && !isValidAmount(paymentAmount, 0.001, 10)
-                        ? 'border-red-500/50 focus:border-red-500'
-                        : 'border-neutral-800 focus:border-amber-500'
-                    }`}
+                    className={`w-full px-4 py-3 bg-neutral-950 border rounded-lg text-white focus:outline-none ${paymentAmount && !isValidAmount(paymentAmount, 0.001, 10)
+                      ? 'border-red-500/50 focus:border-red-500'
+                      : 'border-neutral-800 focus:border-amber-500'
+                      }`}
                   />
                   {paymentAmount && !isValidAmount(paymentAmount, 0.001, 10) && (
                     <p className="text-xs text-red-400 mt-1">
@@ -1315,7 +1305,7 @@ function HomeContent() {
                 {transactionHash && (
                   <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
                     <p className="text-green-400 text-sm font-medium mb-2">Transaction Hash</p>
-                    <a 
+                    <a
                       href={getExplorerUrl(paymentChainId!, transactionHash)}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -1363,7 +1353,7 @@ function HomeContent() {
                 <div className="text-sm text-neutral-400">
                   <p className="font-medium text-neutral-300 mb-1">How it works</p>
                   <p>
-                    This demo uses your NetPay API key to settle USDC payments instantly. 
+                    This demo uses your NetPay API key to settle USDC payments instantly.
                     Sign the ERC-3009 authorization, and we&apos;ll execute the transfer on-chain.
                     Each settlement costs approximately 0.001 USDC from your credit balance.
                   </p>
@@ -1376,120 +1366,120 @@ function HomeContent() {
 
       {/* Info Cards */}
       <>
-          <section className="max-w-6xl mx-auto px-6 py-12">
-            <div className="grid md:grid-cols-3 gap-6">
-              <div className="p-5 bg-neutral-900 border border-neutral-800 rounded-xl">
-                <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center mb-3">
-                  <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
-                <h3 className="font-semibold mb-1">Sub-Second Settlement</h3>
-                <p className="text-neutral-400 text-sm">Flashblock-optimized for Base. Payments confirm in under 500ms.</p>
+        <section className="max-w-6xl mx-auto px-6 py-12">
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="p-5 bg-neutral-900 border border-neutral-800 rounded-xl">
+              <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center mb-3">
+                <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
               </div>
-              <div className="p-5 bg-neutral-900 border border-neutral-800 rounded-xl">
-                <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center mb-3">
-                  <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </div>
-                <h3 className="font-semibold mb-1">Non-Custodial</h3>
-                <p className="text-neutral-400 text-sm">We never hold user funds. Direct transfers via EIP-3009.</p>
-              </div>
-              <div className="p-5 bg-neutral-900 border border-neutral-800 rounded-xl">
-                <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center mb-3">
-                  <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <h3 className="font-semibold mb-1">Multi-Chain</h3>
-                <p className="text-neutral-400 text-sm">Base, Optimism, HyperEVM. Mainnet and testnet support.</p>
-              </div>
+              <h3 className="font-semibold mb-1">Sub-Second Settlement</h3>
+              <p className="text-neutral-400 text-sm">Flashblock-optimized for Base. Payments confirm in under 500ms.</p>
             </div>
-          </section>
+            <div className="p-5 bg-neutral-900 border border-neutral-800 rounded-xl">
+              <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center mb-3">
+                <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <h3 className="font-semibold mb-1">Non-Custodial</h3>
+              <p className="text-neutral-400 text-sm">We never hold user funds. Direct transfers via EIP-3009.</p>
+            </div>
+            <div className="p-5 bg-neutral-900 border border-neutral-800 rounded-xl">
+              <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center mb-3">
+                <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="font-semibold mb-1">Multi-Chain</h3>
+              <p className="text-neutral-400 text-sm">Base, Optimism, HyperEVM. Mainnet and testnet support.</p>
+            </div>
+          </div>
+        </section>
 
-          {/* How It Works */}
-          <section className="border-t border-neutral-800 bg-neutral-900/30">
-            <div className="max-w-6xl mx-auto px-6 py-16">
-              <h2 className="text-2xl font-bold text-center mb-12">How It Works</h2>
-              <div className="grid md:grid-cols-4 gap-6">
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <span className="text-amber-500 font-bold">1</span>
-                  </div>
-                  <h3 className="font-semibold mb-2">Purchase Credits</h3>
-                  <p className="text-neutral-400 text-sm">
-                    Send USDC to our vault. Receive an API key with credits.
-                  </p>
+        {/* How It Works */}
+        <section className="border-t border-neutral-800 bg-neutral-900/30">
+          <div className="max-w-6xl mx-auto px-6 py-16">
+            <h2 className="text-2xl font-bold text-center mb-12">How It Works</h2>
+            <div className="grid md:grid-cols-4 gap-6">
+              <div className="text-center">
+                <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
+                  <span className="text-amber-500 font-bold">1</span>
                 </div>
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <span className="text-amber-500 font-bold">2</span>
-                  </div>
-                  <h3 className="font-semibold mb-2">User Signs Payment</h3>
-                  <p className="text-neutral-400 text-sm">
-                    User signs EIP-3009 authorization. No gas needed from user.
-                  </p>
+                <h3 className="font-semibold mb-2">Purchase Credits</h3>
+                <p className="text-neutral-400 text-sm">
+                  Send USDC to our vault. Receive an API key with credits.
+                </p>
+              </div>
+              <div className="text-center">
+                <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
+                  <span className="text-amber-500 font-bold">2</span>
                 </div>
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <span className="text-amber-500 font-bold">3</span>
-                  </div>
-                  <h3 className="font-semibold mb-2">Call /settle</h3>
-                  <p className="text-neutral-400 text-sm">
-                    POST the signed auth to our API. We execute on-chain.
-                  </p>
+                <h3 className="font-semibold mb-2">User Signs Payment</h3>
+                <p className="text-neutral-400 text-sm">
+                  User signs EIP-3009 authorization. No gas needed from user.
+                </p>
+              </div>
+              <div className="text-center">
+                <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
+                  <span className="text-amber-500 font-bold">3</span>
                 </div>
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <span className="text-amber-500 font-bold">4</span>
-                  </div>
-                  <h3 className="font-semibold mb-2">Receive USDC</h3>
-                  <p className="text-neutral-400 text-sm">
-                    USDC transfers directly to your wallet. ~0.001 USDC per settlement.
-                  </p>
+                <h3 className="font-semibold mb-2">Call /settle</h3>
+                <p className="text-neutral-400 text-sm">
+                  POST the signed auth to our API. We execute on-chain.
+                </p>
+              </div>
+              <div className="text-center">
+                <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
+                  <span className="text-amber-500 font-bold">4</span>
                 </div>
+                <h3 className="font-semibold mb-2">Receive USDC</h3>
+                <p className="text-neutral-400 text-sm">
+                  USDC transfers directly to your wallet. ~0.001 USDC per settlement.
+                </p>
               </div>
             </div>
-          </section>
+          </div>
+        </section>
 
-          {/* Pricing */}
-          <section className="max-w-6xl mx-auto px-6 py-16">
-            <h2 className="text-2xl font-bold text-center mb-8">Simple Pricing</h2>
-            <div className="max-w-md mx-auto bg-neutral-900 border border-neutral-800 rounded-xl p-6">
-              <div className="text-center mb-6">
-                <div className="text-4xl font-bold mb-1">~0.001 USDC</div>
-                <div className="text-neutral-400">per settlement</div>
+        {/* Pricing */}
+        <section className="max-w-6xl mx-auto px-6 py-16">
+          <h2 className="text-2xl font-bold text-center mb-8">Simple Pricing</h2>
+          <div className="max-w-md mx-auto bg-neutral-900 border border-neutral-800 rounded-xl p-6">
+            <div className="text-center mb-6">
+              <div className="text-4xl font-bold mb-1">~0.001 USDC</div>
+              <div className="text-neutral-400">per settlement</div>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-neutral-300">~900 settlements per USDC</span>
               </div>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span className="text-neutral-300">~900 settlements per USDC</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span className="text-neutral-300">Service fee: 0.001 USDC</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span className="text-neutral-300">Gas included in settlement cost</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span className="text-neutral-300">Minimum deposit: 1 USDC</span>
-                </div>
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-neutral-300">Service fee: 0.001 USDC</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-neutral-300">Gas included in settlement cost</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-neutral-300">Minimum deposit: 1 USDC</span>
               </div>
             </div>
-          </section>
-        </>
+          </div>
+        </section>
+      </>
 
       {/* Footer */}
       <footer className="border-t border-neutral-800 bg-neutral-900/30">
