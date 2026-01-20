@@ -68,3 +68,29 @@ pub fn init_logging(log_level: &str, log_dir: &Path) {
         .with(error_layer)
         .init();
 }
+
+/// Send admin notification via shell script
+pub fn send_admin_notification(message: &str, subject: &str) {
+    // Run in background to not block the request
+    let message = message.to_string();
+    let subject = subject.to_string();
+    
+    std::thread::spawn(move || {
+        let result = std::process::Command::new("/usr/local/bin/notify-admin.sh")
+            .arg(&message)
+            .arg(&subject)
+            .output();
+
+        match result {
+            Ok(output) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    tracing::error!("Failed to send notification: {}", stderr);
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to execute notification script: {}", e);
+            }
+        }
+    });
+}

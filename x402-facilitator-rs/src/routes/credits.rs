@@ -84,6 +84,11 @@ async fn purchase_credits_handler(
                         
                         info!("✅ Added ${:.2} to API key {}...{}, new balance: ${:.2}",
                               amount, &existing_key[..8], &existing_key[existing_key.len()-8..], new_balance);
+
+                        // Send async notification
+                        let notify_msg = format!("Credit top-up: ${:.2}\nKey: {}...{}\nNew Balance: ${:.2}", 
+                            amount, &existing_key[..8], &existing_key[existing_key.len()-8..], new_balance);
+                        crate::utils::send_admin_notification(&notify_msg, "💰 Credit Purchase");
                         
                         return (
                             StatusCode::OK,
@@ -154,6 +159,10 @@ async fn purchase_credits_handler(
         Ok(key) => {
             info!("✅ Created new API key {}...{} with ${:.2} initial balance",
                   &new_api_key[..8], &new_api_key[new_api_key.len()-8..], amount);
+            
+            // Send async notification
+            let notify_msg = format!("New API Key Created\nInitial Balance: ${:.2}", amount);
+            crate::utils::send_admin_notification(&notify_msg, "🆕 New User Signup");
             
             (
                 StatusCode::CREATED,
