@@ -595,13 +595,13 @@ impl SettlementService {
         // Wait for confirmation
         let (confirmed, final_status, _receipt) = self.wait_for_confirmation_with_receipt(&tx_hash, &normalized_network).await;
 
-        if !confirmed || final_status != "completed" {
+        if !confirmed || (final_status != "completed" && final_status != "preconfirmed") {
             // Cache failed nonce
             let _ = self.redis.cache_used_nonce(payer, nonce, &tx_hash, &final_status, 86400).await;
             return Err(format!("Transaction failed with status: {}", final_status));
         }
 
-        info!("✅ Credit purchase confirmed: {}", tx_hash);
+        info!("✅ Credit purchase confirmed: {} (status: {})", tx_hash, final_status);
 
         // Cache successful nonce
         let _ = self.redis.cache_used_nonce(payer, nonce, &tx_hash, "completed", 86400).await;
